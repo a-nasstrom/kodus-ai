@@ -12,22 +12,38 @@ export async function statusAction(): Promise<void> {
     if (isAuthenticated) {
       const credentials = await authService.getCredentials();
       
+      if (!credentials) {
+        console.log(chalk.yellow('\nNo credentials found.'));
+        return;
+      }
+      
       console.log(chalk.bold('\nAuthentication Status\n'));
       console.log(`${chalk.dim('Mode:')}  ${chalk.green('Logged In')}`);
-      console.log(`${chalk.dim('Email:')} ${credentials?.user.email}`);
+      console.log(`${chalk.dim('Email:')} ${credentials.user.email}`);
       
-      if (credentials?.user.orgs && credentials.user.orgs.length > 0) {
+      const expiresAt = new Date(credentials.expiresAt);
+      const timeUntilExpiry = expiresAt.getTime() - Date.now();
+      const hoursUntilExpiry = Math.floor(timeUntilExpiry / (1000 * 60 * 60));
+      
+      if (timeUntilExpiry > 0) {
+        if (hoursUntilExpiry < 1) {
+          console.log(`${chalk.dim('Token:')}  ${chalk.yellow('Expires in < 1 hour')}`);
+        } else if (hoursUntilExpiry < 24) {
+          console.log(`${chalk.dim('Token:')}  ${chalk.yellow(`Expires in ${hoursUntilExpiry} hours`)}`);
+        } else {
+          console.log(`${chalk.dim('Token:')}  ${chalk.green('Valid')}`);
+        }
+      } else {
+        console.log(`${chalk.dim('Token:')}  ${chalk.red('Expired')}`);
+        console.log(chalk.yellow('\nYour session has expired. Run `kodus auth login` to refresh.'));
+        return;
+      }
+      
+      if (credentials.user.orgs && credentials.user.orgs.length > 0) {
         console.log(`${chalk.dim('Organizations:')}`);
         credentials.user.orgs.forEach((org) => {
           console.log(`  ${chalk.dim('•')} ${org}`);
         });
-      }
-
-      const expiresAt = new Date(credentials?.expiresAt || 0);
-      const isExpiringSoon = expiresAt.getTime() - Date.now() < 24 * 60 * 60 * 1000;
-      
-      if (isExpiringSoon) {
-        console.log(chalk.yellow('\nNote: Your session will expire soon. Run `kodus auth login` to refresh.'));
       }
 
     } else {

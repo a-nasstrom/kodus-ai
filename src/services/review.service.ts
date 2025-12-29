@@ -22,13 +22,15 @@ class ReviewService {
     return api.config.get(token, effectiveOrg, effectiveRepo);
   }
 
-  async analyze(diff: string, config?: RemoteConfig): Promise<ReviewResult> {
+  async analyze(diff: string, config?: RemoteConfig, rulesOnly?: boolean, fast?: boolean): Promise<ReviewResult> {
     const token = await authService.getValidToken();
     
     const reviewConfig: ReviewConfig | undefined = config
       ? {
           severity: config.severity,
           rules: config.rules,
+          rulesOnly,
+          fast,
         }
       : undefined;
 

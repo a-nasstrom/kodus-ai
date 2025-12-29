@@ -11,6 +11,8 @@ export const authCommand = new Command('auth')
 authCommand
   .command('login')
   .description('Login with email and password')
+  .option('-e, --email <email>', 'Email address')
+  .option('-p, --password <password>', 'Password')
   .action(loginAction);
 
 authCommand

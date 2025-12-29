@@ -73,6 +73,25 @@ class RealAuthApi implements IAuthApi {
     });
     return response.token;
   }
+
+  async verify(accessToken: string): Promise<{ valid: boolean; user?: any }> {
+    try {
+      const response = await request<{ id: string; email: string; orgs: string[] }>('/auth/me', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      return {
+        valid: true,
+        user: response,
+      };
+    } catch (error) {
+      if (process.env.KODUS_VERBOSE) {
+        console.error('Token verification failed:', error);
+      }
+      return { valid: false };
+    }
+  }
 }
 
 class RealReviewApi implements IReviewApi {

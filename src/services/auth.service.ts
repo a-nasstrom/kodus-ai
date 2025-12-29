@@ -80,6 +80,16 @@ class AuthService {
     return api.auth.generateCIToken(token);
   }
 
+  async verifyToken(): Promise<{ valid: boolean; user?: any }> {
+    const credentials = await this.getCredentials();
+    
+    if (!credentials) {
+      return { valid: false };
+    }
+
+    return api.auth.verify(credentials.accessToken);
+  }
+
   private async storeAuthResponse(response: AuthResponse): Promise<void> {
     const credentials: StoredCredentials = {
       accessToken: response.accessToken,

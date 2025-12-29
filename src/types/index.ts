@@ -31,6 +31,8 @@ export interface ReviewConfig {
     style?: boolean;
     bestPractices?: boolean;
   };
+  rulesOnly?: boolean;
+  fast?: boolean;
 }
 
 export interface ReviewIssue {

@@ -16,7 +16,9 @@ export const reviewCommand = new Command('review')
   .argument('[files...]', 'Specific files to analyze')
   .option('-s, --staged', 'Analyze only staged files')
   .option('-c, --commit <sha>', 'Analyze diff from a specific commit')
-  .action(async (files: string[], options: { staged?: boolean; commit?: string }, cmd: Command) => {
+  .option('--rules-only', 'Review using only configured rules (no general suggestions)')
+  .option('--fast', 'Fast mode: quicker analysis with lighter checks')
+  .action(async (files: string[], options: { staged?: boolean; commit?: string; rulesOnly?: boolean; fast?: boolean }, cmd: Command) => {
     const globalOpts = cmd.optsWithGlobals() as GlobalOptions & { staged?: boolean; commit?: string };
     const spinner = ora();
 
@@ -51,8 +53,9 @@ export const reviewCommand = new Command('review')
           spinner.text = chalk.blue('Analyzing code...');
         }
 
-        result = await reviewService.analyze(diff, config);
-        spinner.succeed(chalk.green('Review complete!'));
+        result = await reviewService.analyze(diff, config, options.rulesOnly, options.fast);
+        const modeLabel = options.fast ? ' (fast mode)' : '';
+        spinner.succeed(chalk.green(`Review complete!${modeLabel}`));
       } else {
         if (!globalOpts.quiet) {
           spinner.text = chalk.blue('Running in trial mode...');

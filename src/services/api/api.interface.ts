@@ -5,6 +5,7 @@ import type {
   ReviewResult,
   TrialReviewResult,
   TrialStatus,
+  UserInfo,
 } from '../../types/index.js';
 
 export interface IAuthApi {
@@ -13,6 +14,7 @@ export interface IAuthApi {
   refresh(refreshToken: string): Promise<AuthResponse>;
   logout(accessToken: string): Promise<void>;
   generateCIToken(accessToken: string): Promise<string>;
+  verify(accessToken: string): Promise<{ valid: boolean; user?: UserInfo }>;
 }
 
 export interface IReviewApi {

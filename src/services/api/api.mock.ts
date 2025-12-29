@@ -134,6 +134,23 @@ class MockAuthApi implements IAuthApi {
     await delay(MOCK_DELAY);
     return 'kodus_ci_' + generateMockToken();
   }
+
+  async verify(accessToken: string): Promise<{ valid: boolean; user?: any }> {
+    await delay(MOCK_DELAY / 2);
+    
+    if (!accessToken || !accessToken.startsWith('mock_')) {
+      return { valid: false };
+    }
+
+    return {
+      valid: true,
+      user: {
+        id: 'user_mock',
+        email: 'test@kodus.io',
+        orgs: ['kodus', 'my-org'],
+      },
+    };
+  }
 }
 
 class MockReviewApi implements IReviewApi {
