@@ -27,6 +27,7 @@ const mockIssues = [
     file: 'src/index.ts',
     line: 15,
     severity: 'warning' as const,
+    category: 'style' as const,
     message: 'Consider using const instead of let for variables that are never reassigned',
     suggestion: 'const value = getData();',
     ruleId: 'prefer-const',
@@ -35,6 +36,7 @@ const mockIssues = [
     file: 'src/utils.ts',
     line: 42,
     severity: 'error' as const,
+    category: 'bug' as const,
     message: 'Potential null reference. Add null check before accessing property',
     suggestion: 'if (user?.name) { ... }',
     ruleId: 'null-safety',
@@ -43,6 +45,7 @@ const mockIssues = [
     file: 'src/api.ts',
     line: 88,
     severity: 'info' as const,
+    category: 'best_practices' as const,
     message: 'Consider adding error handling for this async operation',
     suggestion: 'try { await fetch(...) } catch (e) { handleError(e) }',
     ruleId: 'async-error-handling',
@@ -51,6 +54,7 @@ const mockIssues = [
     file: 'src/components/Button.tsx',
     line: 23,
     severity: 'warning' as const,
+    category: 'performance' as const,
     message: 'Missing dependency in useEffect hook',
     suggestion: 'useEffect(() => { ... }, [dependency])',
     ruleId: 'react-hooks/exhaustive-deps',
@@ -59,6 +63,7 @@ const mockIssues = [
     file: 'src/services/auth.ts',
     line: 56,
     severity: 'error' as const,
+    category: 'security_vulnerability' as const,
     message: 'Sensitive data should not be logged',
     suggestion: 'Remove console.log containing user credentials',
     ruleId: 'security/no-sensitive-logs',
@@ -184,7 +189,7 @@ class MockReviewApi implements IReviewApi {
 
   async getPullRequestSuggestions(
     _accessToken: string,
-    params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown' }
+    params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown'; severity?: string; category?: string }
   ): Promise<PullRequestSuggestionsResponse> {
     await delay(MOCK_DELAY);
 
@@ -192,12 +197,33 @@ class MockReviewApi implements IReviewApi {
       throw new ApiError(400, 'prUrl or prNumber + repositoryId are required');
     }
 
+    const filterList = (value?: string): string[] | undefined => {
+      if (!value) return undefined;
+      return value.split(',').map((v) => v.trim()).filter(Boolean);
+    };
+
+    const severityFilters = filterList(params.severity);
+    const categoryFilters = filterList(params.category);
+
+    const filtered = mockIssues.filter((issue) => {
+      const matchesSeverity = !severityFilters || severityFilters.includes(issue.severity);
+      const matchesCategory = !categoryFilters || (issue.category && categoryFilters.includes(issue.category));
+      return matchesSeverity && matchesCategory;
+    });
+
+    const suggestions = filtered.length > 0 ? filtered : mockIssues;
+
+    const markdown = params.format === 'markdown'
+      ? ['# Mocked pull request suggestions', ...suggestions.map((s) => `- (${s.severity}) ${s.file}:${s.line} ${s.message}`)].join('\n')
+      : undefined;
+
     return {
       summary: 'Mocked pull request suggestions',
-      suggestions: mockIssues,
+      suggestions,
       filesAnalyzed: 1,
       duration: MOCK_DELAY,
-      markdown: params.format === 'markdown' ? '# Mocked pull request suggestions\n- Suggestion 1' : undefined,
+      markdown,
+      deliveryStatus: 'sent',
     };
   }
 

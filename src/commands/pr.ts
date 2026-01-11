@@ -17,8 +17,11 @@ prCommand
   .description('Fetch suggestions for a pull request')
   .option('--pr-url <url>', 'Pull request URL')
   .option('--pr-number <number>', 'Pull request number')
-  .option('--repo-id <id>', 'Repository ID for the pull request')
-  .action(async (options: { prUrl?: string; prNumber?: string; repoId?: string }, cmd: Command) => {
+.option('--repo-id <id>', 'Repository ID for the pull request')
+.option('--severity <list>', 'Comma-separated severities to include')
+.option('--category <list>', 'Comma-separated categories to include')
+.action(async (options: { prUrl?: string; prNumber?: string; repoId?: string; severity?: string; category?: string }, cmd: Command) => {
+
     const globalOpts = cmd.optsWithGlobals() as GlobalOptions;
     const spinner = ora();
 
@@ -43,6 +46,8 @@ prCommand
         prNumber,
         repositoryId: options.repoId,
         format: shouldRequestMarkdown ? 'markdown' : undefined,
+        severity: options.severity,
+        category: options.category,
       });
 
       spinner.succeed(chalk.green('Suggestions fetched'));

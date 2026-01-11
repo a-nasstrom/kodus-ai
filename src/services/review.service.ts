@@ -80,7 +80,7 @@ class ReviewService {
     return api.review.analyze(diff, token, reviewConfig);
   }
 
-  async getPullRequestSuggestions(params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown' }): Promise<{ result: ReviewResult; markdown?: string }> {
+  async getPullRequestSuggestions(params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown'; severity?: string; category?: string }): Promise<{ result: ReviewResult; markdown?: string }> {
     if (!params.prUrl && !(params.prNumber && params.repositoryId)) {
       throw new Error('Provide prUrl or prNumber with repositoryId to fetch pull request suggestions.');
     }

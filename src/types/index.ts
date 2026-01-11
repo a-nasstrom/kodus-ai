@@ -81,6 +81,7 @@ export interface PullRequestSuggestionsResponse {
   filesAnalyzed?: number;
   duration?: number;
   markdown?: string;
+  deliveryStatus?: string;
 }
 
 export interface TrialReviewResult extends ReviewResult {

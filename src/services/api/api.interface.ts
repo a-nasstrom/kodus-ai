@@ -32,7 +32,7 @@ export interface IReviewApi {
   analyzeWithMetrics(diff: string, accessToken: string, config?: ReviewConfig, metrics?: GitMetrics): Promise<ReviewResult>;
   getPullRequestSuggestions(
     accessToken: string,
-    params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown' }
+    params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown'; severity?: string; category?: string }
   ): Promise<PullRequestSuggestionsResponse>;
   trialAnalyze(diff: string, fingerprint: string): Promise<TrialReviewResult>;
 }

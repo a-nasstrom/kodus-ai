@@ -204,7 +204,7 @@ class RealReviewApi implements IReviewApi {
 
   async getPullRequestSuggestions(
     accessToken: string,
-    params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown' }
+    params: { prUrl?: string; prNumber?: number; repositoryId?: string; format?: 'markdown'; severity?: string; category?: string }
   ): Promise<PullRequestSuggestionsResponse> {
     const query = new URLSearchParams();
 
@@ -222,6 +222,14 @@ class RealReviewApi implements IReviewApi {
 
     if (params.format) {
       query.set('format', params.format);
+    }
+
+    if (params.severity) {
+      query.set('severity', params.severity);
+    }
+
+    if (params.category) {
+      query.set('category', params.category);
     }
 
     const queryString = query.toString();
