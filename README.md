@@ -238,6 +238,12 @@ The copied prompt includes:
 
 For fully automated workflows:
 
+Set your team key as an environment variable:
+
+```bash
+export KODUS_TEAM_KEY=kodus_xxxxx
+```
+
 Add this to your `.cursorrules` or prompt:
 
 ```
@@ -341,6 +347,7 @@ export DO_NOT_TRACK=1
 | `KODUS_VERBOSE` | Set to `true` to enable verbose logging | ⚠️ **DO NOT use in production/CI** - may expose sensitive data in logs |
 | `KODUS_MOCK` | Set to `true` to use mock API | Development only |
 | `KODUS_TOKEN` | CI/CD token for non-interactive environments | - |
+| `KODUS_TEAM_KEY` | Team authentication key for AI coding agents (Codex, Claude Code, Cursor) | - |
 | `KODUS_TELEMETRY` | Set to `false` to disable telemetry | - |
 | `DO_NOT_TRACK` | Set to `1` to disable telemetry | Standard privacy flag |
 | `POSTHOG_API_KEY` | Custom PostHog API key | Development only |
