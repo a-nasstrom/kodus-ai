@@ -231,13 +231,13 @@ describe('auth status integration', () => {
 // Hook commands — install, status, uninstall
 // ---------------------------------------------------------------------------
 describe('hook integration', () => {
-  it('kodus hook install creates pre-commit hook', async () => {
+  it('kodus hook install creates pre-push hook', async () => {
     const { stdout, stderr, exitCode } = await runCli(['hook', 'install', '--force']);
     expect(exitCode).toBe(0);
     const output = stdout + stderr;
     expect(output).toContain('installed');
 
-    const hookPath = path.join(gitRepoDir, '.git', 'hooks', 'pre-commit');
+    const hookPath = path.join(gitRepoDir, '.git', 'hooks', 'pre-push');
     const content = await fs.readFile(hookPath, 'utf-8');
     expect(content).toContain('# kodus-hook');
     expect(content).toContain('--fail-on critical');
@@ -263,7 +263,7 @@ describe('hook integration', () => {
     const output = stdout + stderr;
     expect(output).toContain('removed');
 
-    const hookPath = path.join(gitRepoDir, '.git', 'hooks', 'pre-commit');
+    const hookPath = path.join(gitRepoDir, '.git', 'hooks', 'pre-push');
     await expect(fs.access(hookPath)).rejects.toThrow();
   });
 });
