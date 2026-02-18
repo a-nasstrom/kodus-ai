@@ -5,6 +5,7 @@ import { getTrialIdentifier } from '../utils/rate-limit.js';
 import { loadConfig } from '../utils/config.js';
 import { CLI_VERSION } from '../constants.js';
 import chalk from 'chalk';
+import { ApiError } from '../types/index.js';
 import type { ReviewConfig, ReviewResult, TrialReviewResult, PullRequestSuggestionsResponse, ReviewIssue, ApiFileSuggestion, ApiPrLevelSuggestion, ApiSuggestionsObject, Severity, FileContent } from '../types/index.js';
 
 const MAX_FILES = 100;
@@ -127,7 +128,24 @@ class ReviewService {
     }
 
     const token = await authService.getValidToken();
-    const response = await api.review.getPullRequestSuggestions(token, params);
+
+    let response: PullRequestSuggestionsResponse;
+    try {
+      response = await api.review.getPullRequestSuggestions(token, params);
+    } catch (error) {
+      const canFallbackToTeamKey = error instanceof ApiError && error.statusCode === 401 && !token.startsWith('kodus_');
+      if (!canFallbackToTeamKey) {
+        throw error;
+      }
+
+      const config = await loadConfig();
+      if (!config?.teamKey) {
+        throw error;
+      }
+
+      response = await api.review.getPullRequestSuggestions(config.teamKey, params);
+    }
+
     return {
       result: this.normalizeSuggestionsResponse(response),
       markdown: response.markdown,

@@ -285,9 +285,11 @@ class GitService {
         if (options?.commit) {
           // Read file content from the selected commit
           content = await this.git.show([`${options.commit}:${filePath}`]);
+        } else if (options?.branch) {
+          // Read file content from HEAD to match the branch comparison diff target.
+          content = await this.git.show([`HEAD:${filePath}`]);
         } else {
           // Read from working tree (fs.readFile)
-          // For branch comparison this reads the current local version.
           const fullPath = path.resolve(filePath);
           content = await fs.readFile(fullPath, 'utf-8');
         }
