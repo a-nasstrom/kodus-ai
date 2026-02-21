@@ -277,35 +277,35 @@ Similar workflow - the AI agent can autonomously:
 Capture agent decisions into repository-local markdown files (`.kody/pr/by-sha/<head-sha>.md`).
 
 ```bash
-# Enable memory: installs all hooks + initializes module config
-kodus memory enable
+# Enable decisions: installs all hooks + initializes module config
+kodus decisions enable
 
 # Optional: choose agents explicitly
-kodus memory enable --agents claude,cursor,codex
+kodus decisions enable --agents claude,cursor,codex
 
 # Optional: custom Codex config path
-kodus memory enable --agents codex --codex-config ~/.codex/config.toml
+kodus decisions enable --agents codex --codex-config ~/.codex/config.toml
 
 # Overwrite existing modules.yml
-kodus memory enable --force
+kodus decisions enable --force
 
-# Disable memory: removes hooks (preserves .kody/ data)
-kodus memory disable
+# Disable decisions: removes hooks (preserves .kody/ data)
+kodus decisions disable
 
 # Check current branch memory status
-kodus memory status
+kodus decisions status
 
 # Show PR memory or module memory
-kodus memory show [name]
+kodus decisions show [name]
 
 # Promote PR decisions to module memory
-kodus memory promote --branch <name> --modules <ids>
+kodus decisions promote --branch <name> --modules <ids>
 ```
 
 The capture command is internal and invoked by hooks:
 
 ```bash
-kodus memory capture '{"turn_id":"turn-1"}' --agent codex --event agent-turn-complete
+kodus decisions capture '{"turn_id":"turn-1"}' --agent codex --event agent-turn-complete
 ```
 
 ## Trial Mode

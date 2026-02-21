@@ -314,19 +314,19 @@ describe('hook integration', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Memory commands — enable and capture
+// Decision commands — enable and capture
 // ---------------------------------------------------------------------------
-describe('memory integration', () => {
-  it('kodus memory enable configures .claude/settings.json, ~/.codex/config.toml, post-merge hook and modules.yml', async () => {
+describe('decisions integration', () => {
+  it('kodus decisions enable configures .claude/settings.json, ~/.codex/config.toml, post-merge hook and modules.yml', async () => {
     const { stdout, stderr, exitCode } = await runCli([
-      'memory',
+      'decisions',
       'enable',
       '--agents',
       'claude,codex',
     ]);
     expect(exitCode).toBe(0);
     const output = stdout + stderr;
-    expect(output).toContain('Memory enabled');
+    expect(output).toContain('Decisions enabled');
 
     const claudeSettingsPath = path.join(gitRepoDir, '.claude', 'settings.json');
     const claudeSettings = JSON.parse(await fs.readFile(claudeSettingsPath, 'utf-8'));
@@ -337,19 +337,19 @@ describe('memory integration', () => {
 
     const userPromptSubmitJson = JSON.stringify(claudeSettings.hooks.UserPromptSubmit);
     const stopJson = JSON.stringify(claudeSettings.hooks.Stop);
-    expect(userPromptSubmitJson).toContain('kodus memory capture --agent claude-compatible --event user-prompt-submit');
-    expect(stopJson).toContain('kodus memory capture --agent claude-compatible --event stop');
+    expect(userPromptSubmitJson).toContain('kodus decisions capture --agent claude-compatible --event user-prompt-submit');
+    expect(stopJson).toContain('kodus decisions capture --agent claude-compatible --event stop');
 
     const codexConfigPath = path.join(tmpHome, '.codex', 'config.toml');
     const codexConfig = await fs.readFile(codexConfigPath, 'utf-8');
-    expect(codexConfig).toContain('notify = ["kodus", "memory", "capture", "--agent", "codex", "--event", "agent-turn-complete"]');
+    expect(codexConfig).toContain('notify = ["kodus", "decisions", "capture", "--agent", "codex", "--event", "agent-turn-complete"]');
 
     const hookPath = path.join(gitRepoDir, '.git', 'hooks', 'post-merge');
     const hookContent = await fs.readFile(hookPath, 'utf-8');
-    expect(hookContent).toContain('kodus memory promote');
+    expect(hookContent).toContain('kodus decisions promote');
   });
 
-  it('kodus memory capture writes markdown memory file under .kody/pr/<branch>.md', async () => {
+  it('kodus decisions capture writes markdown memory file under .kody/pr/<branch>.md', async () => {
     const branch = (await execFileAsync('git', ['branch', '--show-current'], { cwd: gitRepoDir })).stdout.trim();
 
     const payload = JSON.stringify({
@@ -360,7 +360,7 @@ describe('memory integration', () => {
     });
 
     const { exitCode } = await runCli([
-      'memory',
+      'decisions',
       'capture',
       payload,
       '--agent',
@@ -380,7 +380,7 @@ describe('memory integration', () => {
     expect(content).toContain('Use idempotent cache key');
   });
 
-  it('kodus memory capture resolves claude-compatible to cursor when Cursor env vars are present', async () => {
+  it('kodus decisions capture resolves claude-compatible to cursor when Cursor env vars are present', async () => {
     const branch = (await execFileAsync('git', ['branch', '--show-current'], { cwd: gitRepoDir })).stdout.trim();
 
     const payload = JSON.stringify({
@@ -389,7 +389,7 @@ describe('memory integration', () => {
     });
 
     const { exitCode } = await runCli([
-      'memory',
+      'decisions',
       'capture',
       payload,
       '--agent',

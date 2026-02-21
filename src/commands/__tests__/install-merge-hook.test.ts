@@ -38,7 +38,7 @@ describe('installMergeHook', () => {
     const content = await fs.readFile(hookPath(), 'utf-8');
     expect(content).toContain('#!/bin/sh');
     expect(content).toContain(MERGE_HOOK_MARKER);
-    expect(content).toContain('kodus memory promote');
+    expect(content).toContain('kodus decisions promote');
 
     // Check executable
     const stat = await fs.stat(hookPath());
@@ -46,7 +46,7 @@ describe('installMergeHook', () => {
   });
 
   it('skips when marker already present', async () => {
-    await fs.writeFile(hookPath(), `#!/bin/sh\n${MERGE_HOOK_MARKER}\nkodus memory promote\n`);
+    await fs.writeFile(hookPath(), `#!/bin/sh\n${MERGE_HOOK_MARKER}\nkodus decisions promote\n`);
 
     const result = await installMergeHook(tmpDir);
 
@@ -64,6 +64,6 @@ describe('installMergeHook', () => {
     const content = await fs.readFile(hookPath(), 'utf-8');
     expect(content).toContain('echo "existing hook"');
     expect(content).toContain(MERGE_HOOK_MARKER);
-    expect(content).toContain('kodus memory promote');
+    expect(content).toContain('kodus decisions promote');
   });
 });

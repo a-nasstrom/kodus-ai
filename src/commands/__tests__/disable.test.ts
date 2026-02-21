@@ -43,11 +43,11 @@ describe('disableAction', () => {
       hooks: {
         UserPromptSubmit: [{
           matcher: '',
-          hooks: [{ type: 'command', command: 'kodus memory capture --agent claude-compatible --event user-prompt-submit' }],
+          hooks: [{ type: 'command', command: 'kodus decisions capture --agent claude-compatible --event user-prompt-submit' }],
         }],
         Stop: [{
           matcher: '',
-          hooks: [{ type: 'command', command: 'kodus memory capture --agent claude-compatible --event stop' }],
+          hooks: [{ type: 'command', command: 'kodus decisions capture --agent claude-compatible --event stop' }],
         }],
       },
     }, null, 2));
@@ -72,7 +72,7 @@ describe('disableAction', () => {
 
   it('removes kodus section from post-merge hook', async () => {
     const hookPath = path.join(tmpDir, '.git', 'hooks', 'post-merge');
-    await fs.writeFile(hookPath, `#!/bin/sh\n${MERGE_HOOK_MARKER}\nif [ -n "$MERGED_BRANCH" ]; then\n  kodus memory promote --branch "$MERGED_BRANCH" &\nfi\n`, { mode: 0o755 });
+    await fs.writeFile(hookPath, `#!/bin/sh\n${MERGE_HOOK_MARKER}\nif [ -n "$MERGED_BRANCH" ]; then\n  kodus decisions promote --branch "$MERGED_BRANCH" &\nfi\n`, { mode: 0o755 });
 
     await disableAction();
 
@@ -82,7 +82,7 @@ describe('disableAction', () => {
 
   it('preserves non-kodus content in post-merge hook', async () => {
     const hookPath = path.join(tmpDir, '.git', 'hooks', 'post-merge');
-    await fs.writeFile(hookPath, `#!/bin/sh\necho "custom hook"\n\n${MERGE_HOOK_MARKER}\nif [ -n "$MERGED_BRANCH" ]; then\n  kodus memory promote --branch "$MERGED_BRANCH" &\nfi\n`, { mode: 0o755 });
+    await fs.writeFile(hookPath, `#!/bin/sh\necho "custom hook"\n\n${MERGE_HOOK_MARKER}\nif [ -n "$MERGED_BRANCH" ]; then\n  kodus decisions promote --branch "$MERGED_BRANCH" &\nfi\n`, { mode: 0o755 });
 
     await disableAction();
 

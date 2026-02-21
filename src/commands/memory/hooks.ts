@@ -8,17 +8,20 @@ import path from 'path';
 
 export const SUPPORTED_AGENTS = new Set(['claude', 'cursor', 'codex']);
 
+const DECISIONS_CAPTURE_COMMAND_PREFIX = 'kodus decisions capture';
+
 export const CLAUDE_CAPTURE_COMMANDS = {
-  userPromptSubmit: 'kodus memory capture --agent claude-compatible --event user-prompt-submit',
-  stop: 'kodus memory capture --agent claude-compatible --event stop',
-  postToolUseWrite: 'kodus memory capture --agent claude-compatible --event post-tool-use-write',
-  postToolUseEdit: 'kodus memory capture --agent claude-compatible --event post-tool-use-edit',
+  userPromptSubmit: 'kodus decisions capture --agent claude-compatible --event user-prompt-submit',
+  stop: 'kodus decisions capture --agent claude-compatible --event stop',
+  postToolUseWrite: 'kodus decisions capture --agent claude-compatible --event post-tool-use-write',
+  postToolUseEdit: 'kodus decisions capture --agent claude-compatible --event post-tool-use-edit',
 };
 
 export const CODEX_NOTIFY_LINE =
-  'notify = ["kodus", "memory", "capture", "--agent", "codex", "--event", "agent-turn-complete"]';
+  'notify = ["kodus", "decisions", "capture", "--agent", "codex", "--event", "agent-turn-complete"]';
 
 export const MERGE_HOOK_MARKER = '# kodus-memory-post-merge';
+const MERGE_PROMOTE_COMMAND = 'kodus decisions promote';
 
 const MERGE_HOOK_SCRIPT = `
 ${MERGE_HOOK_MARKER}
@@ -28,7 +31,7 @@ if [ -z "$MERGED_BRANCH" ]; then
   MERGED_BRANCH=$(git log -1 --merges --format=%s HEAD 2>/dev/null | sed -n "s/.*Merge pull request .* from [^/]*\\/\\(.*\\)/\\1/p")
 fi
 if [ -n "$MERGED_BRANCH" ]; then
-  kodus memory promote --branch "$MERGED_BRANCH" &
+  ${MERGE_PROMOTE_COMMAND} --branch "$MERGED_BRANCH" &
 fi
 `.trimStart();
 
@@ -108,6 +111,10 @@ function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isKodusCaptureCommand(command: string): boolean {
+  return command.includes(DECISIONS_CAPTURE_COMMAND_PREFIX);
+}
+
 function upsertHook(hooks: JsonObject, eventKey: string, matcherName: string, command: string): boolean {
   const existing = hooks[eventKey];
   const matchers: unknown[] = Array.isArray(existing) ? existing : [];
@@ -131,11 +138,22 @@ function upsertHook(hooks: JsonObject, eventKey: string, matcherName: string, co
       matcherValue.hooks = hooksArray;
     }
 
-    const alreadyExists = hooksArray.some(
-      (hookValue) => isRecord(hookValue) && hookValue.type === 'command' && hookValue.command === command,
+    const alreadyExists = hooksArray.some((hookValue) =>
+      isRecord(hookValue) && hookValue.type === 'command' && hookValue.command === command,
     );
     if (alreadyExists) {
       return false;
+    }
+
+    for (const hookValue of hooksArray) {
+      if (!isRecord(hookValue) || hookValue.type !== 'command' || typeof hookValue.command !== 'string') {
+        continue;
+      }
+
+      if (isKodusCaptureCommand(hookValue.command)) {
+        hookValue.command = command;
+        return true;
+      }
     }
 
     hooksArray.push({ type: 'command', command });
@@ -206,7 +224,7 @@ export async function installCodexNotify(configPath: string): Promise<{
       configPath,
       changed: false,
       skipped: true,
-      reason: 'Existing `notify` entry found. Merge manually if you want Kodus memory capture.',
+      reason: 'Existing `notify` entry found. Merge manually if you want Kodus decision capture.',
     };
   }
 
@@ -300,7 +318,7 @@ export async function removeClaudeCompatibleHooks(repoRoot: string): Promise<{ s
       const originalLength = matcher.hooks.length;
       matcher.hooks = (matcher.hooks as unknown[]).filter((h) => {
         if (!isRecord(h)) return true;
-        return typeof h.command !== 'string' || !h.command.includes('kodus memory capture');
+        return typeof h.command !== 'string' || !isKodusCaptureCommand(h.command);
       });
 
       if ((matcher.hooks as unknown[]).length < originalLength) {

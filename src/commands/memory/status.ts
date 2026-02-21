@@ -53,6 +53,6 @@ export async function statusAction(): Promise<void> {
       console.log(chalk.dim(`  - ${mod.id}: ${mod.paths.join(', ')}`));
     }
   } else {
-    console.log(chalk.dim('No module config found. Run `kodus memory enable` to create one.'));
+    console.log(chalk.dim('No module config found. Run `kodus decisions enable` to create one.'));
   }
 }

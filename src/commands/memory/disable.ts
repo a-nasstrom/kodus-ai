@@ -20,7 +20,7 @@ export async function disableAction(): Promise<void> {
   const codexResult = await removeCodexNotify(resolveCodexConfigPath());
   const mergeResult = await removeMergeHook(gitRoot);
 
-  console.log(chalk.green('\u2713 Memory hooks removed.'));
+  console.log(chalk.green('\u2713 Decision hooks removed.'));
   console.log(`  Claude Code / Cursor hooks: ${claudeResult.removed ? 'removed' : 'not found'}`);
   console.log(`  Codex notify: ${codexResult.removed ? 'removed' : 'not found'}`);
   console.log(`  Post-merge hook: ${mergeResult.removed ? 'removed' : 'not found'}`);

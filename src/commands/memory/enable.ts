@@ -95,7 +95,7 @@ export async function enableAction(options: EnableOptions): Promise<void> {
   }
 
   // Summary
-  console.log(chalk.green('\u2713 Memory enabled for this repository.'));
+  console.log(chalk.green('\u2713 Decisions enabled for this repository.'));
   console.log(`  Claude Code / Cursor hooks: ${claudeStatus}`);
   console.log(`  Codex notify: ${codexStatus}`);
   console.log(`  Post-merge hook: ${mergeStatus}`);
