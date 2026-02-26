@@ -15,7 +15,6 @@ import {
     PromptRole,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
-import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
 import { kodyRulesRecommendationSchema } from '@libs/common/utils/langchainCommon/prompts/kodyRulesRecommendation';
 import { ProgrammingLanguage } from '@libs/core/domain/enums';
 import {
@@ -1260,74 +1259,35 @@ Analyze the suggestions and recommend the most relevant rules.`;
                 .filter((keyword): keyword is string => Boolean(keyword));
             const normalizedPathFilter = filters?.path?.trim();
 
-            const filteredMemories = entity.rules
+            const inheritedMemories =
+                this.kodyRulesValidationService.getMemoryRulesForContext(
+                    normalizedPathFilter || null,
+                    entity.rules,
+                    {
+                        repositoryId: filters?.repositoryId,
+                        directoryId: filters?.repositoryId
+                            ? filters?.directoryId
+                            : undefined,
+                    },
+                );
+
+            const filteredMemories = inheritedMemories
                 .filter((rule): rule is IKodyRule => {
-                    if (rule.type !== KodyRulesType.MEMORY) {
+                    if (normalizedKeywords.length === 0) {
+                        return true;
+                    }
+
+                    const haystack = `${rule.title || ''} ${rule.rule || ''}`
+                        .trim()
+                        .toLowerCase();
+
+                    if (!haystack) {
                         return false;
                     }
 
-                    if (rule.status !== KodyRulesStatus.ACTIVE) {
-                        return false;
-                    }
-
-                    if (
-                        filters?.repositoryId &&
-                        rule.repositoryId !== filters.repositoryId
-                    ) {
-                        return false;
-                    }
-
-                    if (
-                        filters?.directoryId &&
-                        rule.directoryId !== filters.directoryId
-                    ) {
-                        return false;
-                    }
-
-                    if (normalizedPathFilter) {
-                        const memoryPath = rule.path?.trim();
-                        if (!memoryPath) {
-                            return false;
-                        }
-
-                        const matchesByFilterPattern = isFileMatchingGlob(
-                            memoryPath,
-                            [normalizedPathFilter],
-                        );
-                        const matchesByMemoryPattern = isFileMatchingGlob(
-                            normalizedPathFilter,
-                            [memoryPath],
-                        );
-
-                        if (
-                            !matchesByFilterPattern &&
-                            !matchesByMemoryPattern
-                        ) {
-                            return false;
-                        }
-                    }
-
-                    if (normalizedKeywords.length > 0) {
-                        const haystack =
-                            `${rule.title || ''} ${rule.rule || ''}`
-                                .trim()
-                                .toLowerCase();
-
-                        if (!haystack) {
-                            return false;
-                        }
-
-                        const hasKeywordMatch = normalizedKeywords.some(
-                            (keyword) =>
-                                haystack.includes(keyword.toLowerCase()),
-                        );
-
-                        if (!hasKeywordMatch) {
-                            return false;
-                        }
-                    }
-
-                    return true;
+                    return normalizedKeywords.some((keyword) =>
+                        haystack.includes(keyword.toLowerCase()),
+                    );
                 })
                 .sort((a, b) => {
                     const aTime = a.createdAt

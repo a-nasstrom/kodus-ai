@@ -240,6 +240,38 @@ export class KodyRulesValidationService {
         );
     }
 
+    getMemoryRulesForContext(
+        path: string | null,
+        kodyRules: Partial<IKodyRule>[],
+        filters: {
+            directoryId?: string;
+            repositoryId?: string;
+            useInclude?: boolean;
+            useExclude?: boolean;
+        },
+    ): Partial<IKodyRule>[] {
+        if (!kodyRules?.length) {
+            return [];
+        }
+
+        const activeMemoryRules = kodyRules.filter(
+            (rule) =>
+                rule?.type === KodyRulesType.MEMORY &&
+                rule?.status === KodyRulesStatus.ACTIVE,
+        );
+
+        const normalizedFilters = {
+            ...filters,
+            directoryId: filters.repositoryId ? filters.directoryId : undefined,
+        };
+
+        return this.getKodyRulesForFolder(
+            path,
+            activeMemoryRules,
+            normalizedFilters,
+        );
+    }
+
     private getKodyRules(
         path: string | null,
         kodyRules: Partial<IKodyRule>[],

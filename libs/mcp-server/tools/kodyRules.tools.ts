@@ -722,7 +722,7 @@ export class KodyRulesTools {
                             type: KodyRulesType.MEMORY,
                             rule: args.kodyRule.rule,
                             origin: KodyRulesOrigin.GENERATED,
-                            status: KodyRulesStatus.PENDING,
+                            status: KodyRulesStatus.ACTIVE,
                             repositoryId:
                                 args.kodyRule.repositoryId || 'global',
                             directoryId: args.kodyRule.directoryId || null,
