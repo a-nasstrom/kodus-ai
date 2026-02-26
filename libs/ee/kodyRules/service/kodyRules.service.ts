@@ -5,8 +5,8 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { v4 } from 'uuid';
-import libraryKodyRules from './data/library-kody-rules.json';
 import bucketsData from './data/buckets.json';
+import libraryKodyRules from './data/library-kody-rules.json';
 
 import { createLogger } from '@kodus/flow';
 import {
@@ -33,7 +33,10 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
 } from '@libs/ee/codeReviewSettingsLog/domain/contracts/codeReviewSettingsLog.service.contract';
-import { CreateKodyRuleDto } from '@libs/ee/kodyRules/dtos/create-kody-rule.dto';
+import {
+    CreateKodyRuleDto,
+    KodyRuleSeverity,
+} from '@libs/ee/kodyRules/dtos/create-kody-rule.dto';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import {
     IKodyRulesRepository,
@@ -47,10 +50,12 @@ import {
 import { KodyRulesEntity } from '@libs/kodyRules/domain/entities/kodyRules.entity';
 import {
     IKodyRule,
+    IKodyRuleMemory,
     IKodyRules,
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
+    KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import {
@@ -86,251 +91,6 @@ export class KodyRulesService implements IKodyRulesService {
 
         private readonly permissionValidationService: PermissionValidationService,
     ) {}
-
-    //     async getRecommendedRulesByMCP(
-    //         organizationAndTeamData: OrganizationAndTeamData,
-    //     ): Promise<LibraryKodyRule[]> {
-    //         try {
-    //             const mcpConnections = await this.mcpManagerService.getConnections(
-    //                 organizationAndTeamData,
-    //                 false,
-    //             );
-
-    //             if (!mcpConnections || mcpConnections.length === 0) {
-    //                 return [];
-    //             }
-
-    //             const installedMCPs = mcpConnections.map((conn) => conn.appName);
-
-    //             const eligibleRules = (
-    //                 libraryKodyRules as LibraryKodyRule[]
-    //             ).filter((rule) => {
-    //                 if (!rule.required_mcps || rule.required_mcps.length === 0) {
-    //                     return false;
-    //                 }
-
-    //                 return rule.required_mcps.some((mcp) =>
-    //                     installedMCPs.some((installedMCP) =>
-    //                         installedMCP.toLowerCase().includes(mcp.toLowerCase()),
-    //                     ),
-    //                 );
-    //             });
-
-    //             return eligibleRules;
-    //         } catch (error) {
-    //             this.logger.error({
-    //                 message: 'Error in getRecommendedRulesByMCP',
-    //                 error: error,
-    //                 context: KodyRulesService.name,
-    //                 metadata: {
-    //                     organizationId: organizationAndTeamData.organizationId,
-    //                 },
-    //             });
-    //             return [];
-    //         }
-    //     }
-
-    //     async getRecommendedRulesBySuggestions(
-    //         organizationAndTeamData: OrganizationAndTeamData,
-    //         repositoryId: string,
-    //         repoLanguage?: string,
-    //     ): Promise<LibraryKodyRule[]> {
-    //         try {
-    //             const recentPRs =
-    //                 await this.pullRequestsRepository.findRecentByRepositoryId(
-    //                     organizationAndTeamData.organizationId,
-    //                     repositoryId,
-    //                     10,
-    //                 );
-
-    //             if (!recentPRs || recentPRs.length === 0) {
-    //                 this.logger.log({
-    //                     message: 'No recent PRs found for recommendations',
-    //                     context: KodyRulesService.name,
-    //                     metadata: {
-    //                         organizationId: organizationAndTeamData.organizationId,
-    //                         repositoryId,
-    //                     },
-    //                 });
-    //                 return [];
-    //             }
-
-    //             const allSuggestions = recentPRs
-    //                 .flatMap((pr) => {
-    //                     const prObj = pr.toObject();
-    //                     return (
-    //                         prObj.files?.flatMap(
-    //                             (file) =>
-    //                                 file.suggestions?.map((suggestion) => ({
-    //                                     label: suggestion.label,
-    //                                     severity: suggestion.severity,
-    //                                     suggestionContent:
-    //                                         suggestion.suggestionContent,
-    //                                     oneSentenceSummary:
-    //                                         suggestion.oneSentenceSummary,
-    //                                 })) || [],
-    //                         ) || []
-    //                     );
-    //                 })
-    //                 .filter(Boolean)
-    //                 .slice(0, 50);
-
-    //             if (allSuggestions.length === 0) {
-    //                 this.logger.log({
-    //                     message: 'No suggestions found in recent PRs',
-    //                     context: KodyRulesService.name,
-    //                     metadata: {
-    //                         organizationId: organizationAndTeamData.organizationId,
-    //                         repositoryId,
-    //                     },
-    //                 });
-    //                 return [];
-    //             }
-
-    //             const filteredLibrary = (libraryKodyRules as LibraryKodyRule[])
-    //                 .filter((rule) => {
-    //                     if (!repoLanguage)
-    //                         return !rule.language || rule.language === '';
-    //                     return (
-    //                         !rule.language ||
-    //                         rule.language === '' ||
-    //                         rule.language === repoLanguage
-    //                     );
-    //                 })
-    //                 .map((rule) => ({
-    //                     uuid: rule.uuid,
-    //                     title: rule.title,
-    //                     rule: rule.rule,
-    //                     buckets: rule.buckets,
-    //                     severity: rule.severity,
-    //                 }));
-
-    //             const byokConfigValue =
-    //                 await this.permissionValidationService.getBYOKConfig(
-    //                     organizationAndTeamData,
-    //                 );
-
-    //             const mainProvider = LLMModelProvider.GROQ_MOONSHOTAI_KIMI_K2_;
-    //             const mainFallback = LLMModelProvider.GROQ_GPT_OSS_120B;
-    //             const mainRun = 'kodyRulesRecommendationFromSuggestions';
-
-    //             const promptRunner = new BYOKPromptRunnerService(
-    //                 this.promptRunnerService,
-    //                 mainProvider,
-    //                 mainFallback,
-    //                 byokConfigValue,
-    //             );
-
-    //             const systemPrompt = `You are a code quality expert analyzing past code review suggestions to recommend relevant Kody Rules.
-
-    // ## What are Kody Rules?
-    // Kody Rules are reusable code review guidelines that help enforce best practices. Each rule has:
-    // - title: Short descriptive name
-    // - rule: The guideline to follow
-    // - buckets: Categories like "error-handling", "security-hardening", "maintainability"
-    // - severity: low | medium | high | critical
-    // - language: Programming language (empty = language-agnostic)
-
-    // ## Your Task
-    // Analyze the provided code review suggestions and identify PATTERNS of issues.
-    // Then recommend rules from the library that would help prevent these patterns.
-
-    // ## Important Guidelines
-    // 1. Look for RECURRING patterns, not one-off issues
-    // 2. Recommend rules that address the ROOT CAUSE, not symptoms
-    // 3. Prefer rules with higher severity (critical/high) when relevant
-    // 4. Maximum 7 recommendations
-    // 5. Each recommendation needs a clear reason explaining the pattern you identified
-
-    // ## Output Format
-    // Return ONLY a JSON object (no markdown, no code fences):
-    // {
-    //   "recommendations": [
-    //     {
-    //       "uuid": "rule-uuid-from-library",
-    //       "reason": "Pattern identified: X. This rule helps because Y.",
-    //       "relevanceScore": 8
-    //     }
-    //   ]
-    // }`;
-
-    //             const userPrompt = `## Recent Code Review Suggestions (patterns to analyze):
-    // ${JSON.stringify(allSuggestions, null, 2)}
-
-    // ## Available Rules Library (filtered by language):
-    // ${JSON.stringify(filteredLibrary, null, 2)}
-
-    // Analyze the suggestions and recommend the most relevant rules.`;
-
-    //             const { result } = await this.observabilityService.runLLMInSpan({
-    //                 spanName: `${KodyRulesService.name}::${mainRun}`,
-    //                 runName: mainRun,
-    //                 attrs: {
-    //                     repositoryId,
-    //                     organizationId: organizationAndTeamData.organizationId,
-    //                     suggestionsCount: allSuggestions.length,
-    //                     libraryRulesCount: filteredLibrary.length,
-    //                     type: promptRunner.executeMode,
-    //                 },
-    //                 exec: async (callbacks) => {
-    //                     return await promptRunner
-    //                         .builder()
-    //                         .setParser(
-    //                             ParserType.ZOD,
-    //                             kodyRulesRecommendationSchema,
-    //                             {
-    //                                 provider: LLMModelProvider.GEMINI_2_5_FLASH,
-    //                                 fallbackProvider:
-    //                                     LLMModelProvider.OPENAI_GPT_4O,
-    //                             },
-    //                         )
-    //                         .setLLMJsonMode(true)
-    //                         .setPayload({
-    //                             repositoryId,
-    //                             organizationId:
-    //                                 organizationAndTeamData.organizationId,
-    //                         })
-    //                         .addPrompt({
-    //                             role: PromptRole.SYSTEM,
-    //                             prompt: systemPrompt,
-    //                         })
-    //                         .addPrompt({
-    //                             role: PromptRole.USER,
-    //                             prompt: userPrompt,
-    //                         })
-    //                         .addCallbacks(callbacks)
-    //                         .addMetadata({ runName: mainRun })
-    //                         .setRunName(mainRun)
-    //                         .execute();
-    //                 },
-    //             });
-
-    //             if (
-    //                 !result?.recommendations ||
-    //                 result.recommendations.length === 0
-    //             ) {
-    //                 return [];
-    //             }
-
-    //             const recommendedUUIDs = result.recommendations.map((r) => r.uuid);
-    //             const recommendedRules = (
-    //                 libraryKodyRules as LibraryKodyRule[]
-    //             ).filter((rule) => recommendedUUIDs.includes(rule.uuid));
-
-    //             return recommendedRules;
-    //         } catch (error) {
-    //             this.logger.error({
-    //                 message: 'Error in getRecommendedRulesBySuggestions',
-    //                 error: error,
-    //                 context: KodyRulesService.name,
-    //                 metadata: {
-    //                     organizationId: organizationAndTeamData.organizationId,
-    //                     repositoryId,
-    //                 },
-    //             });
-    //             return [];
-    //         }
-    //     }
 
     getNativeCollection() {
         throw new Error('Method not implemented.');
@@ -412,6 +172,7 @@ export class KodyRulesService implements IKodyRulesService {
         organizationId: string,
         repositoryId: string,
         directoryId: string,
+        type?: KodyRulesType,
     ): Promise<Partial<IKodyRule>[]> {
         const entity = await this.findByOrganizationId(organizationId);
 
@@ -423,6 +184,7 @@ export class KodyRulesService implements IKodyRulesService {
             .toObject()
             .rules.filter(
                 (rule) =>
+                    (type ? rule.type === type : true) &&
                     rule.repositoryId === repositoryId &&
                     rule.directoryId === directoryId &&
                     rule.status === KodyRulesStatus.ACTIVE,
@@ -474,6 +236,7 @@ export class KodyRulesService implements IKodyRulesService {
 
             const newRule: IKodyRule = {
                 uuid: v4(),
+                type: kodyRule?.type ?? KodyRulesType.STANDARD,
                 title: kodyRule?.title,
                 rule: kodyRule?.rule,
                 path: kodyRule?.path,
@@ -540,6 +303,7 @@ export class KodyRulesService implements IKodyRulesService {
 
             const newRule: IKodyRule = {
                 uuid: v4(),
+                type: kodyRule.type,
                 title: kodyRule.title,
                 rule: kodyRule.rule,
                 path: kodyRule.path,
@@ -1003,6 +767,7 @@ export class KodyRulesService implements IKodyRulesService {
                     return {
                         ...rule,
                         buckets: rule.buckets || [],
+                        type: KodyRulesType.STANDARD,
                     };
                 });
 
@@ -1430,6 +1195,46 @@ Analyze the suggestions and recommend the most relevant rules.`;
                 },
             });
             return [];
+        }
+    }
+
+    async createOrUpdateMemory(
+        organizationAndTeamData: OrganizationAndTeamData,
+        memory: IKodyRuleMemory,
+        userInfo?: UserInfo,
+    ): Promise<Partial<IKodyRule> | IKodyRule | null> {
+        try {
+            const rule = await this.createOrUpdate(
+                organizationAndTeamData,
+                {
+                    ...memory,
+                    path: memory.path || null,
+                    origin: memory.origin || KodyRulesOrigin.USER,
+
+                    severity: KodyRuleSeverity.MEDIUM,
+                    examples: [],
+                    inheritance: {
+                        inheritable: true,
+                        exclude: [],
+                        include: [],
+                    },
+                },
+                userInfo,
+            );
+
+            return rule;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in createOrUpdateMemory',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    memory,
+                    userInfo,
+                },
+            });
+            throw error;
         }
     }
 }

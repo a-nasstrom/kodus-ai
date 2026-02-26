@@ -327,6 +327,7 @@ export type CodeReviewConfig = {
     languageResultPrompt: string;
     llmProvider?: LLMModelProvider;
     kodyRules?: Partial<IKodyRule>[];
+    kodyMemoryRules?: Partial<IKodyRule>[];
     suggestionControl?: SuggestionControlConfig;
     pullRequestApprovalActive: boolean;
     kodusConfigFileOverridesWebPreferences: boolean;

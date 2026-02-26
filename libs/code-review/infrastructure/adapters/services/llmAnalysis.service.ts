@@ -40,6 +40,7 @@ import {
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol.for('LLMAnalysisService');
 
@@ -270,8 +271,16 @@ ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
                                 existingCode: z.string().optional(),
                                 improvedCode: z.string(),
                                 oneSentenceSummary: z.string().optional(),
-                                relevantLinesStart: z.coerce.number().int().positive().optional(),
-                                relevantLinesEnd: z.coerce.number().int().positive().optional(),
+                                relevantLinesStart: z.coerce
+                                    .number()
+                                    .int()
+                                    .positive()
+                                    .optional(),
+                                relevantLinesEnd: z.coerce
+                                    .number()
+                                    .int()
+                                    .positive()
+                                    .optional(),
                                 label: z.string(),
                                 severity: z.string().optional(),
                                 rankScore: z.number().optional(),
@@ -398,6 +407,7 @@ ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
                 ...(context?.fileAugmentations ?? {}),
             } as ContextAugmentationsMap,
             contextPack: context?.sharedContextPack as ContextPack | undefined,
+            memories: context?.codeReviewConfig?.kodyMemoryRules || [],
         };
 
         return baseContext;
@@ -610,6 +620,9 @@ ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
+        memories?: Array<Partial<IKodyRule>>,
+        externalReferences?: unknown[],
+        externalReferenceErrors?: unknown[] | string,
     ): Promise<ISafeguardResponse> {
         const runName = 'filterSuggestionsSafeGuard';
 
@@ -644,6 +657,9 @@ ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
             suggestions,
             languageResultPrompt,
             reviewMode,
+            memories,
+            externalReferences,
+            externalReferenceErrors,
         };
 
         const spanName = `${LLMAnalysisService.name}::${runName}`;
@@ -663,8 +679,16 @@ ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
                         existingCode: z.string(),
                         improvedCode: z.string().nullable(),
                         oneSentenceSummary: z.string(),
-                        relevantLinesStart: z.coerce.number().int().positive().optional(),
-                        relevantLinesEnd: z.coerce.number().int().positive().optional(),
+                        relevantLinesStart: z.coerce
+                            .number()
+                            .int()
+                            .positive()
+                            .optional(),
+                        relevantLinesEnd: z.coerce
+                            .number()
+                            .int()
+                            .positive()
+                            .optional(),
                         label: z.string().optional(),
                         action: z.string(),
                         reason: z.string().optional(),
@@ -772,7 +796,8 @@ ${JSON.stringify(context?.suggestions) || 'No suggestions provided'}
                             updatedSuggestion?.oneSentenceSummary,
                         relevantLinesStart:
                             updatedSuggestion?.relevantLinesStart || undefined,
-                        relevantLinesEnd: updatedSuggestion?.relevantLinesEnd || undefined,
+                        relevantLinesEnd:
+                            updatedSuggestion?.relevantLinesEnd || undefined,
                     };
                 });
 

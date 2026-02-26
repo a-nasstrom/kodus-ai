@@ -68,6 +68,10 @@ export interface CodeReviewPayload {
         }
     >;
     contextPack?: ContextPack;
+    memories?: Array<{
+        title?: string;
+        rule?: string;
+    }>;
 }
 
 const PATH_SOURCE_TYPE_MAP: Record<string, string> = {
@@ -288,6 +292,33 @@ function buildContextDedupeKey(
     }
 
     return contextKey ?? `context:${Date.now()}`;
+}
+
+function formatMemoriesSection(
+    memories: CodeReviewPayload['memories'],
+): string {
+    if (!Array.isArray(memories) || !memories.length) {
+        return '';
+    }
+
+    const formattedMemories = memories
+        .map((memory) => {
+            const title = getTextOrDefault(memory?.title, '').trim();
+            const rule = getTextOrDefault(memory?.rule, '').trim();
+
+            if (!title || !rule) {
+                return null;
+            }
+
+            return `- Title: ${sanitizePromptText(title)}\n  Rule: ${sanitizePromptText(rule)}`;
+        })
+        .filter((entry): entry is string => Boolean(entry));
+
+    if (!formattedMemories.length) {
+        return '';
+    }
+
+    return `## Memories\n\nAdditional context from past learnings in Kody Rules format.\n\n${formattedMemories.join('\n\n')}`;
 }
 
 /**
@@ -1201,8 +1232,9 @@ export const prompt_codereview_system_gemini = (payload: CodeReviewPayload) => {
             : 'Note: No limit on number of suggestions.';
 
     const languageNote = payload?.languageResultPrompt || 'en-US';
+    const memoriesBlock = formatMemoriesSection(payload?.memories);
 
-    return `# Kody PR-Reviewer: Code Analysis System
+    const basePrompt = `# Kody PR-Reviewer: Code Analysis System
 
 ## Mission
 You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code. Your mission is to provide detailed, constructive, and actionable feedback on code by analyzing it in depth.
@@ -1350,6 +1382,12 @@ Your final output should be **ONLY** a JSON object with the following structure:
    - Note: No limit on number of suggestions.
    - The current date is ${new Date().toLocaleDateString('en-GB')}
 `;
+
+    if (!memoriesBlock) {
+        return basePrompt;
+    }
+
+    return `${basePrompt}\n\n## External Context & Injected Knowledge\n\nThe following information is provided to ground your analysis in the broader system reality. Use this as your source of truth.\n\n---\n\n${memoriesBlock}`;
 };
 
 // NOTE: v2 overrides are applied directly in prompt_codereview_system_gemini_v2
@@ -1437,6 +1475,11 @@ export const prompt_codereview_system_gemini_v2 = (
     );
     if (augmentationBlock) {
         collectExternalContext('augmentations', augmentationBlock);
+    }
+
+    const memoriesBlock = formatMemoriesSection(payload?.memories);
+    if (memoriesBlock) {
+        collectExternalContext('memories', memoriesBlock);
     }
 
     const prompt = buildFinalPrompt(

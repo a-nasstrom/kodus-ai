@@ -38,7 +38,7 @@ export interface IKodyRule {
     status: KodyRulesStatus;
     severity: string;
     label?: string;
-    type?: string;
+    type?: KodyRulesType;
     extendedContext?: IKodyRulesExtendedContext;
     examples?: IKodyRulesExample[];
     repositoryId: string;
@@ -50,6 +50,21 @@ export interface IKodyRule {
     directoryId?: string;
     inheritance?: IKodyRulesInheritance;
     contextReferenceId?: string;
+}
+
+export interface IKodyRuleMemory extends Omit<
+    IKodyRule,
+    | 'type'
+    | 'severity'
+    | 'scope'
+    | 'examples'
+    | 'inheritance'
+    | 'contextReferenceId'
+    | 'extendedContext'
+    | 'sourcePath'
+    | 'sourceAnchor'
+> {
+    type: KodyRulesType.MEMORY;
 }
 
 export interface IKodyRulesExtendedContext {
@@ -103,6 +118,16 @@ export enum KodyRulesScope {
     PULL_REQUEST = 'pull-request',
     FILE = 'file',
 }
+
+export enum KodyRulesType {
+    STANDARD = 'standard',
+    MEMORY = 'memory',
+}
+
+export const kodyRulesTypeSchema = z.enum([...Object.values(KodyRulesType)] as [
+    KodyRulesType,
+    ...KodyRulesType[],
+]);
 
 export const kodyRulesExtendedContextSchema = z.object({
     todo: z.string(),
@@ -181,7 +206,7 @@ export const kodyRuleSchema = z.object({
     status: kodyRulesStatusSchema,
     severity: z.string(),
     label: z.string().optional(),
-    type: z.string().optional(),
+    type: kodyRulesTypeSchema.optional(),
     extendedContext: kodyRulesExtendedContextSchema.optional(),
     examples: z.array(kodyRulesExampleSchema).optional(),
     repositoryId: z.string(),

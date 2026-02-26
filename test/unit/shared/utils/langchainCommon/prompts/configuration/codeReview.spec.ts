@@ -72,4 +72,26 @@ describe('prompt_codereview_system_gemini_v2', () => {
         expect(result).toContain(knowledgeContent);
         expect(result).toContain('## External Context & Injected Knowledge');
     });
+
+    it('injects memories as additional context using only title and rule', () => {
+        const payload: CodeReviewPayload = {
+            memories: [
+                {
+                    title: 'Avoid mutable defaults',
+                    rule: 'Never mutate default array/object parameters in functions.',
+                    // extra fields from kody rules shape should be ignored in prompt rendering
+                    path: 'src/**',
+                } as any,
+            ],
+        };
+
+        const result = prompt_codereview_system_gemini_v2(payload);
+
+        expect(result).toContain('## Memories');
+        expect(result).toContain('Title: Avoid mutable defaults');
+        expect(result).toContain(
+            'Rule: Never mutate default array/object parameters in functions.',
+        );
+        expect(result).toContain('## External Context & Injected Knowledge');
+    });
 });

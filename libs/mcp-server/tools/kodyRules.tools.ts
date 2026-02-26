@@ -4,23 +4,25 @@ import { z } from 'zod';
 
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
-    KodyRuleSeverity,
     CreateKodyRuleDto,
+    KodyRuleSeverity,
 } from '@libs/ee/kodyRules/dtos/create-kody-rule.dto';
 
-import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
-import { wrapToolHandler } from '../utils/mcp-protocol.utils';
-import {
-    IKodyRule,
-    IKodyRulesExample,
-    KodyRulesOrigin,
-    KodyRulesScope,
-    KodyRulesStatus,
-} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
+import {
+    IKodyRule,
+    IKodyRuleMemory,
+    IKodyRulesExample,
+    KodyRulesOrigin,
+    KodyRulesScope,
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
+import { wrapToolHandler } from '../utils/mcp-protocol.utils';
 
 type KodyRuleInput = Required<
     Omit<
@@ -28,7 +30,6 @@ type KodyRuleInput = Required<
         | 'uuid'
         | 'createdAt'
         | 'updatedAt'
-        | 'type'
         | 'label'
         | 'extendedContext'
         | 'reason'
@@ -45,6 +46,27 @@ type KodyRuleInput = Required<
 > & {
     severity: KodyRuleSeverity;
 };
+
+type KodyRuleMemoryInput = Required<
+    Omit<
+        IKodyRuleMemory,
+        | 'uuid'
+        | 'createdAt'
+        | 'updatedAt'
+        | 'label'
+        | 'extendedContext'
+        | 'reason'
+        | 'severity'
+        | 'sourcePath'
+        | 'sourceAnchor'
+        | 'contextReferenceId'
+        | 'externalReferences'
+        | 'syncErrors'
+        | 'referenceProcessingStatus'
+        | 'lastReferenceProcessedAt'
+        | 'ruleHash'
+    >
+>;
 
 interface KodyRulesResponse extends BaseResponse {
     data: Partial<IKodyRule>[];
@@ -350,6 +372,7 @@ export class KodyRulesTools {
                         },
                         kodyRule: {
                             title: args.kodyRule.title,
+                            type: KodyRulesType.STANDARD,
                             rule: args.kodyRule.rule,
                             severity: args.kodyRule.severity,
                             scope: args.kodyRule.scope,
@@ -520,6 +543,7 @@ export class KodyRulesTools {
 
                     const kodyRule: CreateKodyRuleDto = {
                         uuid: args.ruleId,
+                        type: KodyRulesType.STANDARD,
                         origin: KodyRulesOrigin.USER, // Default origin for MCP tool updates
                         ...(args.kodyRule.title && {
                             title: args.kodyRule.title,
@@ -620,6 +644,107 @@ export class KodyRulesTools {
         };
     }
 
+    createMemoryRule(): McpToolDefinition {
+        const inputSchema = z.object({
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system where the memory rule will be created',
+                ),
+            kodyRule: z
+                .object({
+                    title: z
+                        .string()
+                        .describe(
+                            'Descriptive title for the memory rule (e.g., "Project uses AWS for cloud infrastructure", "User prefers concise code examples")',
+                        ),
+                    rule: z
+                        .string()
+                        .describe(
+                            'Detailed description of the memory-specific coding rule/standard to enforce (e.g., "All cloud infrastructure code should be compatible with AWS", "Provide concise code examples with less than 10 lines")',
+                        ),
+                    repositoryId: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Repository unique identifier - can be used to limit memory rule to specific repository',
+                        ),
+                    directoryId: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Directory unique identifier - can be used to limit memory rule to specific directory, must also have a repositoryId defined',
+                        ),
+                    path: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Glob path pattern - used to limit memory rule to specific files or directories (e.g., "src/components/**" to apply to all files in components directory and subdirectories)',
+                        ),
+                })
+                .describe(
+                    'Complete memory rule definition with title, description, and optional repository or directory scope',
+                ),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
+        return {
+            name: 'KODUS_CREATE_MEMORY',
+            description:
+                'Capture a memory, preference, or coding rule derived from context to influence future interactions or code generation. Invoke this tool whenever the user demonstrates an explicit or implicit intent to save a memory, establish a convention, or note a preference. Focus on capturing the user intent rather than strictly evaluating it as a permanent architectural rule. AVOID: Transient task instructions ("Fix this now"), debugging chatter ("I see an error"), questions ("What is the deadline?"), or vague statements without clear actionable information.',
+            inputSchema,
+            outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
+                data: z.looseObject({
+                    uuid: z.string(),
+                    title: z.string(),
+                    rule: z.string(),
+                }),
+            }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<CreateKodyRuleResponse> => {
+                    const params: {
+                        organizationAndTeamData: OrganizationAndTeamData;
+                        kodyRule: KodyRuleMemoryInput;
+                    } = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                        },
+                        kodyRule: {
+                            title: args.kodyRule.title,
+                            type: KodyRulesType.MEMORY,
+                            rule: args.kodyRule.rule,
+                            origin: KodyRulesOrigin.GENERATED,
+                            status: KodyRulesStatus.PENDING,
+                            repositoryId:
+                                args.kodyRule.repositoryId || 'global',
+                            directoryId: args.kodyRule.directoryId || null,
+                            path: args.kodyRule.path || null,
+                        },
+                    };
+
+                    const result: Partial<IKodyRule> =
+                        await this.kodyRulesService.createOrUpdateMemory(
+                            params.organizationAndTeamData,
+                            params.kodyRule,
+                            {
+                                userId: 'kody-memory-mcp-tool',
+                                userEmail: 'kody@kodus.io',
+                            },
+                        );
+
+                    return {
+                        success: true,
+                        count: 1,
+                        data: result,
+                    };
+                },
+            ),
+        };
+    }
+
     getAllTools(): McpToolDefinition[] {
         return [
             this.getKodyRules(),
@@ -627,6 +752,7 @@ export class KodyRulesTools {
             this.createKodyRule(),
             this.updateKodyRule(),
             this.deleteKodyRule(),
+            this.createMemoryRule(),
         ];
     }
 }

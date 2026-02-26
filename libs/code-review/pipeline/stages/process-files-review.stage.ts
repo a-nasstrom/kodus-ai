@@ -1,31 +1,28 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import pLimit from 'p-limit';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
-import { PipelineError } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-context.interface';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
+import { PipelineError } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-context.interface';
+import { Inject, Injectable } from '@nestjs/common';
+import pLimit from 'p-limit';
+import { v4 as uuidv4 } from 'uuid';
 
+import { createLogger } from '@kodus/flow';
 import {
     ISuggestionService,
     SUGGESTION_SERVICE_TOKEN,
 } from '@libs/code-review/domain/contracts/SuggestionService.contract';
-import {
-    IPullRequestsService,
-    PULL_REQUESTS_SERVICE_TOKEN,
-} from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
+import { createOptimizedBatches } from '@libs/common/utils/batch.helper';
 import {
     FILE_REVIEW_CONTEXT_PREPARATION_TOKEN,
     IFileReviewContextPreparation,
 } from '@libs/core/domain/interfaces/file-review-context-preparation.interface';
 import {
-    IKodyFineTuningContextPreparationService,
-    KODY_FINE_TUNING_CONTEXT_PREPARATION_TOKEN,
-} from '@libs/core/domain/interfaces/kody-fine-tuning-context-preparation.interface';
-import {
     IKodyASTAnalyzeContextPreparationService,
     KODY_AST_ANALYZE_CONTEXT_PREPARATION_TOKEN,
 } from '@libs/core/domain/interfaces/kody-ast-analyze-context-preparation.interface';
-import { createLogger } from '@kodus/flow';
+import {
+    IKodyFineTuningContextPreparationService,
+    KODY_FINE_TUNING_CONTEXT_PREPARATION_TOKEN,
+} from '@libs/core/domain/interfaces/kody-fine-tuning-context-preparation.interface';
 import {
     AIAnalysisResult,
     AnalysisContext,
@@ -35,11 +32,14 @@ import {
     FileChange,
     IFinalAnalysisResult,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
-import { createOptimizedBatches } from '@libs/common/utils/batch.helper';
-import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
-import { TaskStatus } from '@libs/ee/kodyAST/interfaces/code-ast-analysis.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { CodeAnalysisOrchestrator } from '@libs/ee/codeBase/codeAnalysisOrchestrator.service';
+import { TaskStatus } from '@libs/ee/kodyAST/interfaces/code-ast-analysis.interface';
+import {
+    IPullRequestsService,
+    PULL_REQUESTS_SERVICE_TOKEN,
+} from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
+import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import {
     CodeReviewPipelineContext,
     FileContextAgentResult,
@@ -983,6 +983,9 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.codeReviewConfig?.languageResultPrompt,
                 reviewModeResponse,
                 context?.codeReviewConfig?.byokConfig,
+                context?.codeReviewConfig?.kodyMemoryRules,
+                context?.externalPromptContext?.generation?.main?.references,
+                context?.externalPromptContext?.generation?.main?.error,
             );
 
         const safeguardLLMProvider =

@@ -1,9 +1,106 @@
+import { getTextOrDefault, sanitizePromptText } from './prompt.helpers';
+
+function formatSyncErrors(errors: unknown[] | string | undefined): string {
+    if (!errors) {
+        return '';
+    }
+
+    const normalized = Array.isArray(errors) ? errors : [errors];
+    const formatted = normalized
+        .map((error) => {
+            if (!error) {
+                return null;
+            }
+            if (typeof error === 'string') {
+                return `- ${error}`;
+            }
+            if (typeof error === 'object') {
+                const message =
+                    typeof (error as Record<string, unknown>).message ===
+                    'string'
+                        ? ((error as Record<string, unknown>).message as string)
+                        : 'Unknown reference error';
+                return `- ${message}`;
+            }
+            return null;
+        })
+        .filter((line): line is string => Boolean(line));
+
+    if (!formatted.length) {
+        return '';
+    }
+
+    return `### Source: System Messages\n**Reference issues detected:**\n${formatted.join('\n')}`;
+}
+
+function formatReferenceSection(references: unknown[] | undefined): string {
+    if (!Array.isArray(references) || !references.length) {
+        return '';
+    }
+
+    return (references as Array<Record<string, unknown>>)
+        .map((ref) => {
+            const lineRangeInfo = ref.lineRange
+                ? ` (lines ${(ref.lineRange as Record<string, unknown>).start}-${(ref.lineRange as Record<string, unknown>).end})`
+                : '';
+            const header = `### Source: File - ${ref.filePath}${lineRangeInfo}`;
+            return `${header}\n${ref.content}`;
+        })
+        .join('\n\n');
+}
+
+function appendExternalContext(basePrompt: string, sections: string[]): string {
+    const contextBlocks = sections.filter((section) => section?.trim().length);
+
+    if (!contextBlocks.length) {
+        return basePrompt;
+    }
+
+    return `${basePrompt}\n\n## External Context & Injected Knowledge\n\nThe following information is provided to ground your analysis in the broader system reality. Use this as your source of truth.\n\n---\n\n${contextBlocks.join('\n\n---\n\n')}`;
+}
+
+function formatMemoriesSection(
+    memories?: Array<{ title?: string; rule?: string }>,
+): string {
+    if (!Array.isArray(memories) || !memories.length) {
+        return '';
+    }
+
+    const formattedMemories = memories
+        .map((memory) => {
+            const title = getTextOrDefault(memory?.title, '').trim();
+            const rule = getTextOrDefault(memory?.rule, '').trim();
+
+            if (!title || !rule) {
+                return null;
+            }
+
+            return `- Title: ${sanitizePromptText(title)}\n  Rule: ${sanitizePromptText(rule)}`;
+        })
+        .filter((entry): entry is string => Boolean(entry));
+
+    if (!formattedMemories.length) {
+        return '';
+    }
+
+    return `## Memories\n\nAdditional context from past learnings in Kody Rules format.\n\n${formattedMemories.join('\n\n')}`;
+}
+
 export const prompt_codeReviewSafeguard_system = (params: {
     languageResultPrompt: string;
+    memories?: Array<{ title?: string; rule?: string }>;
+    externalReferences?: unknown[];
+    externalReferenceErrors?: unknown[] | string;
 }) => {
-    const { languageResultPrompt } = params;
+    const {
+        languageResultPrompt,
+        memories,
+        externalReferences,
+        externalReferenceErrors,
+    } = params;
+    const memoriesBlock = formatMemoriesSection(memories);
 
-    return `## You are a panel of five experts on code review:
+    const basePrompt = `## You are a panel of five experts on code review:
 
 - **Edward (Special Cases Guardian)**: Pre-analyzes suggestions against "Special Cases for Auto-Discard". Has VETO power to immediately discard suggestions without requiring full panel analysis.
 - **Alice (Syntax & Compilation)**: Checks for syntax issues, compilation errors, and conformance with language requirements.
@@ -256,4 +353,13 @@ DISCUSSION
 - The current date is ${new Date().toLocaleDateString('en-GB')}.
 
 Start analysis`;
+
+    const referenceSection = formatReferenceSection(externalReferences);
+    const referenceErrors = formatSyncErrors(externalReferenceErrors);
+
+    return appendExternalContext(basePrompt, [
+        memoriesBlock,
+        referenceSection,
+        referenceErrors,
+    ]);
 };

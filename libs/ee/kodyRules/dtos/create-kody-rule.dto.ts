@@ -6,9 +6,10 @@ import {
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
+    KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
-import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
     IsArray,
     IsBoolean,
@@ -84,6 +85,15 @@ export class CreateKodyRuleDto {
         example: '1e6f6a92-5b4b-4b7d-9c31-4f55f4e9cbd1',
     })
     uuid?: string;
+
+    @IsNotEmpty()
+    @IsEnum(KodyRulesType)
+    @ApiProperty({
+        enum: KodyRulesType,
+        enumName: 'KodyRulesType',
+        example: KodyRulesType.STANDARD,
+    })
+    type: KodyRulesType;
 
     @IsNotEmpty()
     @IsString()

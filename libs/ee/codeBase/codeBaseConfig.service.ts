@@ -128,11 +128,12 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 preliminaryFiles || [],
             );
 
-            const kodyRules = this.kodyRulesValidationService.filterKodyRules(
-                kodyRulesEntity?.toObject()?.rules,
-                repository.id,
-                mergedConfigs.directoryId,
-            );
+            const { standardRules, memoryRules } =
+                this.kodyRulesValidationService.filterKodyRules(
+                    kodyRulesEntity?.toObject()?.rules,
+                    repository.id,
+                    mergedConfigs.directoryId,
+                );
 
             const globalIgnorePaths = await this.getGlobalIgnorePaths(
                 organizationAndTeamData,
@@ -144,7 +145,8 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     language?.configValue ??
                     this.DEFAULT_CONFIG.languageResultPrompt,
                 baseBranchDefault: defaultBranch,
-                kodyRules,
+                kodyRules: standardRules,
+                kodyMemoryRules: memoryRules,
                 reviewModeConfig,
                 kodyFineTuningConfig,
                 ignorePaths:
