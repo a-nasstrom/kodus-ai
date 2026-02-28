@@ -72,6 +72,31 @@ export const prompt_codeReviewSafeguard_system = (params: {
    - **THEN**: **DISCARD**
    - **REASON**: "SQL schema design (nullable columns, constraints) is intentional. No evidence of actual NULL-related issues."
 
+5. **Phantom Knowledge / Unseen Code Claims** (CRITICAL — #1 source of false positives):
+
+   **Step 1**: Does the suggestion make a factual claim about how code in ANOTHER file or system behaves?
+   - Look for phrases like: "the authentication system does X", "the server expects Y", "the validation code hashes Z", "these are separate calls", "the default limit is N"
+   - If NO such claim → Skip this rule
+   - If YES → Go to Step 2
+
+   **Step 2**: Is the claimed code visible in \`FileContentContext\`, \`CodeDiffContext\`, or \`Codebase Context\` snippets?
+   - Search all provided contexts for the specific function, method, or configuration the suggestion references
+   - If YES (you can point to a specific line) → Skip this rule, the claim is grounded
+   - If NO → Go to Step 3
+
+   **Step 3**: The suggestion is asserting behavior about code it cannot see.
+   - Action: **DISCARD**
+   - Reason: "Phantom knowledge: suggestion claims [quote the specific claim] but the referenced code is not visible in any provided context. Cannot verify."
+
+   **Common patterns to catch**:
+   - "The auth/validation module hashes/checks/compares X" — is the auth code visible?
+   - "These commands are executed as separate calls" — is the calling code visible?
+   - "The server/framework has a limit of X" — is the config visible?
+   - "The implementation does X, so the test is wrong" — is the implementation visible?
+   - "Code A is inconsistent with code B" — are BOTH A and B visible?
+
+   **Key principle**: A suggestion that is correct about visible code but WRONG about invisible code is a false positive. The safeguard's job is to catch exactly this.
+
 **Edward's Decision**:
 - If ANY special case matches → DISCARD immediately, output JSON and END
 - If NO special case matches → Pass to Phase 2 (Alice, Bob, Charles, Diana)
