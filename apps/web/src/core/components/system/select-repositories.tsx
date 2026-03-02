@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@components/ui/button";
 import {
     Command,
@@ -44,6 +44,12 @@ export const SelectRepositories = (props: {
         onChangeSelectedRepositories,
     } = props;
 
+    const [search, setSearch] = useState("");
+
+    useEffect(() => {
+        if (!open) setSearch("");
+    }, [open]);
+
     const sortedRepositories = useMemo(() => {
         return [...repositories].sort((a, b) => {
             const aTime = a.lastActivityAt ? Date.parse(a.lastActivityAt) : 0;
@@ -61,6 +67,25 @@ export const SelectRepositories = (props: {
                 (r) => !selectedRepositories.some((s) => s.id === r.id),
             ),
         [sortedRepositories, selectedRepositories],
+    );
+
+    const matchesSearch = (repo: Repository) => {
+        if (!search) return true;
+        const s = search.toLowerCase();
+        return (
+            repo.name.toLowerCase().includes(s) ||
+            repo.organizationName.toLowerCase().includes(s)
+        );
+    };
+
+    const filteredUnselected = useMemo(
+        () => unselectedRepositories.filter(matchesSearch),
+        [unselectedRepositories, search],
+    );
+
+    const filteredSelected = useMemo(
+        () => selectedRepositories.filter(matchesSearch),
+        [selectedRepositories, search],
     );
 
     const formatLastActivity = (date?: string) => {
@@ -117,8 +142,45 @@ export const SelectRepositories = (props: {
                         }
 
                         return 0;
-                    }}>
-                    <CommandInput placeholder="Search repository..." />
+                    }}
+                >
+                    <CommandInput
+                        placeholder="Search repository..."
+                        onValueChange={setSearch}
+                    />
+
+                    {(filteredUnselected.length > 0 || filteredSelected.length > 0) && (
+                        <div className="flex justify-end gap-3 border-b px-3 py-1.5">
+                            {filteredSelected.length > 0 && (
+                                <button
+                                    type="button"
+                                    className="text-text-secondary hover:text-text-primary text-xs font-medium cursor-pointer"
+                                    onClick={() => {
+                                        const idsToRemove = new Set(filteredSelected.map((r) => r.id));
+                                        onChangeSelectedRepositories(
+                                            selectedRepositories.filter((r) => !idsToRemove.has(r.id)),
+                                        );
+                                    }}
+                                >
+                                    Clear selection{search ? ` (${filteredSelected.length})` : ""}
+                                </button>
+                            )}
+                            {filteredUnselected.length > 0 && (
+                                <button
+                                    type="button"
+                                    className="text-primary-light hover:text-primary-dark text-xs font-medium cursor-pointer"
+                                    onClick={() => {
+                                        onChangeSelectedRepositories([
+                                            ...selectedRepositories,
+                                            ...filteredUnselected,
+                                        ]);
+                                    }}
+                                >
+                                    Select all{search ? ` (${filteredUnselected.length})` : ""}
+                                </button>
+                            )}
+                        </div>
+                    )}
 
                     <CommandList className="max-h-56 overflow-y-auto">
                         <CommandEmpty>No repository found.</CommandEmpty>

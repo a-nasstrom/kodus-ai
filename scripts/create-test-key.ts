@@ -49,6 +49,7 @@ async function main() {
         console.log('=== Generating CLI Key ===');
         const rawKey = crypto.randomBytes(32).toString('base64url');
         const fullKey = `kodus_${rawKey}`;
+        const keyPrefix = crypto.createHash('sha256').update(rawKey).digest('hex').substring(0, 8);
         const keyHash = await bcrypt.hash(rawKey, 10);
 
         const cliKeyRepo = dataSourceInstance.getRepository(TeamCliKeyModel);
@@ -56,6 +57,7 @@ async function main() {
         const cliKey = cliKeyRepo.create({
             name: 'Test CLI Key (auto-generated)',
             keyHash: keyHash,
+            keyPrefix: keyPrefix,
             active: true,
             team: team,
             createdBy: user,

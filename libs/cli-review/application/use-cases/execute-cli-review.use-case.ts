@@ -181,7 +181,17 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 teamAutomationId: 'cli-automation',
                 origin: 'cli',
                 action: 'review',
-                platformType: 'github' as any,
+                platformType: (gitContext?.inferredPlatform || 'github') as any,
+
+                // Git context for cross-file analysis (CLI mode)
+                gitContext: gitContext
+                    ? {
+                          remote: gitContext.remote,
+                          branch: gitContext.branch,
+                          commitSha: gitContext.commitSha,
+                          inferredPlatform: gitContext.inferredPlatform,
+                      }
+                    : undefined,
 
                 // Pipeline metadata
                 pipelineVersion: '1.0',

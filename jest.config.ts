@@ -25,6 +25,10 @@ export default {
         ],
     },
     moduleNameMapper: {
+        // e2b SDK mock — the real package depends on chalk v5+ (ESM-only)
+        // which Jest cannot parse. Map to a stub to prevent ESM parse errors.
+        '^e2b$': '<rootDir>/test/__mocks__/e2b.ts',
+
         // Shared domain enums
         '^@/shared/domain/enums/(.*)$': '<rootDir>/libs/core/domain/enums/$1',
 

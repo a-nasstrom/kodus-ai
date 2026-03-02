@@ -1,5 +1,13 @@
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { CliReviewResponse } from '@libs/cli-review/domain/types/cli-review.types';
+import { PlatformType } from '@libs/core/domain/enums';
+
+export interface CliGitContext {
+    remote?: string;
+    branch?: string;
+    commitSha?: string;
+    inferredPlatform?: PlatformType;
+}
 
 /**
  * Pipeline context for CLI code review
@@ -13,4 +21,5 @@ export interface CliReviewPipelineContext extends CodeReviewPipelineContext {
     startTime: number;
     correlationId: string;
     cliResponse?: CliReviewResponse;
+    gitContext?: CliGitContext;
 }

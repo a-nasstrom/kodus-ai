@@ -13,7 +13,7 @@ interface CreateSandboxParams {
     cloneUrl: string;
     authToken: string;
     branch: string;
-    prNumber: number;
+    prNumber?: number;
     platform: PlatformType;
 }
 
@@ -32,6 +32,10 @@ export class E2BSandboxService {
         return !!this.configService.get<string>('API_E2B_KEY');
     }
 
+    isProxyConfigured(): boolean {
+        return !!this.configService.get<string>('E2B_PROXY_HOST');
+    }
+
     async createSandboxWithRepo(
         params: CreateSandboxParams,
     ): Promise<SandboxWithCommands> {
@@ -42,20 +46,27 @@ export class E2BSandboxService {
             throw new Error('API_E2B_KEY is not configured');
         }
 
-        const sandbox = await Sandbox.create({
-            timeoutMs: SANDBOX_TIMEOUT_MS,
-            apiKey,
-        });
+        const { sandbox, usedTemplate } = await this.createSandbox(apiKey);
 
         try {
-            // Install git + ripgrep (must run as root for apt)
-            await sandbox.commands.run(
-                'apt-get update -qq && apt-get install -y -qq git ripgrep > /dev/null 2>&1',
-                { timeoutMs: 120_000, user: 'root' },
-            );
+            // Install dependencies only when not using a pre-built template
+            // When using a template, git/ripgrep and proxy are already configured
+            if (!usedTemplate) {
+                await sandbox.commands.run(
+                    'apt-get update -qq && apt-get install -y -qq git ripgrep shadowsocks-libev > /dev/null 2>&1',
+                    { timeoutMs: 120_000, user: 'root' },
+                );
+            }
 
-            // Shallow-fetch only the PR ref (minimal network transfer)
-            const refspec = this.getPrRefspec(platform, prNumber);
+            // Configure Shadowsocks proxy for IP tunneling (clients with restricted git access)
+            await this.setupProxy(sandbox);
+
+            // Shallow-fetch the PR ref or branch (minimal network transfer)
+            const refspec =
+                prNumber != null
+                    ? this.getPrRefspec(platform, prNumber)
+                    : `refs/heads/${branch}`;
+            const localRef = prNumber != null ? 'pr-head' : 'cli-head';
             const authHeader = this.buildAuthHeader(platform, authToken);
 
             await sandbox.commands.run(
@@ -63,8 +74,8 @@ export class E2BSandboxService {
                     `git init ${REPO_DIR}`,
                     `cd ${REPO_DIR}`,
                     // Fetch using token from env var via git credential header (never touches disk/process args)
-                    `git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${cloneUrl} ${refspec}:pr-head`,
-                    `git checkout pr-head`,
+                    `git -c http.extraHeader="$GIT_AUTH_HEADER" fetch --depth=1 ${cloneUrl} ${refspec}:${localRef}`,
+                    `git checkout ${localRef}`,
                     // Set a dummy remote for any tools that expect "origin" to exist
                     `git remote add origin ${cloneUrl}`,
                     // Block any push from the sandbox
@@ -83,7 +94,7 @@ export class E2BSandboxService {
                     await sandbox.kill();
                 } catch (error) {
                     this.logger.warn({
-                        message: `Failed to kill E2B sandbox for PR#${prNumber}`,
+                        message: `Failed to kill E2B sandbox${prNumber ? ` for PR#${prNumber}` : ` for branch ${branch}`}`,
                         context: E2BSandboxService.name,
                         error,
                     });
@@ -100,6 +111,68 @@ export class E2BSandboxService {
             }
             throw error;
         }
+    }
+
+    private async createSandbox(
+        apiKey: string,
+    ): Promise<{ sandbox: Sandbox; usedTemplate: boolean }> {
+        const templateId = this.configService.get<string>(
+            'API_E2B_TEMPLATE_ID',
+        );
+
+        if (templateId) {
+            try {
+                const sandbox = await Sandbox.create(templateId, {
+                    timeoutMs: SANDBOX_TIMEOUT_MS,
+                    apiKey,
+                });
+                return { sandbox, usedTemplate: true };
+            } catch (error) {
+                this.logger.warn({
+                    message: `Failed to create E2B sandbox with template "${templateId}", falling back to default`,
+                    context: E2BSandboxService.name,
+                    error,
+                });
+            }
+        }
+
+        const sandbox = await Sandbox.create({
+            timeoutMs: SANDBOX_TIMEOUT_MS,
+            apiKey,
+        });
+        return { sandbox, usedTemplate: false };
+    }
+
+    private async setupProxy(sandbox: Sandbox): Promise<void> {
+        const host = this.configService.get<string>('E2B_PROXY_HOST');
+        if (!host) return;
+
+        const port = this.configService.get<string>('E2B_PROXY_PORT') ?? '8388';
+        const password = this.configService.get<string>('E2B_PROXY_PASSWORD');
+        const method =
+            this.configService.get<string>('E2B_PROXY_METHOD') ?? 'aes-256-gcm';
+
+        if (!password) {
+            throw new Error(
+                'E2B_PROXY_PASSWORD is required when E2B_PROXY_HOST is set',
+            );
+        }
+
+        // Start ss-local daemon listening on SOCKS5 port 1080
+        await sandbox.commands.run(
+            `ss-local -s ${host} -p ${port} -l 1080 -k "$SS_PASSWORD" -m ${method} -d start`,
+            {
+                timeoutMs: 10_000,
+                user: 'root',
+                envs: { SS_PASSWORD: password },
+            },
+        );
+
+        // Route all git traffic through the SOCKS5 proxy
+        await sandbox.commands.run(
+            'git config --global http.proxy socks5://127.0.0.1:1080',
+            { timeoutMs: 5_000 },
+        );
     }
 
     private buildAuthHeader(platform: PlatformType, token: string): string {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SelectRepositories } from "@components/system/select-repositories";
 import { Button } from "@components/ui/button";
@@ -137,10 +137,19 @@ export const SelectRepositoriesModal = (props: {
 
         setUploadProgress({ current: 0, total: 0 });
         router.push("/settings/git");
+        router.refresh();
     });
 
+    const hasChanges = useMemo(() => {
+        const initialIds = new Set(props.selectedRepositories.map((r) => r.id));
+        if (initialIds.size !== selectedRepositories.length) return true;
+        return selectedRepositories.some((r) => !initialIds.has(r.id));
+    }, [props.selectedRepositories, selectedRepositories]);
+
     const closeable =
-        props.selectedRepositories.length > 0 && !loadingSaveRepositories;
+        props.selectedRepositories.length > 0 &&
+        !loadingSaveRepositories &&
+        !hasChanges;
 
     return (
         <MagicModalContext value={{ closeable }}>
@@ -178,12 +187,14 @@ export const SelectRepositoriesModal = (props: {
                     </FormControl.Root>
 
                     <DialogFooter>
-                        {closeable && (
-                            <DialogClose>
-                                <Button size="md" variant="cancel">
-                                    Cancel
-                                </Button>
-                            </DialogClose>
+                        {props.selectedRepositories.length > 0 &&
+                            !loadingSaveRepositories && (
+                            <Button
+                                size="md"
+                                variant="cancel"
+                                onClick={() => router.push("/settings/git")}>
+                                Cancel
+                            </Button>
                         )}
 
                         <Button
@@ -197,7 +208,7 @@ export const SelectRepositoriesModal = (props: {
                             }>
                             {uploadProgress.total > 0
                                 ? `Saving... ${uploadProgress.current}/${uploadProgress.total}`
-                                : "Edit repositories"}
+                                : "Save selected repositories"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

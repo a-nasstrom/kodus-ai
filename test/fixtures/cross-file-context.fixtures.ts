@@ -5,6 +5,7 @@ import {
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { CliReviewPipelineContext } from '@libs/cli-review/pipeline/context/cli-review-pipeline.context';
 
 // ─── FileChange ────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,33 @@ export function createCrossFileBaseContext(
         crossFileContexts: undefined,
         ...overrides,
     } as CodeReviewPipelineContext;
+}
+
+// ─── CLI Pipeline Context ───────────────────────────────────────────────────────
+
+export function createCliCrossFileBaseContext(
+    overrides: Partial<CliReviewPipelineContext> = {},
+): CliReviewPipelineContext {
+    const base = createCrossFileBaseContext({
+        origin: 'cli',
+        branch: 'feat/cli-test',
+        platformType: PlatformType.GITHUB,
+    });
+
+    return {
+        ...base,
+        isFastMode: false,
+        isTrialMode: false,
+        startTime: Date.now(),
+        correlationId: 'cli-correlation-id',
+        gitContext: {
+            remote: 'https://github.com/org/test-repo.git',
+            branch: 'feat/cli-test',
+            commitSha: 'def456',
+            inferredPlatform: PlatformType.GITHUB,
+        },
+        ...overrides,
+    } as CliReviewPipelineContext;
 }
 
 // ─── Organization And Team Data ────────────────────────────────────────────────

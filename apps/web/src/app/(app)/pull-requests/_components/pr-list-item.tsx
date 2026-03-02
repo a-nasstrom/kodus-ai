@@ -12,10 +12,9 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@components/ui/tooltip";
-import {
-    buildPullRequestUrl,
-    type CodeReviewTimelineItem,
-} from "@services/pull-requests";
+import type { CodeReviewTimelineItem } from "@services/pull-requests";
+import { buildPullRequestUrl } from "@services/pull-requests";
+import { useGetTimezone } from "@services/organizationParameters/hooks";
 import { ChevronDownIcon, ExternalLinkIcon, GitBranchIcon } from "lucide-react";
 import { cn } from "src/core/utils/components";
 
@@ -24,6 +23,21 @@ import type { PullRequestExecutionGroup } from "./types";
 interface PrListItemProps {
     group: PullRequestExecutionGroup;
 }
+
+const formatDateTime = (dateString: string, timezone: string | null) => {
+    const tz = timezone || "UTC";
+    try {
+        const date = new Date(dateString);
+        const year = date.toLocaleString("en-CA", { timeZone: tz, year: "numeric" });
+        const month = date.toLocaleString("en-CA", { timeZone: tz, month: "2-digit" });
+        const day = date.toLocaleString("en-CA", { timeZone: tz, day: "2-digit" });
+        const hour = date.toLocaleString("en-GB", { timeZone: tz, hour: "2-digit", hour12: false });
+        const minute = date.toLocaleString("en-GB", { timeZone: tz, minute: "2-digit" });
+        return `${year}-${month}-${day} ${hour}:${minute.padStart(2, "0")}`;
+    } catch {
+        return dateString;
+    }
+};
 
 const formatTimeAgo = (dateString: string) => {
     const now = new Date();
@@ -47,14 +61,14 @@ const formatTimeAgo = (dateString: string) => {
     return `${diffInMonths} month${diffInMonths > 1 ? "s" : ""} ago`;
 };
 
-const TimeAgoDisplay = ({ dateString }: { dateString: string }) => {
+const TimeAgoDisplay = ({ dateString, timezone }: { dateString: string; timezone: string | null }) => {
     const [displayedTime, setDisplayedTime] = useState(dateString);
 
     useEffect(() => {
         setDisplayedTime(formatTimeAgo(dateString));
     }, [dateString]);
 
-    return <>{displayedTime}</>;
+    return <>{displayedTime} · {formatDateTime(dateString, timezone)}</>;
 };
 
 const formatDuration = (start: string, end?: string | null) => {
@@ -242,9 +256,9 @@ const getPartialErrors = (
 const getStageDisplay = (item: CodeReviewTimelineItem) => {
     const labelFromMetadata =
         item.metadata &&
-        typeof item.metadata === "object" &&
-        typeof (item.metadata as Record<string, any>).label === "string" &&
-        (item.metadata as Record<string, any>).label.trim()
+            typeof item.metadata === "object" &&
+            typeof (item.metadata as Record<string, any>).label === "string" &&
+            (item.metadata as Record<string, any>).label.trim()
             ? (item.metadata as Record<string, any>).label.trim()
             : null;
     const labelFromStage = item.stageLabel
@@ -289,6 +303,7 @@ const isAutomationStartMessage = (message: string) => {
 
 export const PrListItem = ({ group }: PrListItemProps) => {
     const { latest, executions, reviewCount } = group;
+    const timezone = useGetTimezone();
     const [isOpen, setIsOpen] = useState(false);
     const [collapsedReviews, setCollapsedReviews] = useState<Set<number>>(
         () => new Set(executions.slice(1).map((_, i) => i + 1)),
@@ -388,7 +403,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 </TableCell>
                 <TableCell className="w-32">
                     <span className="text-text-tertiary text-sm tabular-nums">
-                        <TimeAgoDisplay dateString={latest.createdAt} />
+                        <TimeAgoDisplay dateString={latest.createdAt} timezone={timezone} />
                     </span>
                 </TableCell>
                 <TableCell className="w-20 text-center">
@@ -458,7 +473,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                             (item) =>
                                                 item.metadata &&
                                                 typeof item.metadata ===
-                                                    "object" &&
+                                                "object" &&
                                                 (
                                                     item.metadata as Record<
                                                         string,
@@ -472,20 +487,20 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                     const timelineItems = isDebugVisible
                                         ? execution.codeReviewTimeline
                                         : execution.codeReviewTimeline.filter(
-                                              (item) =>
-                                                  !(
-                                                      item.metadata &&
-                                                      typeof item.metadata ===
-                                                          "object" &&
-                                                      (
-                                                          item.metadata as Record<
-                                                              string,
-                                                              any
-                                                          >
-                                                      ).visibility ===
-                                                          "secondary"
-                                                  ),
-                                          );
+                                            (item) =>
+                                                !(
+                                                    item.metadata &&
+                                                    typeof item.metadata ===
+                                                    "object" &&
+                                                    (
+                                                        item.metadata as Record<
+                                                            string,
+                                                            any
+                                                        >
+                                                    ).visibility ===
+                                                    "secondary"
+                                                ),
+                                        );
                                     const timelineItemsSorted = [
                                         ...timelineItems,
                                     ].sort((a, b) => {
@@ -520,7 +535,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                         className={cn(
                                                             "text-text-tertiary size-4 shrink-0 transition-transform duration-200",
                                                             !isReviewCollapsed &&
-                                                                "text-text-secondary rotate-180",
+                                                            "text-text-secondary rotate-180",
                                                         )}
                                                     />
                                                     <span className="text-text-primary text-sm font-semibold tabular-nums">
@@ -534,7 +549,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                     {executionDuration && (
                                                         <span className="text-text-tertiary text-xs tabular-nums">
                                                             {executionStatus ===
-                                                            "in_progress"
+                                                                "in_progress"
                                                                 ? "Elapsed: "
                                                                 : "Duration: "}
                                                             {executionDuration}
@@ -547,6 +562,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                             dateString={
                                                                 executionStartedAt
                                                             }
+                                                            timezone={timezone}
                                                         />
                                                     </span>
                                                 )}
@@ -555,31 +571,31 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                 <div className="border-card-lv3/30 border-t px-4 pt-3 pb-4">
                                                     {(execution.reviewedCommitSha ||
                                                         execution.reviewedCommitUrl) && (
-                                                        <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
-                                                            {execution.reviewedCommitUrl ? (
-                                                                <Link
-                                                                    href={
-                                                                        execution.reviewedCommitUrl
-                                                                    }
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-text-secondary hover:text-primary-light font-mono">
-                                                                    {formatSha(
-                                                                        execution.reviewedCommitSha,
-                                                                    ) ||
-                                                                        "View commit"}
-                                                                </Link>
-                                                            ) : (
-                                                                execution.reviewedCommitSha && (
-                                                                    <span className="text-text-secondary font-mono">
+                                                            <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
+                                                                {execution.reviewedCommitUrl ? (
+                                                                    <Link
+                                                                        href={
+                                                                            execution.reviewedCommitUrl
+                                                                        }
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-text-secondary hover:text-primary-light font-mono">
                                                                         {formatSha(
                                                                             execution.reviewedCommitSha,
-                                                                        )}
-                                                                    </span>
-                                                                )
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                                        ) ||
+                                                                            "View commit"}
+                                                                    </Link>
+                                                                ) : (
+                                                                    execution.reviewedCommitSha && (
+                                                                        <span className="text-text-secondary font-mono">
+                                                                            {formatSha(
+                                                                                execution.reviewedCommitSha,
+                                                                            )}
+                                                                        </span>
+                                                                    )
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     {hasSecondarySteps && (
                                                         <div className="mb-3 flex justify-end">
                                                             <button
@@ -612,7 +628,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                 (item) => {
                                                                     const isActiveStage =
                                                                         item.status ===
-                                                                            "in_progress" &&
+                                                                        "in_progress" &&
                                                                         !isAutomationStartMessage(
                                                                             item.message,
                                                                         );
@@ -633,14 +649,14 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                             className={cn(
                                                                                 "group flex gap-3",
                                                                                 isActiveStage &&
-                                                                                    "border-in-progress bg-card-lv2/60 rounded-lg border-l-2 px-3 py-2",
+                                                                                "border-in-progress bg-card-lv2/60 rounded-lg border-l-2 px-3 py-2",
                                                                             )}>
                                                                             <div className="relative flex w-4 justify-center">
                                                                                 <span
                                                                                     className={cn(
                                                                                         "mt-1.5 size-2.5 rounded-full border-2",
                                                                                         isActiveStage &&
-                                                                                            "size-3",
+                                                                                        "size-3",
                                                                                         getTimelineStatusColor(
                                                                                             isAutomationStart
                                                                                                 ? "skipped"
@@ -664,7 +680,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                     </span>
                                                                                     {!isAutomationStart &&
                                                                                         item.status ===
-                                                                                            "in_progress" && (
+                                                                                        "in_progress" && (
                                                                                             <Spinner className="text-in-progress size-3" />
                                                                                         )}
                                                                                     {!isAutomationStart &&
@@ -686,7 +702,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                                 </TooltipTrigger>
                                                                                                 <TooltipContent className="text-xs">
                                                                                                     {executionOrigin?.toLowerCase?.() ===
-                                                                                                    "system"
+                                                                                                        "system"
                                                                                                         ? "Triggered automatically by system"
                                                                                                         : "Triggered by user command"}
                                                                                                 </TooltipContent>
@@ -702,7 +718,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                     !isAutomationStart && (
                                                                                         <p className="text-text-tertiary text-xs tabular-nums">
                                                                                             {item.status ===
-                                                                                            "in_progress"
+                                                                                                "in_progress"
                                                                                                 ? "Elapsed: "
                                                                                                 : "Duration: "}
                                                                                             {
@@ -710,12 +726,18 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                             }
                                                                                         </p>
                                                                                     )}
+                                                                                {item.createdAt &&
+                                                                                    !isAutomationStart && (
+                                                                                        <p className="text-text-tertiary text-xs tabular-nums">
+                                                                                            Started: {formatDateTime(item.createdAt, timezone)}
+                                                                                        </p>
+                                                                                    )}
                                                                                 {item.status ===
                                                                                     "partial_error" &&
                                                                                     stageInfo
                                                                                         .partialErrors
                                                                                         .length >
-                                                                                        0 && (
+                                                                                    0 && (
                                                                                         <details className="text-warning/90 mt-2 text-xs">
                                                                                             <summary className="cursor-pointer">
                                                                                                 View

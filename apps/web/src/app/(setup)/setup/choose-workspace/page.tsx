@@ -3,14 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@components/ui/button";
-import { Card, CardContent, CardHeader } from "@components/ui/card";
+import { Card, CardHeader } from "@components/ui/card";
 import { Checkbox } from "@components/ui/checkbox";
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleIndicator,
-    CollapsibleTrigger,
-} from "@components/ui/collapsible";
 import { Heading } from "@components/ui/heading";
 import { SvgKodus } from "@components/ui/icons/SvgKodus";
 import { Label } from "@components/ui/label";
@@ -130,42 +124,23 @@ export default function ChooseWorkspacePage() {
                 <div className="flex h-full w-full flex-col gap-2">
                     {matchedOrganizations.map((org) => (
                         <Card key={org.uuid}>
-                            <Collapsible className="w-full">
-                                <CardHeader className="flex flex-row items-center gap-3 px-5 py-4">
-                                    <Checkbox
-                                        id={org.uuid}
-                                        className="flex-shrink-0 self-center"
-                                        checked={
-                                            selectedOrganization === org.uuid
-                                        }
-                                        onCheckedChange={() =>
-                                            handleSelectOrganization(org.uuid)
-                                        }
-                                    />
-                                    <Label
-                                        htmlFor={org.uuid}
-                                        className="flex-1 cursor-pointer">
-                                        {org.name}
-                                    </Label>
-                                    <div className="flex items-center gap-3">
-                                        <CollapsibleTrigger asChild>
-                                            <Button
-                                                active
-                                                size="icon-sm"
-                                                variant="helper">
-                                                <CollapsibleIndicator />
-                                            </Button>
-                                        </CollapsibleTrigger>
-                                    </div>
-                                </CardHeader>
-                                <CollapsibleContent asChild className="pb-0">
-                                    <CardContent className="bg-card-lv1 flex flex-col gap-5 pt-4">
-                                        <p className="text-text-secondary text-sm">
-                                            Owner: {org.owner}
-                                        </p>
-                                    </CardContent>
-                                </CollapsibleContent>
-                            </Collapsible>
+                            <CardHeader className="flex flex-row items-center gap-3 px-5 py-4">
+                                <Checkbox
+                                    id={org.uuid}
+                                    className="flex-shrink-0 self-center"
+                                    checked={
+                                        selectedOrganization === org.uuid
+                                    }
+                                    onCheckedChange={() =>
+                                        handleSelectOrganization(org.uuid)
+                                    }
+                                />
+                                <Label
+                                    htmlFor={org.uuid}
+                                    className="flex-1 cursor-pointer">
+                                    {org.name}
+                                </Label>
+                            </CardHeader>
                         </Card>
                     ))}
                 </div>

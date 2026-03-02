@@ -19,13 +19,14 @@ import { ErrorBoundary } from "react-error-boundary";
 import { FormProvider, useForm } from "react-hook-form";
 import { ByokBaseURLInput } from "src/features/ee/byok/_components/_modals/edit-key/_components/baseurl-input";
 import { ByokKeyInput } from "src/features/ee/byok/_components/_modals/edit-key/_components/key-input";
+import { ByokAdvancedSettings } from "src/features/ee/byok/_components/_modals/edit-key/_components/advanced-settings";
 import {
     ByokManualModelInput,
     ByokModelSelect,
 } from "src/features/ee/byok/_components/_modals/edit-key/_components/models";
 import { ByokProviderSelect } from "src/features/ee/byok/_components/_modals/edit-key/_components/provider";
 import {
-    editKeySchema,
+    createKeySchema,
     type EditKeyForm,
 } from "src/features/ee/byok/_components/_modals/edit-key/_types";
 
@@ -39,12 +40,16 @@ export const SetupByokPage = () => {
 
     const form = useForm<EditKeyForm>({
         mode: "onChange",
-        resolver: zodResolver(editKeySchema),
+        resolver: zodResolver(createKeySchema),
         defaultValues: {
             provider: existingMain?.provider ?? "",
             model: existingMain?.model ?? "",
             apiKey: existingMain?.apiKey ?? "",
             baseURL: existingMain?.baseURL ?? null,
+            temperature: existingMain?.temperature ?? null,
+            maxInputTokens: existingMain?.maxInputTokens ?? null,
+            maxConcurrentRequests: existingMain?.maxConcurrentRequests ?? null,
+            maxOutputTokens: existingMain?.maxOutputTokens ?? null,
         },
     });
 
@@ -54,6 +59,10 @@ export const SetupByokPage = () => {
             model: existingMain?.model ?? "",
             apiKey: existingMain?.apiKey ?? "",
             baseURL: existingMain?.baseURL ?? null,
+            temperature: existingMain?.temperature ?? null,
+            maxInputTokens: existingMain?.maxInputTokens ?? null,
+            maxConcurrentRequests: existingMain?.maxConcurrentRequests ?? null,
+            maxOutputTokens: existingMain?.maxOutputTokens ?? null,
         });
         void form.trigger();
     }, [
@@ -61,6 +70,10 @@ export const SetupByokPage = () => {
         existingMain?.baseURL,
         existingMain?.model,
         existingMain?.provider,
+        existingMain?.temperature,
+        existingMain?.maxInputTokens,
+        existingMain?.maxConcurrentRequests,
+        existingMain?.maxOutputTokens,
         form,
     ]);
 
@@ -76,6 +89,11 @@ export const SetupByokPage = () => {
                     main: {
                         ...values,
                         baseURL: values.baseURL || undefined,
+                        temperature: values.temperature ?? undefined,
+                        maxInputTokens: values.maxInputTokens ?? undefined,
+                        maxConcurrentRequests:
+                            values.maxConcurrentRequests ?? undefined,
+                        maxOutputTokens: values.maxOutputTokens ?? undefined,
                     },
                 },
             );
@@ -253,6 +271,10 @@ export const SetupByokPage = () => {
                                                 usage.
                                             </p>
                                         </div>
+                                    )}
+
+                                    {model?.trim().length > 0 && (
+                                        <ByokAdvancedSettings />
                                     )}
                                 </div>
                             )}

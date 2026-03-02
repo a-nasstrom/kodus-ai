@@ -252,11 +252,16 @@ export class CollectCrossFileContextsService {
                 : LLMModelProvider.CEREBRAS_GPT_OSS_120B;
 
             // Chunk diff items by token limits
+            const byokMaxInputTokens = byokConfig?.main?.maxInputTokens;
+
             const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
                 model: effectiveModel,
                 data: fileDiffItems,
                 usagePercentage: 50,
                 defaultMaxTokens: 64000,
+                ...(byokMaxInputTokens && byokMaxInputTokens > 0
+                    ? { overrideMaxTokens: byokMaxInputTokens }
+                    : {}),
             });
 
             this.logger.log({

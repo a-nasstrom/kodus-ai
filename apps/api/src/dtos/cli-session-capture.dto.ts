@@ -66,7 +66,7 @@ class CliSessionCaptureSignalsDto {
     assistantMessage?: string;
 
     @IsArray()
-    @ArrayMaxSize(100)
+    @ArrayMaxSize(500)
     @IsString({ each: true })
     @MaxLength(500, { each: true })
     @ApiProperty({
@@ -77,7 +77,7 @@ class CliSessionCaptureSignalsDto {
     modifiedFiles: string[];
 
     @IsArray()
-    @ArrayMaxSize(200)
+    @ArrayMaxSize(500)
     @ValidateNested({ each: true })
     @Type(() => CliSessionCaptureToolUseDto)
     @ApiProperty({

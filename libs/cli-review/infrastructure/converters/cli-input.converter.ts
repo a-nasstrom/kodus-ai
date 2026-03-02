@@ -228,17 +228,13 @@ export class CliInputConverter {
     }
 
     /**
-     * Map internal severity to CLI severity format
+     * Normalize severity to standard values (low | medium | high | critical)
      */
     private mapSeverity(severity: string | undefined): string {
-        const severityMap: Record<string, string> = {
-            critical: 'critical',
-            high: 'error',
-            medium: 'warning',
-            low: 'info',
-        };
+        const normalized = severity?.toLowerCase() || 'medium';
+        const validSeverities = ['low', 'medium', 'high', 'critical'];
 
-        return severityMap[severity?.toLowerCase() || 'medium'] || 'warning';
+        return validSeverities.includes(normalized) ? normalized : 'medium';
     }
 
     /**

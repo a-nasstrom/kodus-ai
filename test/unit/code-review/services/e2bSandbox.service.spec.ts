@@ -3,16 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { E2BSandboxService } from '@libs/code-review/infrastructure/adapters/services/e2bSandbox.service';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 
-// Mock e2b SDK (virtual: true because the package may not be installed)
-jest.mock(
-    'e2b',
-    () => ({
-        Sandbox: {
-            create: jest.fn(),
-        },
-    }),
-    { virtual: true },
-);
+// Mock e2b SDK — globally mapped via moduleNameMapper in jest.config.ts
+// to avoid ESM parse errors from chalk v5+. Re-mock here to set test-specific shape.
+jest.mock('e2b', () => ({
+    Sandbox: {
+        create: jest.fn(),
+    },
+}));
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({
@@ -63,6 +60,23 @@ describe('E2BSandboxService', () => {
         it('should return false when API_E2B_KEY is not set', async () => {
             service = await createService({});
             expect(service.isAvailable()).toBe(false);
+        });
+    });
+
+    // ─── isProxyConfigured ──────────────────────────────────────────────────
+
+    describe('isProxyConfigured()', () => {
+        it('should return true when E2B_PROXY_HOST is set', async () => {
+            service = await createService({
+                API_E2B_KEY: 'key',
+                E2B_PROXY_HOST: '10.0.0.1',
+            });
+            expect(service.isProxyConfigured()).toBe(true);
+        });
+
+        it('should return false when E2B_PROXY_HOST is not set', async () => {
+            service = await createService({ API_E2B_KEY: 'key' });
+            expect(service.isProxyConfigured()).toBe(false);
         });
     });
 
@@ -231,6 +245,206 @@ describe('E2BSandboxService', () => {
             expect(typeof result.remoteCommands.read).toBe('function');
             expect(typeof result.remoteCommands.listDir).toBe('function');
             expect(typeof result.cleanup).toBe('function');
+        });
+
+        it('should use template ID when API_E2B_TEMPLATE_ID is configured', async () => {
+            service = await createService({
+                API_E2B_KEY: 'key',
+                API_E2B_TEMPLATE_ID: 'kodus-sandbox',
+            });
+            const { mockRun, Sandbox } = setupSandboxMock();
+
+            await service.createSandboxWithRepo(defaultParams);
+
+            expect(Sandbox.create).toHaveBeenCalledWith('kodus-sandbox', {
+                timeoutMs: 5 * 60 * 1000,
+                apiKey: 'key',
+            });
+
+            // Should NOT run apt-get install when using template
+            const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
+            expect(
+                commands.some((cmd: string) => cmd.includes('apt-get')),
+            ).toBe(false);
+        });
+
+        it('should install git, ripgrep and shadowsocks-libev via apt-get when no template is configured', async () => {
+            service = await createService({ API_E2B_KEY: 'key' });
+            const { mockRun } = setupSandboxMock();
+
+            await service.createSandboxWithRepo(defaultParams);
+
+            const firstCall = mockRun.mock.calls[0];
+            expect(firstCall[0]).toContain('git');
+            expect(firstCall[0]).toContain('ripgrep');
+            expect(firstCall[0]).toContain('shadowsocks-libev');
+        });
+
+        it('should fallback to default sandbox when template creation fails', async () => {
+            service = await createService({
+                API_E2B_KEY: 'key',
+                API_E2B_TEMPLATE_ID: 'bad-template',
+            });
+
+            const mockRun = jest
+                .fn()
+                .mockResolvedValue({ stdout: '', stderr: '' });
+            const mockKill = jest.fn().mockResolvedValue(undefined);
+            const fallbackSandbox = {
+                commands: { run: mockRun },
+                kill: mockKill,
+            };
+
+            const { Sandbox } = require('e2b');
+            Sandbox.create
+                .mockRejectedValueOnce(new Error('Template not found'))
+                .mockResolvedValueOnce(fallbackSandbox);
+
+            const result = await service.createSandboxWithRepo(defaultParams);
+
+            // Should have tried template first, then fallback
+            expect(Sandbox.create).toHaveBeenCalledTimes(2);
+            expect(Sandbox.create).toHaveBeenNthCalledWith(1, 'bad-template', {
+                timeoutMs: 5 * 60 * 1000,
+                apiKey: 'key',
+            });
+            expect(Sandbox.create).toHaveBeenNthCalledWith(2, {
+                timeoutMs: 5 * 60 * 1000,
+                apiKey: 'key',
+            });
+
+            // Should install deps via apt-get since fallback doesn't have template
+            const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
+            expect(
+                commands.some((cmd: string) => cmd.includes('apt-get')),
+            ).toBe(true);
+
+            expect(result.remoteCommands).toBeDefined();
+        });
+
+        it('should use branch refspec when prNumber is undefined (CLI mode)', async () => {
+            service = await createService({ API_E2B_KEY: 'key' });
+            const { mockRun } = setupSandboxMock();
+
+            await service.createSandboxWithRepo({
+                ...defaultParams,
+                prNumber: undefined,
+                branch: 'feat/my-feature',
+            });
+
+            const gitCall = mockRun.mock.calls[1];
+            const gitCommand = gitCall[0];
+
+            expect(gitCommand).toContain('refs/heads/feat/my-feature:cli-head');
+            expect(gitCommand).toContain('git checkout cli-head');
+            expect(gitCommand).not.toContain('pr-head');
+        });
+    });
+
+    // ─── setupProxy ─────────────────────────────────────────────────────────
+
+    describe('setupProxy()', () => {
+        const defaultParams = {
+            cloneUrl: 'https://github.com/org/repo.git',
+            authToken: 'token',
+            branch: 'main',
+            prNumber: 42,
+            platform: PlatformType.GITHUB,
+        };
+
+        const setupSandboxMock = () => {
+            const mockKill = jest.fn().mockResolvedValue(undefined);
+            const mockRun = jest
+                .fn()
+                .mockResolvedValue({ stdout: '', stderr: '' });
+            const mockSandbox = {
+                commands: { run: mockRun },
+                kill: mockKill,
+            };
+
+            const { Sandbox } = require('e2b');
+            Sandbox.create.mockResolvedValue(mockSandbox);
+
+            return { mockKill, mockRun, mockSandbox, Sandbox };
+        };
+
+        it('should start ss-local and configure git proxy when proxy env vars are set', async () => {
+            service = await createService({
+                API_E2B_KEY: 'key',
+                E2B_PROXY_HOST: '10.0.0.1',
+                E2B_PROXY_PORT: '9999',
+                E2B_PROXY_PASSWORD: 'secret',
+                E2B_PROXY_METHOD: 'chacha20-ietf-poly1305',
+            });
+            const { mockRun } = setupSandboxMock();
+
+            await service.createSandboxWithRepo(defaultParams);
+
+            // ss-local command
+            const ssLocalCall = mockRun.mock.calls.find((c: any[]) =>
+                c[0].includes('ss-local'),
+            );
+            expect(ssLocalCall).toBeDefined();
+            expect(ssLocalCall[0]).toContain('-s 10.0.0.1');
+            expect(ssLocalCall[0]).toContain('-p 9999');
+            expect(ssLocalCall[0]).toContain('-l 1080');
+            expect(ssLocalCall[0]).toContain('-m chacha20-ietf-poly1305');
+            expect(ssLocalCall[1].envs.SS_PASSWORD).toBe('secret');
+            expect(ssLocalCall[1].user).toBe('root');
+
+            // git config proxy command
+            const gitProxyCall = mockRun.mock.calls.find((c: any[]) =>
+                c[0].includes('git config --global http.proxy'),
+            );
+            expect(gitProxyCall).toBeDefined();
+            expect(gitProxyCall[0]).toContain('socks5://127.0.0.1:1080');
+        });
+
+        it('should use default port and method when not specified', async () => {
+            service = await createService({
+                API_E2B_KEY: 'key',
+                E2B_PROXY_HOST: '10.0.0.1',
+                E2B_PROXY_PASSWORD: 'secret',
+            });
+            const { mockRun } = setupSandboxMock();
+
+            await service.createSandboxWithRepo(defaultParams);
+
+            const ssLocalCall = mockRun.mock.calls.find((c: any[]) =>
+                c[0].includes('ss-local'),
+            );
+            expect(ssLocalCall).toBeDefined();
+            expect(ssLocalCall[0]).toContain('-p 8388');
+            expect(ssLocalCall[0]).toContain('-m aes-256-gcm');
+        });
+
+        it('should skip proxy setup when E2B_PROXY_HOST is not set', async () => {
+            service = await createService({ API_E2B_KEY: 'key' });
+            const { mockRun } = setupSandboxMock();
+
+            await service.createSandboxWithRepo(defaultParams);
+
+            const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
+            expect(
+                commands.some((cmd: string) => cmd.includes('ss-local')),
+            ).toBe(false);
+            expect(
+                commands.some((cmd: string) => cmd.includes('http.proxy')),
+            ).toBe(false);
+        });
+
+        it('should throw when E2B_PROXY_HOST is set but E2B_PROXY_PASSWORD is missing', async () => {
+            service = await createService({
+                API_E2B_KEY: 'key',
+                E2B_PROXY_HOST: '10.0.0.1',
+            });
+            setupSandboxMock();
+
+            await expect(
+                service.createSandboxWithRepo(defaultParams),
+            ).rejects.toThrow(
+                'E2B_PROXY_PASSWORD is required when E2B_PROXY_HOST is set',
+            );
         });
     });
 

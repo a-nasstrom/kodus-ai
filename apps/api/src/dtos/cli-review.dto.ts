@@ -85,8 +85,8 @@ class CliConfigDto {
 
     @IsOptional()
     @IsArray()
-    @ArrayMaxSize(100, {
-        message: 'Too many files (max 100 files per request)',
+    @ArrayMaxSize(500, {
+        message: 'Too many files (max 500 files per request)',
     })
     @ValidateNested({ each: true })
     @Type(() => CliFileInputDto)

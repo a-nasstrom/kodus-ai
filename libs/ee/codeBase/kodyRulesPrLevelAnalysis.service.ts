@@ -102,7 +102,7 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
     private readonly logger = createLogger(
         KodyRulesPrLevelAnalysisService.name,
     );
-    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
+    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 90;
 
     private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
         maxConcurrentChunks: 10, // Process 10 chunks simultaneously by default
@@ -629,10 +629,16 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
     ): Promise<AIAnalysisResultPrLevel> {
         const preparedFiles = this.prepareFilesForPayload(changedFiles);
 
+        const byokMaxInputTokens =
+            context?.codeReviewConfig?.byokConfig?.main?.maxInputTokens;
+
         const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
             model: provider,
             data: preparedFiles,
             usagePercentage: this.DEFAULT_USAGE_LLM_MODEL_PERCENTAGE,
+            ...(byokMaxInputTokens && byokMaxInputTokens > 0
+                ? { overrideMaxTokens: byokMaxInputTokens }
+                : {}),
         });
 
         this.logger.log({
@@ -651,6 +657,15 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
         const batchConfig = this.determineBatchConfig(
             chunkingResult.totalChunks,
         );
+
+        const byokMaxConcurrent =
+            context?.codeReviewConfig?.byokConfig?.main?.maxConcurrentRequests;
+        if (byokMaxConcurrent && byokMaxConcurrent > 0) {
+            batchConfig.maxConcurrentChunks = Math.min(
+                batchConfig.maxConcurrentChunks,
+                byokMaxConcurrent,
+            );
+        }
 
         this.logger.log({
             message: `Batch configuration determined`,

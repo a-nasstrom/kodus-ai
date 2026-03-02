@@ -35,6 +35,7 @@ import {
     IFinalAnalysisResult,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { createOptimizedBatches } from '@libs/common/utils/batch.helper';
+import pLimit from 'p-limit';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
 import { TaskStatus } from '@libs/ee/kodyAST/interfaces/code-ast-analysis.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -45,6 +46,10 @@ import {
     CodeReviewPipelineContext,
     FileContextAgentResult,
 } from '../context/code-review-pipeline.context';
+import {
+    splitFileContent,
+    estimateFixedTokens,
+} from '@libs/code-review/infrastructure/adapters/services/utils/file-content-splitter';
 
 interface FileProcessingResult {
     filename: string;
@@ -448,9 +453,18 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 TaskStatus.TASK_STATUS_FAILED;
         }
 
+        const maxConcurrent =
+            context?.codeReviewConfig?.byokConfig?.main?.maxConcurrentRequests;
+        const concurrencyLimit =
+            maxConcurrent != null && maxConcurrent > 0
+                ? Math.min(maxConcurrent, this.MAX_BATCH_SIZE)
+                : this.MAX_BATCH_SIZE;
+
+        const limit = pLimit(concurrencyLimit);
+
         const results = await Promise.allSettled(
             preparedFiles.map(({ fileContext }) =>
-                this.executeFileAnalysis(fileContext),
+                limit(() => this.executeFileAnalysis(fileContext)),
             ),
         );
 
@@ -705,6 +719,98 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 },
             };
 
+            const maxInputTokens =
+                context?.codeReviewConfig?.byokConfig?.main?.maxInputTokens;
+            const contentToSplit =
+                relevantContent || file?.fileContent || '';
+
+            // Check if we need to split the file content into chunks
+            let needsChunking = false;
+            let chunks: string[] = [];
+
+            if (maxInputTokens && maxInputTokens > 0 && contentToSplit) {
+                const fixedTokens = estimateFixedTokens({
+                    patchWithLinesStr,
+                    prSummary: context?.pullRequest?.body,
+                    crossFileSnippets: context?.crossFileSnippets,
+                });
+
+                const hasASTMarkers =
+                    contentToSplit.includes('<- CUT CONTENT ->');
+
+                const splitResult = splitFileContent({
+                    content: contentToSplit,
+                    maxInputTokens,
+                    fixedTokens,
+                    hasASTMarkers,
+                });
+
+                needsChunking = splitResult.wasSplit;
+                chunks = splitResult.chunks;
+            }
+
+            if (needsChunking) {
+                // Process each chunk through the full pipeline (analyze + safeguard)
+                // then merge all validated suggestions at the end
+                const allValidSuggestions: Partial<CodeSuggestion>[] = [];
+                const allDiscardedSuggestions: Partial<CodeSuggestion>[] = [];
+                let lastCodeReviewModelUsed: IFinalAnalysisResult['codeReviewModelUsed'] = {};
+                let lastReviewMode: any;
+
+                for (const chunk of chunks) {
+                    const chunkContext: AnalysisContext = {
+                        ...context,
+                        fileChangeContext: {
+                            file,
+                            relevantContent: chunk,
+                            patchWithLinesStr,
+                            hasRelevantContent: true,
+                        },
+                    };
+
+                    const chunkAnalysis =
+                        await this.codeAnalysisOrchestrator.executeStandardAnalysis(
+                            context.organizationAndTeamData,
+                            context.pullRequest.number,
+                            {
+                                file,
+                                relevantContent: chunk,
+                                patchWithLinesStr,
+                                hasRelevantContent: true,
+                            },
+                            reviewModeResponse,
+                            chunkContext,
+                        );
+
+                    // Run the full post-processing pipeline (filters + safeguard)
+                    // with the same chunk content so the safeguard LLM sees the
+                    // same context window as the analysis LLM
+                    const chunkResult = await this.processAnalysisResult(
+                        chunkAnalysis,
+                        chunkContext,
+                    );
+
+                    allValidSuggestions.push(
+                        ...chunkResult.validSuggestionsToAnalyze,
+                    );
+                    allDiscardedSuggestions.push(
+                        ...chunkResult.discardedSuggestionsBySafeGuard,
+                    );
+                    lastCodeReviewModelUsed =
+                        chunkResult.codeReviewModelUsed || lastCodeReviewModelUsed;
+                    lastReviewMode = chunkResult.reviewMode || lastReviewMode;
+                }
+
+                return {
+                    validSuggestionsToAnalyze: allValidSuggestions,
+                    discardedSuggestionsBySafeGuard: allDiscardedSuggestions,
+                    reviewMode: lastReviewMode,
+                    codeReviewModelUsed: lastCodeReviewModelUsed,
+                    filename: file.filename,
+                };
+            }
+
+            // No chunking — standard single-call path
             const standardAnalysisResult =
                 await this.codeAnalysisOrchestrator.executeStandardAnalysis(
                     context.organizationAndTeamData,
