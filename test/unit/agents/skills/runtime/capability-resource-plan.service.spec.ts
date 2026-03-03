@@ -25,23 +25,21 @@ describe('CapabilityResourcePlanService', () => {
         );
 
         expect(linearTools).toEqual([
-            'get_issue',
-            'list_issues',
-            'get_project',
-            'get_team',
+            'LINEAR_GET_LINEAR_ISSUE',
+            'LINEAR_LIST_LINEAR_ISSUES',
+            'LINEAR_LIST_LINEAR_PROJECTS',
+            'LINEAR_LIST_LINEAR_TEAMS',
         ]);
         expect(notionTools).toEqual([
-            'Fetch Notion Data',
-            'Search Notion page',
-            'Fetch database row',
-            'Query database',
-            'Get page property',
+            'NOTION_FETCH_DATA',
+            'NOTION_SEARCH_NOTION_PAGE',
+            'NOTION_FETCH_ROW',
+            'NOTION_QUERY_DATABASE',
+            'NOTION_GET_PAGE_PROPERTY_ACTION',
         ]);
         expect(clickupTools).toEqual([
-            'Get Task',
-            'Get Tasks',
-            'Get List',
-            'Get Space',
+            'CLICKUP_GET_TASK',
+            'CLICKUP_GET_TASKS',
         ]);
     });
 

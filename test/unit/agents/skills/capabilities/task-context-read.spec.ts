@@ -307,10 +307,10 @@ describe('fetchTaskContext capability', () => {
 
         const toolCaller: ToolCaller = {
             callTool,
-            getRegisteredTools: () => [{ name: 'Get Linear issue' }],
+            getRegisteredTools: () => [{ name: 'LINEAR_GET_LINEAR_ISSUE' }],
             getToolsForLLM: () => [
                 {
-                    name: 'Get Linear issue',
+                    name: 'LINEAR_GET_LINEAR_ISSUE',
                     parameters: {
                         required: ['id'],
                         properties: {
@@ -325,7 +325,9 @@ describe('fetchTaskContext capability', () => {
         };
 
         const hooks = {
-            getSeedTaskContextTools: jest.fn(async () => ['get_issue']),
+            getSeedTaskContextTools: jest.fn(async () => [
+                'LINEAR_GET_LINEAR_ISSUE',
+            ]),
             getCachedTaskContextTools: jest.fn(async () => []),
             saveCachedTaskContextTools: jest.fn(async () => undefined),
             resolvePreferredTool: jest.fn(async () => undefined),
@@ -345,7 +347,7 @@ describe('fetchTaskContext capability', () => {
         );
 
         expect(callTool).toHaveBeenCalledWith(
-            'Get Linear issue',
+            'LINEAR_GET_LINEAR_ISSUE',
             expect.objectContaining({ id: 'KC-1441' }),
         );
         expect(result.normalized).toMatchObject({
@@ -369,10 +371,10 @@ describe('fetchTaskContext capability', () => {
 
         const toolCaller: ToolCaller = {
             callTool,
-            getRegisteredTools: () => [{ name: 'Create ClickUp task' }],
+            getRegisteredTools: () => [{ name: 'Workspace CLICKUP_GET_TASK' }],
             getToolsForLLM: () => [
                 {
-                    name: 'Create ClickUp task',
+                    name: 'Workspace CLICKUP_GET_TASK',
                     parameters: {
                         required: ['taskId'],
                         properties: {
@@ -384,7 +386,9 @@ describe('fetchTaskContext capability', () => {
         };
 
         const hooks = {
-            getSeedTaskContextTools: jest.fn(async () => ['create_task']),
+            getSeedTaskContextTools: jest.fn(async () => [
+                'CLICKUP_GET_TASK',
+            ]),
             getCachedTaskContextTools: jest.fn(async () => []),
             saveCachedTaskContextTools: jest.fn(async () => undefined),
             resolvePreferredTool: jest.fn(async () => undefined),
@@ -404,7 +408,7 @@ describe('fetchTaskContext capability', () => {
         );
 
         expect(callTool).toHaveBeenCalledWith(
-            'Create ClickUp task',
+            'Workspace CLICKUP_GET_TASK',
             expect.objectContaining({ taskId: 'TASK-86' }),
         );
         expect(result.normalized).toMatchObject({
@@ -651,10 +655,10 @@ describe('fetchTaskContext capability', () => {
 
         const toolCaller: ToolCaller = {
             callTool,
-            getRegisteredTools: () => [{ name: 'get_issue' }],
+            getRegisteredTools: () => [{ name: 'LINEAR_GET_LINEAR_ISSUE' }],
             getToolsForLLM: () => [
                 {
-                    name: 'get_issue',
+                    name: 'LINEAR_GET_LINEAR_ISSUE',
                     parameters: {
                         required: ['id'],
                         properties: {
@@ -669,7 +673,9 @@ describe('fetchTaskContext capability', () => {
         };
 
         const hooks = {
-            getSeedTaskContextTools: jest.fn(async () => ['get_issue']),
+            getSeedTaskContextTools: jest.fn(async () => [
+                'LINEAR_GET_LINEAR_ISSUE',
+            ]),
             getCachedTaskContextTools: jest.fn(async () => []),
             saveCachedTaskContextTools: jest.fn(async () => undefined),
             resolvePreferredTool: jest.fn(async () => undefined),
@@ -708,10 +714,10 @@ describe('fetchTaskContext capability', () => {
 
         const toolCaller: ToolCaller = {
             callTool,
-            getRegisteredTools: () => [{ name: 'Get Task' }],
+            getRegisteredTools: () => [{ name: 'CLICKUP_GET_TASK' }],
             getToolsForLLM: () => [
                 {
-                    name: 'Get Task',
+                    name: 'CLICKUP_GET_TASK',
                     parameters: {
                         required: ['taskId'],
                         properties: {
@@ -723,7 +729,9 @@ describe('fetchTaskContext capability', () => {
         };
 
         const hooks = {
-            getSeedTaskContextTools: jest.fn(async () => ['Get Task']),
+            getSeedTaskContextTools: jest.fn(async () => [
+                'CLICKUP_GET_TASK',
+            ]),
             getCachedTaskContextTools: jest.fn(async () => []),
             saveCachedTaskContextTools: jest.fn(async () => undefined),
             resolvePreferredTool: jest.fn(async () => undefined),

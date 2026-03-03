@@ -2,9 +2,9 @@
     "providerType": "linear",
     "capability": "task.context.read",
     "tools": [
-        "get_issue",
-        "list_issues",
-        "get_project",
-        "get_team"
+        "LINEAR_GET_LINEAR_ISSUE",
+        "LINEAR_LIST_LINEAR_ISSUES",
+        "LINEAR_LIST_LINEAR_PROJECTS",
+        "LINEAR_LIST_LINEAR_TEAMS"
     ]
 }
