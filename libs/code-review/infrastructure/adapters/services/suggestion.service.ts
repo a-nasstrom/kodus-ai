@@ -3,7 +3,10 @@ import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { IAIAnalysisService } from '@libs/code-review/domain/contracts/AIAnalysisService.contract';
-import { CrossFileContextSnippet } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import {
+    CrossFileContextSnippet,
+    RemoteCommands,
+} from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
@@ -234,6 +237,7 @@ export class SuggestionService implements ISuggestionService {
         reviewMode: ReviewModeResponse,
         byokConfig: BYOKConfig,
         crossFileSnippets?: CrossFileContextSnippet[],
+        remoteCommands?: RemoteCommands,
     ) {
         if (!suggestions?.length) {
             return suggestions;
@@ -250,6 +254,7 @@ export class SuggestionService implements ISuggestionService {
             reviewMode,
             byokConfig,
             crossFileSnippets,
+            remoteCommands,
         );
     }
 

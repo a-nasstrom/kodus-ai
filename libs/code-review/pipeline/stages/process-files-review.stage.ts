@@ -139,6 +139,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
                 // Release data no longer needed by subsequent stages
                 draft.crossFileContexts = undefined;
+                draft.sandboxHandle = undefined;
 
                 for (const file of draft.changedFiles) {
                     delete file.patchWithLinesStr;
@@ -168,6 +169,19 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     }),
                 );
             });
+        } finally {
+            // Cleanup E2B sandbox after all files are processed
+            if (context.sandboxHandle?.cleanup) {
+                try {
+                    await context.sandboxHandle.cleanup();
+                } catch (cleanupErr) {
+                    this.logger.warn({
+                        message: 'E2B sandbox cleanup failed after file analysis',
+                        context: this.stageName,
+                        error: cleanupErr,
+                    });
+                }
+            }
         }
     }
 
@@ -1137,6 +1151,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 reviewModeResponse,
                 context?.codeReviewConfig?.byokConfig,
                 crossFileSnippets,
+                context?.remoteCommands,
             );
 
         const safeguardLLMProvider =
@@ -1200,6 +1215,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context.fileContextMap,
             ),
             crossFileSnippets: context.crossFileContexts?.contexts,
+            remoteCommands: context.sandboxHandle?.remoteCommands,
         };
     }
 

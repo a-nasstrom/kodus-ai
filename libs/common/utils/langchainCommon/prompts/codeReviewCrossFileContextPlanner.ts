@@ -13,12 +13,12 @@ export const CrossFileContextPlannerSchema = z.object({
                 pattern: z.string().min(1),
                 rationale: z.string().min(1),
                 riskLevel: z.enum(['low', 'medium', 'high']),
-                symbolName: z.string().optional(),
+                symbolName: z.string().min(1),
                 fileGlob: z.string().optional(),
                 sourceFile: z.string().min(1),
             }),
         )
-        .max(8),
+        .max(10),
 });
 
 export type CrossFileContextPlannerSchemaType = z.infer<
@@ -31,7 +31,7 @@ export const prompt_cross_file_context_planner = (
     return `You are a code analysis planner. Your task is to analyze a PR diff and generate targeted ripgrep (rg) search patterns to find call-sites, consumers, and dependents in files OUTSIDE the PR.
 
 ## Goal
-Given the diff summary and changed filenames below, produce up to 8 search queries that will help find code in the repository that may be affected by these changes.
+Given the diff summary and changed filenames below, produce up to 10 search queries that will help find code in the repository that may be affected by these changes.
 
 ### Category 1: Consumers & Callers (standard)
 - Functions/methods/classes that were modified, renamed, or had their signatures changed
@@ -55,6 +55,17 @@ Every data operation has a counterpart. If the diff touches ONE side, you MUST s
 ### Category 4: Configuration & Limits
 - If the diff changes limits, thresholds, sizes, or defaults (e.g., max array size, timeout, retry count), search for where those limits are enforced or depended upon (e.g., server body-size config, rate limiters, pagination consumers)
 
+### Category 5: Upstream Dependencies (reduces false positives)
+If the diff imports from LOCAL modules (relative paths like \`./\`, \`../\`, or workspace packages — NOT node_modules or stdlib), search for the implementation of those modules:
+- The exported function/class/constant that the changed file uses
+- Focus on understanding the API contract: return types, parameter types, error behavior
+- This is critical when the changed code CALLS an imported function and the review needs to understand what that function returns or throws
+
+Examples:
+- \`import { db } from '../database'\` → search for the \`db\` export and its \`query\` method signature
+- \`import { BuildPipeline } from '../../src/deploy/BuildPipeline'\` → search for the \`BuildPipeline\` class and \`toScript\` method
+- \`import { validate } from './validators'\` → search for the \`validate\` function signature and return type
+
 ## Input
 
 ### Changed Files
@@ -74,30 +85,46 @@ ${payload.diffSummary}
    - **medium**: Behavioral changes to widely-used functions, type narrowing, changed limits/thresholds
    - **low**: Internal refactors that might affect nearby consumers
 6. Optionally provide a fileGlob to narrow the search (e.g., "*.ts" or "*.py").
-7. Optionally provide the symbolName for the primary symbol being searched.
+7. ALWAYS provide the symbolName — the primary symbol being searched (function name, class name, type name, event name, constant, etc.).
 
 ## Query Prioritization
-Allocate your 8 queries wisely. Prioritize:
-1. **Symmetric counterparts** — these are the #1 source of false positives when missed
+Allocate your 10 queries wisely. Prioritize:
+1. **Symmetric counterparts** — #1 source of cross-file bugs when missed
 2. **Direct consumers/callers** of changed signatures
-3. **Test ↔ implementation** pairs
-4. **Configuration dependents**
+3. **Upstream dependencies** — #1 source of false positives when missed
+4. **Test ↔ implementation** pairs
+5. **Configuration dependents**
 
 ## Constraints
-- Maximum 8 queries
+- Maximum 10 queries
 - Patterns must be valid ripgrep regex
-- Search for CONSUMERS, CALLERS, COUNTERPARTS, and VERIFIERS — not definitions
-- Prefer precise patterns over broad ones to minimize noise
+- Search for CONSUMERS, CALLERS, COUNTERPARTS, VERIFIERS, and UPSTREAM IMPLEMENTATIONS — not just definitions
 - Do NOT generate patterns that would only match inside the changed files themselves
+
+## CRITICAL: Ripgrep Pattern Rules
+ripgrep searches LINE-BY-LINE. Patterns CANNOT span multiple lines.
+
+**DO NOT** generate patterns that try to match multi-line constructs:
+- ❌ \`import\\s+{[^}]*\\bsymbol\\b[^}]*}\` — fails because TypeScript imports are often multi-line
+- ❌ \`import\\s*\\{[\\s\\S]*symbol\` — multi-line matching is not supported
+
+**DO** use simple single-line patterns:
+- ✅ \`\\bsymbolName\\b\` — finds any reference (imports, calls, re-exports, variable assignments)
+- ✅ \`symbolName\\(\` — finds function call-sites specifically
+- ✅ \`from.*module-path\` — finds import source (the \`from '...'\` part is always on one line)
+- ✅ \`symbolName\\s*=\` — finds assignments/definitions
+
+Prefer simple \\b word-boundary patterns. A pattern like \`\\bvalidateInput\\b\` is more reliable than trying to match the full import or call syntax.
 
 ## Output Format
 Return a JSON object with a "queries" array. Each query has:
 - pattern: ripgrep-compatible regex pattern
 - rationale: why this search is important
 - riskLevel: "low" | "medium" | "high"
-- symbolName: (optional) the primary symbol name
+- symbolName: the primary symbol being searched (REQUIRED — use the function, class, type, event, or constant name)
 - fileGlob: (optional) glob to filter files, e.g. "*.ts"
-- sourceFile: the changed file where the symbol was modified (from the "Changed Files" list)
+- sourceFile: ALWAYS the changed file from the "Changed Files" list that triggered this query.
+  Even for upstream dependency searches, set sourceFile to the changed file that contains the import.
 
 ## Language
 All rationale text must be in ${payload.language || 'en-US'}.
