@@ -4,7 +4,7 @@ set -euo pipefail
 # Resolve the Shadowsocks server hostname from config.json to get current NLB IPs.
 # This must run BEFORE iptables redirect is active (otherwise DNS itself gets redirected).
 SS_HOST=$(grep -oP '"server"\s*:\s*"\K[^"]+' config.json)
-NLB_IPS=$(getent ahosts "$SS_HOST" 2>/dev/null | awk '{print $1}' | sort -u)
+NLB_IPS=$(getent ahosts "$SS_HOST" 2>/dev/null | awk '{print $1}' | grep -v ':' | sort -u)
 
 if [ -z "$NLB_IPS" ]; then
     echo "FATAL: Could not resolve NLB IPs for $SS_HOST" >&2

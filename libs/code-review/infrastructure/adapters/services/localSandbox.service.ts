@@ -62,6 +62,13 @@ export class LocalSandboxService implements ISandboxProvider {
 
             // Pass auth header via env vars instead of -c args
             // to keep the token out of ps/proc/cmdline
+            const fetchEnv: Record<string, string> = { ...process.env } as any;
+            if (authToken) {
+                fetchEnv.GIT_CONFIG_COUNT = '1';
+                fetchEnv.GIT_CONFIG_KEY_0 = 'http.extraHeader';
+                fetchEnv.GIT_CONFIG_VALUE_0 = authHeader;
+            }
+
             await execFileAsync(
                 'git',
                 [
@@ -74,12 +81,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 ],
                 {
                     timeout: CLONE_TIMEOUT_MS,
-                    env: {
-                        ...process.env,
-                        GIT_CONFIG_COUNT: '1',
-                        GIT_CONFIG_KEY_0: 'http.extraHeader',
-                        GIT_CONFIG_VALUE_0: authHeader,
-                    },
+                    env: fetchEnv,
                 },
             );
 
