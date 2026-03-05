@@ -109,12 +109,13 @@ function fileMatchesModule(filePath: string, patterns: string[]): boolean {
 
 function patternToRegex(pattern: string): RegExp {
     const escaped = pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
         .replace(/\*\*/g, '§GLOBSTAR§')
-        .replace(/\*/g, '[^/]*')
+        .replace(/\*/g, '§GLOB§')
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
         // Preserve globstar "zero or more directories" semantics when used mid-path.
         // Example: a/**/b must match both a/b and a/x/y/b.
         .replace(/\/§GLOBSTAR§\//g, '(?:/[^/]+)*/')
-        .replace(/§GLOBSTAR§/g, '.*');
+        .replace(/§GLOBSTAR§/g, '.*')
+        .replace(/§GLOB§/g, '[^/]*');
     return new RegExp(`^${escaped}$`);
 }
