@@ -41,6 +41,7 @@ export type OrganizationLicenseLicensedSelfHosted = {
     subscriptionStatus: "licensed-self-hosted";
     planType: string;
     numberOfLicenses: number;
+    expiresAt?: string;
 };
 
 export type OrganizationLicense =

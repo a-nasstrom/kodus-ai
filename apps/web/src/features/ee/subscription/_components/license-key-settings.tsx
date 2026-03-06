@@ -2,17 +2,24 @@
 
 import { useState } from "react";
 import { Button } from "@components/ui/button";
-import { Card } from "@components/ui/card";
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@components/ui/card";
 import { Input } from "@components/ui/input";
 import { useToast } from "@components/ui/toaster/use-toast";
-import { Link } from "@components/ui/link";
 import { authorizedFetch } from "@services/fetch";
 import {
     CheckCircleIcon,
     KeyIcon,
     ServerIcon,
     ShieldCheckIcon,
+    XCircleIcon,
 } from "lucide-react";
+import { cn } from "src/core/utils/components";
 import { pathToApiUrl } from "src/core/utils/helpers";
 import { useSubscriptionStatus } from "../_hooks/use-subscription-status";
 
@@ -40,6 +47,7 @@ export const LicenseKeySettings = () => {
         if (!licenseKey.trim()) return;
 
         setLoading(true);
+        setActivationResult(null);
         try {
             const result = await authorizedFetch<LicenseActivationResult>(
                 pathToApiUrl("/license/activate"),
@@ -80,59 +88,133 @@ export const LicenseKeySettings = () => {
     };
 
     return (
-        <div className="mx-auto max-w-2xl space-y-6 py-8">
-            <div className="space-y-1">
-                <h2 className="text-xl font-semibold">License Management</h2>
-                <p className="text-text-secondary text-sm">
-                    Manage your self-hosted enterprise license key to unlock
-                    additional features.
-                </p>
-            </div>
+        <div className="space-y-4">
+            {isLicensed ? <ActiveLicenseCard subscription={subscription} /> : <CommunityCard />}
+            <ActivateKeyCard
+                isLicensed={isLicensed}
+                licenseKey={licenseKey}
+                loading={loading}
+                activationResult={activationResult}
+                onLicenseKeyChange={setLicenseKey}
+                onActivate={handleActivate}
+            />
+        </div>
+    );
+};
 
-            {isLicensed && (
-                <Card className="space-y-3 p-5">
+function ActiveLicenseCard({
+    subscription,
+}: {
+    subscription: ReturnType<typeof useSubscriptionStatus>;
+}) {
+    if (subscription.status !== "licensed-self-hosted") return null;
+
+    const isExpiring =
+        subscription.daysRemaining != null && subscription.daysRemaining <= 30;
+    const isExpired =
+        subscription.daysRemaining != null && subscription.daysRemaining <= 0;
+
+    return (
+        <Card>
+            <CardHeader className="flex flex-row items-start justify-between">
+                <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2">
-                        <ShieldCheckIcon className="text-brand-green h-5 w-5" />
-                        <h3 className="font-medium">Active License</h3>
+                        <ShieldCheckIcon className="size-5 text-emerald-500" />
+                        <CardTitle>Active License</CardTitle>
                     </div>
+                    <CardDescription>
+                        Enterprise features are enabled for this instance.
+                    </CardDescription>
+                </div>
 
-                    <div className="text-text-secondary grid grid-cols-2 gap-y-2 text-sm">
-                        <span>Plan</span>
-                        <span className="font-medium text-white">
+                {subscription.daysRemaining != null && (
+                    <span
+                        className={cn(
+                            "shrink-0 rounded-md px-2.5 py-1 text-xs font-medium tabular-nums",
+                            isExpired
+                                ? "bg-red-500/10 text-red-400"
+                                : isExpiring
+                                  ? "bg-yellow-500/10 text-yellow-400"
+                                  : "bg-emerald-500/10 text-emerald-400",
+                        )}>
+                        {isExpired
+                            ? "Expired"
+                            : `${subscription.daysRemaining} days remaining`}
+                    </span>
+                )}
+            </CardHeader>
+
+            <CardContent>
+                <div className="flex gap-6 text-sm">
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-text-secondary">Plan</span>
+                        <span className="font-medium capitalize">
                             {subscription.planType}
                         </span>
-
-                        <span>Seats</span>
-                        <span className="font-medium text-white">
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-text-secondary">Seats</span>
+                        <span className="tabular-nums font-medium">
                             {subscription.numberOfLicenses}
                         </span>
                     </div>
-                </Card>
-            )}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
-            {!isLicensed && (
-                <Card className="space-y-3 p-5">
-                    <div className="flex items-center gap-2">
-                        <ServerIcon className="text-text-secondary h-5 w-5" />
-                        <h3 className="font-medium">Community Edition</h3>
-                    </div>
-                    <p className="text-text-secondary text-sm">
-                        You're running Kodus in self-hosted mode without a
-                        license. Some enterprise features are limited.
-                    </p>
-                </Card>
-            )}
-
-            <Card className="space-y-4 p-5">
+function CommunityCard() {
+    return (
+        <Card>
+            <CardHeader>
                 <div className="flex items-center gap-2">
-                    <KeyIcon className="text-text-secondary h-5 w-5" />
-                    <h3 className="font-medium">
+                    <ServerIcon className="text-text-secondary size-5" />
+                    <CardTitle>Community Edition</CardTitle>
+                </div>
+                <CardDescription className="text-pretty">
+                    You&apos;re running Kodus in self-hosted mode without a
+                    license. Activate a key below to unlock enterprise features.
+                </CardDescription>
+            </CardHeader>
+        </Card>
+    );
+}
+
+function ActivateKeyCard({
+    isLicensed,
+    licenseKey,
+    loading,
+    activationResult,
+    onLicenseKeyChange,
+    onActivate,
+}: {
+    isLicensed: boolean;
+    licenseKey: string;
+    loading: boolean;
+    activationResult: LicenseActivationResult | null;
+    onLicenseKeyChange: (v: string) => void;
+    onActivate: () => void;
+}) {
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <KeyIcon className="text-text-secondary size-5" />
+                    <CardTitle>
                         {isLicensed
                             ? "Update License Key"
                             : "Activate License Key"}
-                    </h3>
+                    </CardTitle>
                 </div>
+                <CardDescription>
+                    {isLicensed
+                        ? "Replace your current key with a new one."
+                        : "Paste the license key you received from Kodus."}
+                </CardDescription>
+            </CardHeader>
 
+            <CardContent className="space-y-3">
                 <div className="flex gap-2">
                     <Input
                         size="md"
@@ -140,48 +222,49 @@ export const LicenseKeySettings = () => {
                         value={licenseKey}
                         placeholder="Paste your license key here"
                         className="flex-1 font-mono"
-                        onChange={(e) => setLicenseKey(e.target.value)}
+                        onChange={(e) => onLicenseKeyChange(e.target.value)}
                         onKeyDown={(e) => {
-                            if (e.key === "Enter") handleActivate();
+                            if (e.key === "Enter") onActivate();
                         }}
                     />
                     <Button
                         size="md"
                         variant="primary"
                         disabled={!licenseKey.trim() || loading}
-                        onClick={handleActivate}>
-                        {loading ? "Activating..." : "Activate"}
+                        loading={loading}
+                        onClick={onActivate}>
+                        Activate
                     </Button>
                 </div>
 
-                {activationResult && activationResult.valid && (
-                    <div className="bg-brand-green/10 flex items-start gap-2 rounded-md p-3 text-sm">
-                        <CheckCircleIcon className="text-brand-green mt-0.5 h-4 w-4 shrink-0" />
-                        <div>
-                            <p className="font-medium">
+                {activationResult?.valid && (
+                    <div className="flex items-start gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm">
+                        <CheckCircleIcon className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                        <div className="flex flex-col gap-0.5">
+                            <span className="font-medium">
                                 License activated successfully
-                            </p>
-                            <p className="text-text-secondary text-xs">
-                                Plan: {activationResult.plan} &middot; Seats:{" "}
-                                {activationResult.seats} &middot; Expires:{" "}
-                                {activationResult.expiresAt
-                                    ? new Date(
-                                          activationResult.expiresAt,
-                                      ).toLocaleDateString()
-                                    : "N/A"}
-                            </p>
+                            </span>
+                            <span className="text-text-secondary text-xs tabular-nums">
+                                {activationResult.plan} plan
+                                {activationResult.seats != null &&
+                                    ` \u00B7 ${activationResult.seats} seats`}
+                                {activationResult.expiresAt &&
+                                    ` \u00B7 expires ${new Date(activationResult.expiresAt).toLocaleDateString()}`}
+                            </span>
                         </div>
                     </div>
                 )}
-            </Card>
 
-            <div className="text-text-secondary text-center text-xs">
-                <Link
-                    href="https://docs.kodus.io/how_to_use/en/pricing"
-                    className="hover:underline">
-                    Learn more about Kodus enterprise features
-                </Link>
-            </div>
-        </div>
+                {activationResult && !activationResult.valid && (
+                    <div className="flex items-start gap-2 rounded-lg bg-red-500/10 p-3 text-sm">
+                        <XCircleIcon className="mt-0.5 size-4 shrink-0 text-red-400" />
+                        <span className="font-medium">
+                            Invalid or expired license key. Please check and try
+                            again.
+                        </span>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     );
-};
+}

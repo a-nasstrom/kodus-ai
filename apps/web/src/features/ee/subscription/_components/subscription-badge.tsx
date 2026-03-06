@@ -49,10 +49,18 @@ const SubscriptionPaymentFailed = () => {
     );
 };
 
+const SubscriptionSelfHosted = () => {
+    return (
+        <Button decorative size="sm" variant="tertiary">
+            Self-hosted
+        </Button>
+    );
+};
+
 const SubscriptionLicensedSelfHosted = () => {
     return (
         <Button decorative size="sm" variant="secondary">
-            Enterprise License
+            Self-hosted Enterprise
         </Button>
     );
 };
@@ -69,6 +77,7 @@ const components: Partial<
     "free": SubscriptionUpgrade,
     "canceled": SubscriptionUpgrade,
     "payment-failed": SubscriptionPaymentFailed,
+    "self-hosted": SubscriptionSelfHosted,
     "licensed-self-hosted": SubscriptionLicensedSelfHosted,
 };
 

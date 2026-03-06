@@ -81,6 +81,7 @@ export class SelfHostedLicenseService implements ILicenseService {
                 subscriptionStatus: SubscriptionStatus.LICENSED_SELF_HOSTED,
                 planType: payload.plan,
                 numberOfLicenses: payload.seats,
+                expiresAt: new Date(payload.exp * 1000).toISOString(),
             };
 
             this.cache = {
@@ -139,19 +140,22 @@ export class SelfHostedLicenseService implements ILicenseService {
                 return true;
             }
 
-            // Check seat limit
+            // Check seat limit globally across all orgs
             const maxSeats = validation.numberOfLicenses || 0;
-            if (maxSeats > 0 && assignedUsers.length >= maxSeats) {
-                this.logger.warn({
-                    message: 'Cannot assign license: seat limit reached',
-                    context: SelfHostedLicenseService.name,
-                    metadata: {
-                        current: assignedUsers.length,
-                        max: maxSeats,
-                        userGitId,
-                    },
-                });
-                return false;
+            if (maxSeats > 0) {
+                const globalCount = await this.getGlobalAssignedUsersCount();
+                if (globalCount >= maxSeats) {
+                    this.logger.warn({
+                        message: 'Cannot assign license: global seat limit reached',
+                        context: SelfHostedLicenseService.name,
+                        metadata: {
+                            currentGlobal: globalCount,
+                            max: maxSeats,
+                            userGitId,
+                        },
+                    });
+                    return false;
+                }
             }
 
             assignedUsers.push(userGitId);
@@ -226,6 +230,32 @@ export class SelfHostedLicenseService implements ILicenseService {
             { users },
             organizationAndTeamData,
         );
+    }
+
+    /**
+     * Count assigned users across ALL organizations in this instance.
+     * Uses a Set to deduplicate users that may appear in multiple orgs.
+     */
+    private async getGlobalAssignedUsersCount(): Promise<number> {
+        try {
+            const allParams = await this.organizationParametersService.find({
+                configKey: OrganizationParametersKey.LICENSE_ASSIGNED_USERS,
+            });
+
+            const uniqueUsers = new Set<string>();
+            for (const param of allParams) {
+                const users = param.configValue?.users;
+                if (Array.isArray(users)) {
+                    for (const user of users) {
+                        uniqueUsers.add(user);
+                    }
+                }
+            }
+
+            return uniqueUsers.size;
+        } catch {
+            return 0;
+        }
     }
 
     /**

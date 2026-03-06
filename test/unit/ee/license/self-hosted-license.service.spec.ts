@@ -62,6 +62,7 @@ function makeJWTWithWrongKey(payload: Record<string, any>): string {
 function createMockOrgParamsService(returnValue: any = null) {
     return {
         findByKey: jest.fn().mockResolvedValue(returnValue),
+        find: jest.fn().mockResolvedValue([]),
         createOrUpdateConfig: jest.fn(),
         deleteByokConfig: jest.fn(),
     };
@@ -119,6 +120,9 @@ describe('SelfHostedLicenseService', () => {
             );
             expect(result.planType).toBe('enterprise');
             expect(result.numberOfLicenses).toBe(50);
+            expect(result.expiresAt).toBe(
+                new Date(validPayload.exp * 1000).toISOString(),
+            );
         });
 
         it('should return valid result for a valid JWT from env var', async () => {
@@ -277,6 +281,7 @@ describe('SelfHostedLicenseService', () => {
             mockParams.findByKey
                 .mockResolvedValueOnce({ configValue: { key: token } }) // getLicenseKey
                 .mockResolvedValueOnce(null); // getAssignedUsers
+            mockParams.find.mockResolvedValueOnce([]); // global count
             mockParams.createOrUpdateConfig = jest.fn().mockResolvedValue(true);
             const service = createService(mockParams);
 
@@ -305,12 +310,16 @@ describe('SelfHostedLicenseService', () => {
             expect(result).toBe(false);
         });
 
-        it('should return false when seat limit reached', async () => {
+        it('should return false when global seat limit reached', async () => {
             const token = makeJWT({ ...validPayload, seats: 1 });
             const mockParams = createMockOrgParamsService(null);
             mockParams.findByKey
                 .mockResolvedValueOnce({ configValue: { key: token } }) // getLicenseKey
                 .mockResolvedValueOnce({ configValue: { users: ['existing-user'] } }); // getAssignedUsers
+            // Global count: 1 user across all orgs
+            mockParams.find.mockResolvedValueOnce([
+                { configValue: { users: ['existing-user'] } },
+            ]);
             const service = createService(mockParams);
 
             const result = await service.assignLicense(
@@ -319,6 +328,48 @@ describe('SelfHostedLicenseService', () => {
                 'github',
             );
             expect(result).toBe(false);
+        });
+
+        it('should count seats globally across orgs', async () => {
+            const token = makeJWT({ ...validPayload, seats: 2 });
+            const mockParams = createMockOrgParamsService(null);
+            mockParams.findByKey
+                .mockResolvedValueOnce({ configValue: { key: token } }) // getLicenseKey
+                .mockResolvedValueOnce(null); // getAssignedUsers (this org has none)
+            // Global count: 2 users across different orgs (limit reached)
+            mockParams.find.mockResolvedValueOnce([
+                { configValue: { users: ['user-org-a'] } },
+                { configValue: { users: ['user-org-b'] } },
+            ]);
+            const service = createService(mockParams);
+
+            const result = await service.assignLicense(
+                orgData,
+                'new-user',
+                'github',
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should deduplicate users across orgs for global count', async () => {
+            const token = makeJWT({ ...validPayload, seats: 2 });
+            const mockParams = createMockOrgParamsService(null);
+            mockParams.findByKey
+                .mockResolvedValueOnce({ configValue: { key: token } }) // getLicenseKey
+                .mockResolvedValueOnce(null); // getAssignedUsers
+            // Same user in two orgs = 1 unique seat used
+            mockParams.find.mockResolvedValueOnce([
+                { configValue: { users: ['same-user'] } },
+                { configValue: { users: ['same-user'] } },
+            ]);
+            const service = createService(mockParams);
+
+            const result = await service.assignLicense(
+                orgData,
+                'new-user',
+                'github',
+            );
+            expect(result).toBe(true);
         });
     });
 

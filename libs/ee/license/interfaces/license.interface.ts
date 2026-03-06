@@ -31,6 +31,7 @@ export type OrganizationLicenseValidationResult = {
     trialEnd?: Date;
     numberOfLicenses?: number;
     planType?: string;
+    expiresAt?: string;
 };
 
 export type UserWithLicense = {

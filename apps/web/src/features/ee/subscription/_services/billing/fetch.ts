@@ -156,6 +156,7 @@ export const validateOrganizationLicense = async (params: {
                 subscriptionStatus?: string;
                 planType?: string;
                 numberOfLicenses?: number;
+                expiresAt?: string;
             }>(pathToApiUrl("/license/status"));
 
             if (result?.valid && result.subscriptionStatus === "licensed-self-hosted") {
@@ -164,6 +165,7 @@ export const validateOrganizationLicense = async (params: {
                     subscriptionStatus: "licensed-self-hosted",
                     planType: result.planType || "enterprise",
                     numberOfLicenses: result.numberOfLicenses || 0,
+                    expiresAt: result.expiresAt,
                 };
             }
         } catch {
