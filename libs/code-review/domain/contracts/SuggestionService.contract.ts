@@ -6,6 +6,7 @@ import {
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { DocumentationContextItem } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 
 import {
     CodeReviewConfig,
@@ -82,6 +83,7 @@ export interface ISuggestionService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
+        documentationContext?: DocumentationContextItem[],
     ): Promise<any>;
 
     /**

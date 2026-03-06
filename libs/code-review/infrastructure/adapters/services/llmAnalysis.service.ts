@@ -32,6 +32,7 @@ import {
     AIAnalysisResult,
     AnalysisContext,
     CodeSuggestion,
+    DocumentationContextItem,
     FileChange,
     FileChangeContext,
     ISafeguardResponse,
@@ -41,6 +42,7 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import { DocumentationSearchExaService } from './documentation-search-exa.service';
 import { SafeguardPipelineService } from './safeguardPipeline.service';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol.for('LLMAnalysisService');
@@ -54,11 +56,13 @@ export class LLMAnalysisService implements IAIAnalysisService {
     constructor(
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observability: ObservabilityService,
+        private readonly documentationSearchExaService: DocumentationSearchExaService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor();
         this.safeguardPipeline = new SafeguardPipelineService(
             promptRunnerService,
             observability,
+            documentationSearchExaService,
         );
     }
 
@@ -580,6 +584,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
+        documentationContext?: DocumentationContextItem[],
     ): Promise<ISafeguardResponse> {
         suggestions?.forEach((suggestion) => {
             if (
@@ -609,6 +614,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 memories,
                 externalReferences,
                 externalReferenceErrors,
+                documentationContext,
             });
         } catch (error) {
             this.logger.error({

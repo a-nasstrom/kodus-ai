@@ -1271,6 +1271,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.codeReviewConfig?.kodyMemoryRules,
                 context?.externalPromptContext?.generation?.main?.references,
                 context?.externalPromptContext?.generation?.main?.error,
+                context?.documentationContext,
             );
 
         const safeguardLLMProvider =

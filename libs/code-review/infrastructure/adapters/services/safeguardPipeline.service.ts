@@ -13,6 +13,7 @@ import {
     CrossFileContextSnippet,
     RemoteCommands,
 } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import {
     SafeguardFeatureExtractionResult,
     SafeguardFeatureSet,
@@ -35,6 +36,10 @@ import { ObservabilityService } from '@libs/core/log/observability.service';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { ISafeguardResponse } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { ReviewModeResponse } from '@libs/core/domain/enums/code-review.enum';
+import {
+    DocumentationQueryPlanByFile,
+} from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { DocumentationContextItem } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 
 interface SafeguardPipelineParams {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -51,6 +56,7 @@ interface SafeguardPipelineParams {
     memories?: Array<Partial<{ title?: string; rule?: string }>>;
     externalReferences?: unknown[];
     externalReferenceErrors?: unknown[] | string;
+    documentationContext?: DocumentationContextItem[];
 }
 
 const MAX_AGENT_TURNS = 6;
@@ -62,6 +68,7 @@ export class SafeguardPipelineService {
     constructor(
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observability: ObservabilityService,
+        private readonly documentationSearchExaService: DocumentationSearchExaService,
     ) {}
 
     async execute(params: SafeguardPipelineParams): Promise<ISafeguardResponse> {
@@ -187,6 +194,7 @@ export class SafeguardPipelineService {
                             organizationAndTeamData,
                             prNumber,
                             params.memories,
+                            params.documentationContext,
                         );
 
                         const suggMs = Date.now() - suggStart;
@@ -518,6 +526,7 @@ Evidence field in ${params.languageResultPrompt}.`;
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         memories?: Array<Partial<{ title?: string; rule?: string }>>,
+        documentationContext?: DocumentationContextItem[],
     ): Promise<{ verified: boolean; action: string; evidence: string; turnsUsed: number }> {
         const claimedDefects = STRUCTURAL_DEFECT_FEATURES
             .filter((f) => features[f])
@@ -538,6 +547,13 @@ Evidence field in ${params.languageResultPrompt}.`;
         );
         if (memoriesBlock) {
             userMessage += `\n\n${memoriesBlock}\n\nConsider these team rules when evaluating the suggestion — if it contradicts a rule, lean towards discarding.`;
+        }
+
+        const documentationBlock = this.buildDocumentationContextBlock(
+            documentationContext,
+        );
+        if (documentationBlock) {
+            userMessage += `\n\n${documentationBlock}`;
         }
 
         // Build conversation history for multi-turn agent loop
@@ -635,6 +651,12 @@ Evidence field in ${params.languageResultPrompt}.`;
                     if (toolResult.length > MAX_LIST_LENGTH) {
                         toolResult = toolResult.substring(0, MAX_LIST_LENGTH) + `\n... (listing truncated)`;
                     }
+                } else if (parsed.tool === 'documentation') {
+                    toolResult = await this.getDocumentationToolResult(
+                        parsed.packageName || '',
+                        parsed.query || suggestion?.suggestionContent || '',
+                        documentationContext,
+                    );
                 } else {
                     toolResult = `Unknown tool: ${parsed.tool}`;
                 }
@@ -723,6 +745,70 @@ Evidence field in ${params.languageResultPrompt}.`;
         } catch {}
 
         return null;
+    }
+
+    private buildDocumentationContextBlock(
+        documentationContext?: DocumentationContextItem[],
+    ): string {
+        if (!documentationContext?.length) {
+            return '';
+        }
+
+        const excerpts = documentationContext
+            .slice(0, 3)
+            .map(
+                (item, index) =>
+                    `${index + 1}. ${item.title || 'Documentation'} (${item.url || 'unknown'})\nQuery: ${item.query}\nSnippet: ${(item.snippet || '').slice(0, 280)}`,
+            )
+            .join('\n\n');
+
+        return `## Available Documentation Context\nUse this context first before requesting more docs with the documentation tool.\n\n${excerpts}`;
+    }
+
+    private async getDocumentationToolResult(
+        packageName: string,
+        query: string,
+        fallbackContext?: DocumentationContextItem[],
+    ): Promise<string> {
+        const normalizedQuery = (query || '').trim();
+        const normalizedPackageName = (packageName || '').trim();
+
+        if (!normalizedQuery) {
+            return 'Documentation tool error: query is required.';
+        }
+
+        const localMatch = (fallbackContext || []).find(
+            (item) =>
+                item.query?.toLowerCase().includes(normalizedQuery.toLowerCase()) ||
+                item.title
+                    ?.toLowerCase()
+                    .includes(normalizedPackageName.toLowerCase()),
+        );
+
+        if (localMatch) {
+            return `Documentation (preloaded):\nTitle: ${localMatch.title}\nURL: ${localMatch.url}\nSnippet: ${localMatch.snippet}`;
+        }
+
+        const packageForPlan = normalizedPackageName || 'framework';
+
+        const planByFile: Record<string, DocumentationQueryPlanByFile> = {
+            safeguard: {
+                relevantPackages: [packageForPlan],
+                queries: [normalizedQuery],
+            },
+        };
+
+        const results =
+            await this.documentationSearchExaService.searchByFilePlan(planByFile);
+        const docs = results.safeguard || [];
+
+        if (!docs.length) {
+            return `Documentation lookup returned no results for package "${packageForPlan}" and query "${normalizedQuery}".`;
+        }
+
+        const doc = docs[0];
+
+        return `Documentation:\nTitle: ${doc.title}\nURL: ${doc.url}\nQuery: ${doc.query}\nSnippet: ${doc.snippet}`;
     }
 
     /**

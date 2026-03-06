@@ -8,6 +8,7 @@ import {
     AIAnalysisResult,
     AnalysisContext,
     CodeSuggestion,
+    DocumentationContextItem,
     FileChange,
     FileChangeContext,
     ReviewModeResponse,
@@ -53,6 +54,7 @@ export interface IAIAnalysisService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
+        documentationContext?: DocumentationContextItem[],
     ): Promise<any>;
     validateImplementedSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,

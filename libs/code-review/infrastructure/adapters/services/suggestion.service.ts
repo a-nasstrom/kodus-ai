@@ -43,6 +43,7 @@ import { LLM_ANALYSIS_SERVICE_TOKEN } from './llmAnalysis.service';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { Repository } from '@libs/core/infrastructure/config/types/general/codeReview.type';
+import { DocumentationContextItem } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { IKodyRule } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { PullRequestReviewComment } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
@@ -242,6 +243,7 @@ export class SuggestionService implements ISuggestionService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
+        documentationContext?: DocumentationContextItem[],
     ) {
         if (!suggestions?.length) {
             return suggestions;
@@ -262,6 +264,7 @@ export class SuggestionService implements ISuggestionService {
             memories,
             externalReferences,
             externalReferenceErrors,
+            documentationContext,
         );
     }
 

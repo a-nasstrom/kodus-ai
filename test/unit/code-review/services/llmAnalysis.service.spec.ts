@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LLMAnalysisService } from '@/code-review/infrastructure/adapters/services/llmAnalysis.service';
+import { DocumentationSearchExaService } from '@/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { ObservabilityService } from '@/core/log/observability.service';
 import { ReviewModeResponse } from '@/core/infrastructure/config/types/general/codeReview.type';
@@ -45,6 +46,10 @@ describe('LLMAnalysisService', () => {
         teamId: 'team-456',
     };
 
+    const mockDocumentationSearchExaService = {
+        searchByFilePlan: jest.fn(),
+    };
+
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -56,6 +61,10 @@ describe('LLMAnalysisService', () => {
                 {
                     provide: ObservabilityService,
                     useValue: mockObservabilityService,
+                },
+                {
+                    provide: DocumentationSearchExaService,
+                    useValue: mockDocumentationSearchExaService,
                 },
             ],
         }).compile();
