@@ -233,7 +233,7 @@ export async function showBanner() {
         'kodus pr business-validation - run business validation',
         'kodus auth status - check current auth mode',
         'kodus hook install - install pre-push review hook',
-        'kodus skills list - list bundled skills',
+        'kodus update - update Kodus CLI version',
         'kodus --help - see all commands and options',
         '',
         '──────────────────────────────',

@@ -199,13 +199,11 @@ describe('utility commands', () => {
         expect(output).toContain('Decision hooks:');
     });
 
-    it('lists bundled skills', async () => {
+    it('returns error for removed skills command', async () => {
         const { stdout, stderr, exitCode } = await runCli(['skills', 'list']);
-        expect(exitCode).toBe(0);
+        expect(exitCode).toBe(1);
         const output = stdout + stderr;
-        expect(output).toContain('Available bundled skills');
-        expect(output).toContain('kodus-review');
-        expect(output).toContain('kodus-pr-suggestions-resolver');
+        expect(output).toContain("unknown command 'skills'");
     });
 });
 

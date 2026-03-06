@@ -1,67 +1,41 @@
 ---
 name: kodus-review-dev
-description: Use when the user asks to review code or prepare commit/push/PR/merge with quality checks using the local Kodus CLI build against a dev API. Trigger on terms like review, commit, push, pull request, merge, or quality gate. Not for PR-vs-task business rules validation.
-license: MIT
-compatibility: Requires a local Kodus CLI build in this repository, a reachable dev Kodus API, and Bash support for the helper script. Prefer non-interactive authentication via team key or explicit credentials.
-metadata:
-    author: Kodus
-    version: '1.0'
+description: Use when the user explicitly asks for local/dev API CLI flow (localhost, QA API, or local `node dist/index.js`) while reviewing code. Run the dev review flow and apply fixes based on CLI output. Not the default review skill.
 ---
 
 # Kodus Review (Dev)
 
 ## Goal
 
-Use the local Kodus CLI build in this repository to review changes and resolve issues. Prefer machine-friendly output via `--prompt-only`, then apply fixes in code.
-
-If the request is to validate a pull request against business rules, task requirements, or acceptance criteria, use `business-rules-validation` instead. The local review command does not trigger `@kody -v business-logic`.
-
-## Trigger Hints
-
-- Treat mentions of `review`, `commit`, `push`, `open PR`, `merge`, `quality gate`, or `ready to ship` as triggers for this skill.
-- For commit/push/merge requests, proactively ask to run local Kodus review first when a fresh review has not run yet in the current task.
+Use the local Kodus CLI dev flow to review changes and resolve issues. Prefer machine-friendly output via `--prompt-only`, then apply fixes in code.
 
 ## Workflow
 
-0. Apply review gate on delivery actions.
+1) Ensure local dev command is available.
+- Prefer the helper script (do not rely on aliases).
+- Use: `skills/kodus-review-dev/scripts/run-local-cli.sh --help`.
+- If missing or failing, ask the user to confirm the local path and env values, then stop.
 
-- If the user asks to commit/push/merge/open PR and did not explicitly skip review, ask whether to run `skills/kodus-review-dev/scripts/run-local-cli.sh review --prompt-only` first.
-- If the user declines, continue with the requested delivery action and clearly note review was skipped by user choice.
+2) Ensure authentication if required.
+- If the review fails with auth, run the same command with `auth login` (interactive) and retry.
+- For team keys, use `auth team-key --key <key>` with the same helper script when provided by the user.
 
-1. Ensure local dev command is available.
-
-- Use the helper script: `skills/kodus-review-dev/scripts/run-local-cli.sh --help`.
-- The script resolves `dist/index.js` from this repository and defaults `KODUS_API_URL` to `http://localhost:3001`.
-- If `dist/index.js` is missing, run `npm run build` before continuing.
-
-2. Ensure authentication if required.
-
-- Run `skills/kodus-review-dev/scripts/run-local-cli.sh auth status` first.
-- Prefer `skills/kodus-review-dev/scripts/run-local-cli.sh auth team-key --key <key>` when the user provides a team key.
-- If the user provides email and password explicitly, use `skills/kodus-review-dev/scripts/run-local-cli.sh auth login --email <email> --password <password>`.
-- If auth is missing and only interactive login is possible, stop and ask the user to authenticate manually rather than relying on prompts.
-
-3. Run review using prompt-only output.
-
+3) Run review using prompt-only output.
 - Default: `skills/kodus-review-dev/scripts/run-local-cli.sh review --prompt-only`.
 - If user specifies files: append `<files...>`.
 - If user asks for staged/commit/branch: add `--staged`, `--commit <sha>`, or `--branch <name>`.
 - If user wants fast: add `--fast`.
 
-4. Parse results and apply fixes.
-
+4) Parse results and apply fixes.
 - Use the output to locate files and lines.
 - Make minimal, targeted changes to address each issue.
 - If an issue is not actionable or is a false positive, explain why and skip.
 
-5. Re-run review if needed.
-
+5) Re-run review if needed.
 - After fixes, rerun `skills/kodus-review-dev/scripts/run-local-cli.sh review --prompt-only` to confirm issues are resolved.
 
 ## Notes
 
 - Prefer `--prompt-only` for predictable parsing.
 - Avoid `--interactive` unless the user explicitly asks.
-- Redirect PR-vs-task validation requests to `business-rules-validation`.
-- The helper script respects `KODUS_API_URL`, `KODUS_VERBOSE`, and `KODUS_CLI_ENTRYPOINT`.
 - Do not use `--fix` unless the user explicitly asks.

@@ -8,7 +8,6 @@ import { prCommand } from './commands/pr.js';
 import { hookCommand } from './commands/hook/index.js';
 import { decisionsCommand } from './commands/memory/index.js';
 import { statusCommand } from './commands/status.js';
-import { skillsCommand } from './commands/skills.js';
 import { checkForUpdates } from './utils/update-check.js';
 import { setCliOutputMode } from './utils/logger.js';
 import { recordRecentActivity } from './utils/recent-activity.js';
@@ -40,7 +39,6 @@ program.addCommand(prCommand);
 program.addCommand(hookCommand);
 program.addCommand(decisionsCommand);
 program.addCommand(statusCommand);
-program.addCommand(skillsCommand);
 
 program.hook('preAction', (_thisCommand, actionCommand) => {
     const opts = actionCommand.optsWithGlobals() as {

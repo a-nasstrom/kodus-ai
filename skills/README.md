@@ -7,9 +7,9 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
 - `kodus-review`
     - Run local Kodus code review for workspace changes with the installed CLI.
 - `kodus-review-dev`
-    - Run the local Kodus CLI build against a dev API using `scripts/run-local-cli.sh`.
+    - Run the local Kodus CLI build against a dev/localhost API using `scripts/run-local-cli.sh` (explicit dev request only).
 - `business-rules-validation`
-    - Trigger business rules validation in PR mode or local diff mode with `@kody -v business-logic`.
+    - Run business rules validation from local diff scope with `kodus pr business-validation`.
 - `kodus-pr-suggestions-resolver`
     - Fetch PR suggestions and apply fixes with judgment.
 
@@ -18,7 +18,9 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
 - User mentions `review`, `commit`, `push`, `open PR`, `merge`, `quality gate`
     - Prefer `kodus-review` (or `kodus-review-dev` for local dev CLI flow).
     - If the request is delivery action (commit/push/merge) and no fresh review ran, ask to run Kodus review first.
-- User mentions `business validation`, `acceptance criteria`, `PR vs task`, `@kody -v business-logic`
+- User explicitly mentions local/dev CLI execution (`node dist/index.js`, `localhost:3001`, `KODUS_API_URL`, dev API/QA API)
+    - Use `kodus-review-dev` instead of `kodus-review`.
+- User mentions `business validation`, `acceptance criteria`, `local diff vs task`, `kodus pr business-validation`
     - Use `business-rules-validation`.
 - User asks to apply Kodus PR suggestions
     - Use `kodus-pr-suggestions-resolver`.

@@ -72,16 +72,20 @@ kodus pr suggestions --pr-number 42 --repo-id <id>
 
 Filter by severity, export as JSON or Markdown, or pipe into an AI agent with `--prompt-only` for automated fixes.
 
-### Business Validation (PR vs Task)
+### Business Validation (Local Diff vs Task)
 
-Run Kodus business-rules validation directly via API using PR context plus optional task reference.
+Run Kodus business-rules validation directly from your local diff with optional task reference.
 
 ```bash
-# PR already has task context linked
-kodus pr business-validation --pr-url https://github.com/org/repo/pull/42
+# Working tree diff (default)
+kodus pr business-validation
 
-# Explicit task reference
-kodus pr business-validation --pr-number 42 --repo-id <id> --task-id KC-1441
+# Staged-only with explicit task reference
+kodus pr business-validation --staged --task-id KC-1441
+
+# Branch or files scope
+kodus pr business-validation --branch main --task-id KC-1441
+kodus pr business-validation src/service.ts src/use-case.ts --task-id KC-1441
 ```
 
 ### Decision Memory

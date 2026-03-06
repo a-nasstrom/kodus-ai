@@ -8,7 +8,6 @@ import { terminalFormatter } from '../formatters/terminal.js';
 import { jsonFormatter } from '../formatters/json.js';
 import { markdownFormatter } from '../formatters/markdown.js';
 import { promptFormatter } from '../formatters/prompt.js';
-import { resolveBusinessValidationMode } from './pr.business-validation-mode.js';
 import type {
     GlobalOptions,
     OutputFormat,
@@ -116,22 +115,10 @@ prCommand
 prCommand
     .command('business-validation')
     .alias('business-rules-validation')
-    .description(
-        'Run business rules validation for a pull request or local diff',
-    )
+    .description('Run business rules validation for local diff')
     .argument(
         '[files...]',
         'Specific files to include in local diff mode',
-    )
-    .option('--pr-url <url>', 'Pull request URL')
-    .option('--pr-number <number>', 'Pull request number')
-    .option(
-        '--repo-id <id>',
-        'Repository ID (required with --pr-number if --repo is not provided)',
-    )
-    .option(
-        '--repo <name>',
-        'Repository full name/slug (required with --pr-number if --repo-id is not provided)',
     )
     .option('--task-url <url>', 'Task URL to append to the validation command')
     .option('--task-id <id>', 'Task ID or issue key (e.g. KC-1441) to append')
@@ -152,10 +139,6 @@ prCommand
         async (
             files: string[],
             options: {
-                prUrl?: string;
-                prNumber?: string;
-                repoId?: string;
-                repo?: string;
                 taskUrl?: string;
                 taskId?: string;
                 staged?: boolean;
@@ -169,57 +152,29 @@ prCommand
             const globalOpts = cmd.optsWithGlobals() as GlobalOptions;
 
             try {
-                const prNumber =
-                    options.prNumber !== undefined
-                        ? Number(options.prNumber)
-                        : undefined;
-
-                if (options.prNumber !== undefined && Number.isNaN(prNumber)) {
-                    throw new Error('Invalid --pr-number value');
+                if (options.taskUrl && options.taskId) {
+                    throw new Error('Provide only one of --task-url or --task-id.');
                 }
 
-                const mode = resolveBusinessValidationMode({
-                    files,
-                    prUrl: options.prUrl,
-                    prNumber,
-                    repoId: options.repoId,
-                    repo: options.repo,
-                    taskUrl: options.taskUrl,
-                    taskId: options.taskId,
-                    staged: options.staged,
-                    commit: options.commit,
-                    branch: options.branch,
-                });
+                const diff = await getLocalDiffForBusinessValidation(
+                    files ?? [],
+                    options,
+                    globalOpts.verbose,
+                );
 
-                let diff: string | undefined;
-                let repository = options.repo;
-
-                if (mode.mode === 'local_diff') {
-                    diff = await getLocalDiffForBusinessValidation(
-                        files ?? [],
-                        options,
-                        globalOpts.verbose,
+                if (!diff.trim()) {
+                    throw new Error(
+                        'No local changes found for the selected scope.',
                     );
+                }
 
-                    if (!diff.trim()) {
-                        throw new Error(
-                            'No local changes found for the selected scope. Stage files or pick another scope (--branch/--commit/[files]).',
-                        );
-                    }
-
-                    if (!options.repo && !options.repoId) {
-                        const orgRepo = await gitService.extractOrgRepo();
-                        if (orgRepo) {
-                            repository = `${orgRepo.org}/${orgRepo.repo}`;
-                        }
-                    }
+                let repository: string | undefined;
+                const orgRepo = await gitService.extractOrgRepo();
+                if (orgRepo) {
+                    repository = `${orgRepo.org}/${orgRepo.repo}`;
                 }
 
                 const payload = {
-                    prUrl: mode.mode === 'pull_request' ? options.prUrl : undefined,
-                    prNumber:
-                        mode.mode === 'pull_request' ? prNumber : undefined,
-                    repositoryId: options.repoId,
                     repository,
                     taskUrl: options.taskUrl,
                     taskId: options.taskId,
@@ -249,24 +204,8 @@ prCommand
                         chalk.green('Business validation completed.'),
                     );
                 }
-                cliInfo(
-                    chalk.dim(
-                        `Mode: ${response.mode === 'pull_request' ? 'pull request' : 'local diff'}`,
-                    ),
-                );
-                if (
-                    response.mode === 'pull_request' &&
-                    response.prNumber !== undefined
-                ) {
-                    const repositoryLabel = response.repositoryName
-                        ? ` (${response.repositoryName})`
-                        : '';
-                    cliInfo(
-                        chalk.dim(
-                            `PR: #${response.prNumber}${repositoryLabel}`,
-                        ),
-                    );
-                } else if (response.repositoryName) {
+                cliInfo(chalk.dim('Mode: local diff'));
+                if (response.repositoryName) {
                     cliInfo(
                         chalk.dim(`Repository: ${response.repositoryName}`),
                     );
@@ -300,7 +239,21 @@ async function getLocalDiffForBusinessValidation(
 ): Promise<string> {
     gitService.setVerbose(!!verbose);
 
-    if (files.length > 0) {
+    const hasFiles = files.length > 0;
+    const hasBranch = !!options.branch;
+    const hasCommit = !!options.commit;
+    const hasStaged = !!options.staged;
+    const selectedScopes = [hasFiles, hasBranch, hasCommit, hasStaged].filter(
+        Boolean,
+    ).length;
+
+    if (selectedScopes > 1) {
+        throw new Error(
+            'Use only one local diff scope: [files], --staged, --branch, or --commit.',
+        );
+    }
+
+    if (hasFiles) {
         if (verbose) {
             cliDebug(
                 chalk.dim(
@@ -311,7 +264,7 @@ async function getLocalDiffForBusinessValidation(
         return gitService.getDiffForFiles(files);
     }
 
-    if (options.branch) {
+    if (options.branch !== undefined) {
         if (verbose) {
             cliDebug(
                 chalk.dim(
@@ -322,7 +275,7 @@ async function getLocalDiffForBusinessValidation(
         return gitService.getDiffForBranch(options.branch);
     }
 
-    if (options.commit) {
+    if (options.commit !== undefined) {
         if (verbose) {
             cliDebug(
                 chalk.dim(
@@ -333,16 +286,17 @@ async function getLocalDiffForBusinessValidation(
         return gitService.getDiffForCommit(options.commit);
     }
 
-    if (options.staged) {
+    if (hasStaged) {
         if (verbose) {
             cliDebug(chalk.dim('[verbose] Getting local staged diff'));
         }
         return gitService.getStagedDiff();
     }
 
-    throw new Error(
-        'No local diff scope provided. Use --staged, --branch, --commit, or [files].',
-    );
+    if (verbose) {
+        cliDebug(chalk.dim('[verbose] Getting local working tree diff'));
+    }
+    return gitService.getWorkingTreeDiff();
 }
 
 function formatOutput(result: ReviewResult, format: OutputFormat): string {
