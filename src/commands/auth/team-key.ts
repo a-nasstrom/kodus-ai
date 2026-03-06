@@ -1,7 +1,10 @@
 import chalk from 'chalk';
 import { clearConfig, loadConfig, saveConfig } from '../../utils/config.js';
 import { clearCredentials } from '../../utils/credentials.js';
-import { API_URL } from '../../constants.js';
+import {
+    resolveApiBaseUrl,
+    getCloudflareAccessHeaders,
+} from '../../services/api/api.real.js';
 import { getDeviceIdentity, updateDeviceToken } from '../../utils/device.js';
 import { exitWithCode } from '../../utils/cli-exit.js';
 import { cliError, cliInfo } from '../../utils/logger.js';
@@ -50,9 +53,12 @@ export async function teamKeyAction(options: { key?: string }): Promise<void> {
 
     try {
         const device = await getDeviceIdentity().catch(() => undefined);
-        const response = await fetch(`${API_URL}/cli/validate-key`, {
+        const apiUrl = await resolveApiBaseUrl();
+        const cfHeaders = await getCloudflareAccessHeaders();
+        const response = await fetch(`${apiUrl}/cli/validate-key`, {
             headers: {
                 'X-Team-Key': options.key,
+                ...cfHeaders,
                 ...(device?.deviceId
                     ? { 'X-Kodus-Device-Id': device.deviceId }
                     : {}),
@@ -100,7 +106,10 @@ export async function teamKeyAction(options: { key?: string }): Promise<void> {
             );
         }
 
+        // Preserve existing config fields (apiUrl, CF Access credentials, etc.)
+        const existingConfig = await loadConfig();
         await saveConfig({
+            ...existingConfig,
             teamKey: options.key,
             teamName,
             organizationName,
