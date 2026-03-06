@@ -109,9 +109,18 @@ export class PermissionValidationService {
         contextName?: string,
     ): Promise<ValidationResult> {
         try {
-            // Self-hosted always allows execution
-            if (!this.isCloud || this.isDevelopment) {
+            // Development mode always allows
+            if (this.isDevelopment) {
                 return { allowed: true };
+            }
+
+            // Self-hosted: check if there's a license to enforce seats
+            if (!this.isCloud) {
+                return this.validateSelfHostedPermissions(
+                    organizationAndTeamData,
+                    userGitId,
+                    contextName,
+                );
             }
 
             this.logger.log({
@@ -268,6 +277,57 @@ export class PermissionValidationService {
     }
 
     /**
+     * Self-hosted permission validation:
+     * - No license (Community Edition): allow everything
+     * - With license: enforce seat limits and allow auto-assign
+     */
+    private async validateSelfHostedPermissions(
+        organizationAndTeamData: OrganizationAndTeamData,
+        userGitId?: string,
+        contextName?: string,
+    ): Promise<ValidationResult> {
+        const validation =
+            await this.licenseService.validateOrganizationLicense(
+                organizationAndTeamData,
+            );
+
+        // No license or invalid → Community Edition, allow everything
+        if (!validation?.valid) {
+            return { allowed: true };
+        }
+
+        // Licensed self-hosted: enforce seat validation
+        if (!userGitId) {
+            return { allowed: true };
+        }
+
+        const users = await this.licenseService.getAllUsersWithLicense(
+            organizationAndTeamData,
+        );
+
+        const user = users?.find((u) => u?.git_id === userGitId);
+
+        if (!user) {
+            this.logger.warn({
+                message: 'Self-hosted: user not licensed',
+                context: contextName || PermissionValidationService.name,
+                metadata: { organizationAndTeamData, userGitId },
+            });
+
+            return {
+                allowed: false,
+                errorType: ValidationErrorType.USER_NOT_LICENSED,
+                metadata: {
+                    userGitId,
+                    availableUsers: users?.length || 0,
+                },
+            };
+        }
+
+        return { allowed: true };
+    }
+
+    /**
      * Validação simplificada para operações que só precisam verificar licença
      */
     async validateBasicLicense(
@@ -275,8 +335,24 @@ export class PermissionValidationService {
         contextName?: string,
     ): Promise<ValidationResult> {
         try {
-            if (!this.isCloud || this.isDevelopment) {
+            if (this.isDevelopment) {
                 return { allowed: true };
+            }
+
+            // Self-hosted without license: allow; with license: validate it
+            if (!this.isCloud) {
+                const validation =
+                    await this.licenseService.validateOrganizationLicense(
+                        organizationAndTeamData,
+                    );
+                // CE mode (no license): allow
+                if (!validation?.valid) {
+                    return { allowed: true };
+                }
+                return {
+                    allowed: true,
+                    metadata: { planType: validation.planType },
+                };
             }
 
             this.logger.log({
