@@ -20,6 +20,7 @@ import { TriggerBusinessValidationUseCase } from '@libs/platform/application/use
 import { TeamEntity } from '@libs/organization/domain/team/entities/team.entity';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
 import { CliReviewRequestDto } from '@/core/infrastructure/http/dtos/cli-review.dto';
+import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({
@@ -139,6 +140,9 @@ const mockSubmitCliSessionCapture = {
 const mockTriggerBusinessValidation = {
     execute: jest.fn(),
 };
+const mockIngestSessionEvent = {
+    execute: jest.fn().mockResolvedValue({ accepted: true }),
+};
 const mockCliDeviceService = {
     validateOrRegisterDevice: jest.fn().mockResolvedValue({}),
 };
@@ -161,6 +165,10 @@ describe('CliReviewController', () => {
                 {
                     provide: SubmitCliSessionCaptureUseCase,
                     useValue: mockSubmitCliSessionCapture,
+                },
+                {
+                    provide: IngestSessionEventUseCase,
+                    useValue: mockIngestSessionEvent,
                 },
                 {
                     provide: TriggerBusinessValidationUseCase,

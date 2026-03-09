@@ -38,6 +38,7 @@ interface AggregatedSession {
     agentType?: string;
     gitRemote?: string;
     prompts: string[];
+    responses: string[];
     toolCalls: string[];
     filesModified: string[];
     filesRead: string[];
@@ -141,6 +142,7 @@ export class ClassifySessionUseCase {
     private aggregateEvents(events: SessionEventModel[]): AggregatedSession {
         const aggregated: AggregatedSession = {
             prompts: [],
+            responses: [],
             toolCalls: [],
             filesModified: [],
             filesRead: [],
@@ -164,6 +166,9 @@ export class ClassifySessionUseCase {
                     break;
 
                 case 'turn_end':
+                    if (typeof p.response === 'string' && p.response.trim()) {
+                        aggregated.responses.push(p.response as string);
+                    }
                     if (Array.isArray(p.toolCalls)) {
                         for (const tc of p.toolCalls) {
                             if (typeof tc === 'string') {
@@ -218,6 +223,7 @@ export class ClassifySessionUseCase {
     private hasUsefulContent(aggregated: AggregatedSession): boolean {
         return (
             aggregated.prompts.length > 0 ||
+            aggregated.responses.length > 0 ||
             aggregated.toolCalls.length > 0 ||
             aggregated.filesModified.length > 0 ||
             aggregated.subagents.length > 0
@@ -251,7 +257,7 @@ export class ClassifySessionUseCase {
             '- Extract only concrete choices, not generic statements.',
             '- Keep each "decision" concise and self-contained.',
             '- confidence must be between 0 and 1.',
-            '- Consider the full session context: user prompts, tool calls, modified files, and subagents.',
+            '- Consider the full session context: user prompts, assistant responses, tool calls, modified files, and subagents.',
             '- If nothing useful exists, return { "decisions": [] }.',
         ].join('\n');
 
@@ -259,6 +265,7 @@ export class ClassifySessionUseCase {
             agentType: aggregated.agentType || '',
             gitRemote: aggregated.gitRemote || '',
             prompts: aggregated.prompts.slice(0, 20),
+            responses: aggregated.responses.slice(0, 20),
             toolCalls: aggregated.toolCalls.slice(0, 50),
             filesModified: aggregated.filesModified.slice(0, 30),
             filesRead: aggregated.filesRead.slice(0, 20),
