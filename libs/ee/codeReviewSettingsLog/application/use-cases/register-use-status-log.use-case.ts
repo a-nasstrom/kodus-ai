@@ -22,8 +22,8 @@ export class RegisterUserStatusLogUseCase implements IUseCase {
                 teamId: userStatusDto.teamId || null,
             },
             userInfo: {
-                userId: userStatusDto.editedBy.userId || '',
-                userEmail: userStatusDto.editedBy.email || '',
+                userId: userStatusDto.editedBy?.userId || '',
+                userEmail: userStatusDto.editedBy?.email || '',
             },
             userStatusChanges: [
                 {
