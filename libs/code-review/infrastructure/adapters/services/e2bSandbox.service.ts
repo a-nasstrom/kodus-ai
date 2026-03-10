@@ -31,7 +31,7 @@ export class E2BSandboxService implements ISandboxProvider {
     async createSandboxWithRepo(
         params: CreateSandboxParams,
     ): Promise<SandboxInstance> {
-        const { cloneUrl, authToken, branch, prNumber, platform } = params;
+        const { cloneUrl, authToken, authUsername, branch, prNumber, platform } = params;
         const apiKey = this.configService.get<string>('API_E2B_KEY');
 
         if (!apiKey) {
@@ -76,7 +76,7 @@ export class E2BSandboxService implements ISandboxProvider {
                     ? this.getPrRefspec(platform, prNumber)
                     : `refs/heads/${branch}`;
             const localRef = prNumber != null ? 'pr-head' : 'cli-head';
-            const authHeader = this.buildAuthHeader(platform, authToken);
+            const authHeader = this.buildAuthHeader(platform, authToken, authUsername);
 
             this.logger.log({
                 message: `[DEBUG] Git clone starting: refspec=${refspec} localRef=${localRef} cloneUrl=${cloneUrl}`,
@@ -228,12 +228,17 @@ export class E2BSandboxService implements ISandboxProvider {
         });
     }
 
-    private buildAuthHeader(platform: PlatformType, token: string): string {
+    private buildAuthHeader(platform: PlatformType, token: string, username?: string): string {
         // Git http.extraHeader sends an Authorization header — token never embedded in URLs
         switch (platform) {
             case PlatformType.GITHUB:
-            case PlatformType.BITBUCKET:
                 return `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+            case PlatformType.BITBUCKET:
+                // Bitbucket App Passwords require the actual username, not x-access-token
+                if (!username) {
+                    throw new Error('Bitbucket authentication requires a username, but it was not provided.');
+                }
+                return `Authorization: Basic ${Buffer.from(`${username}:${token}`).toString('base64')}`;
             case PlatformType.GITLAB:
             case PlatformType.AZURE_REPOS:
                 return `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString('base64')}`;

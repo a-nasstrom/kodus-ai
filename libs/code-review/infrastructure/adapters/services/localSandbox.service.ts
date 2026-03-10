@@ -36,12 +36,12 @@ export class LocalSandboxService implements ISandboxProvider {
     async createSandboxWithRepo(
         params: CreateSandboxParams,
     ): Promise<SandboxInstance> {
-        const { cloneUrl, authToken, branch, prNumber, platform } = params;
+        const { cloneUrl, authToken, authUsername, branch, prNumber, platform } = params;
 
         const tempDir = await mkdtemp(join(tmpdir(), 'kodus-sandbox-'));
 
         try {
-            const authHeader = this.buildAuthHeader(platform, authToken);
+            const authHeader = this.buildAuthHeader(platform, authToken, authUsername);
             const refspec =
                 prNumber != null
                     ? this.getPrRefspec(platform, prNumber)
@@ -237,11 +237,16 @@ export class LocalSandboxService implements ISandboxProvider {
         return candidate;
     }
 
-    private buildAuthHeader(platform: PlatformType, token: string): string {
+    private buildAuthHeader(platform: PlatformType, token: string, username?: string): string {
         switch (platform) {
             case PlatformType.GITHUB:
-            case PlatformType.BITBUCKET:
                 return `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+            case PlatformType.BITBUCKET:
+                // Bitbucket App Passwords require the actual username, not x-access-token
+                if (!username) {
+                    throw new Error('Bitbucket authentication requires a username, but it was not provided.');
+                }
+                return `Authorization: Basic ${Buffer.from(`${username}:${token}`).toString('base64')}`;
             case PlatformType.GITLAB:
             case PlatformType.AZURE_REPOS:
                 return `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString('base64')}`;
