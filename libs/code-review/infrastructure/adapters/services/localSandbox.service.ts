@@ -243,7 +243,10 @@ export class LocalSandboxService implements ISandboxProvider {
                 return `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
             case PlatformType.BITBUCKET:
                 // Bitbucket App Passwords require the actual username, not x-access-token
-                return `Authorization: Basic ${Buffer.from(`${username || 'x-token-auth'}:${token}`).toString('base64')}`;
+                if (!username) {
+                    throw new Error('Bitbucket authentication requires a username, but it was not provided.');
+                }
+                return `Authorization: Basic ${Buffer.from(`${username}:${token}`).toString('base64')}`;
             case PlatformType.GITLAB:
             case PlatformType.AZURE_REPOS:
                 return `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString('base64')}`;

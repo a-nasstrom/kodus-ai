@@ -113,12 +113,10 @@ describe('E2BSandboxService', () => {
             expect(header).toBe(`Authorization: Basic ${expectedBase64}`);
         });
 
-        it('should fallback to x-token-auth for Bitbucket when no username', () => {
-            const header = buildAuthHeader(PlatformType.BITBUCKET, 'app-pass');
-            const expectedBase64 = Buffer.from(
-                'x-token-auth:app-pass',
-            ).toString('base64');
-            expect(header).toBe(`Authorization: Basic ${expectedBase64}`);
+        it('should throw when Bitbucket username is missing', () => {
+            expect(() => buildAuthHeader(PlatformType.BITBUCKET, 'app-pass')).toThrow(
+                'Bitbucket authentication requires a username',
+            );
         });
     });
 
