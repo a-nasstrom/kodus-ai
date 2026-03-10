@@ -8,4 +8,6 @@ export const AuditLogEvents = {
     USER_STATUS: 'audit.userStatus',
     PR_MESSAGES: 'audit.pullRequestMessages',
     USER_INVITE: 'audit.userInvite',
+    USER_ROLE_CHANGE: 'audit.userRoleChange',
+    USER_REPO_ACCESS: 'audit.userRepoAccess',
 } as const;

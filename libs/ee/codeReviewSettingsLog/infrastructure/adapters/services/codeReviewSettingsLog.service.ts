@@ -28,6 +28,11 @@ import {
     UserInviteLogHandler,
     UserInviteLogParams,
 } from './userInviteLog.handler';
+import {
+    UserManagementLogHandler,
+    UserRoleChangeLogParams,
+    UserRepoAccessLogParams,
+} from './userManagementLog.handler';
 import { ICodeReviewSettingsLogService } from '@libs/ee/codeReviewSettingsLog/domain/contracts/codeReviewSettingsLog.service.contract';
 import {
     CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
@@ -52,6 +57,7 @@ export class CodeReviewSettingsLogService implements ICodeReviewSettingsLogServi
         private readonly userStatusLogHandler: UserStatusLogHandler,
         private readonly pullRequestMessagesLogHandler: PullRequestMessagesLogHandler,
         private readonly userInviteLogHandler: UserInviteLogHandler,
+        private readonly userManagementLogHandler: UserManagementLogHandler,
     ) {}
 
     /**
@@ -215,5 +221,33 @@ export class CodeReviewSettingsLogService implements ICodeReviewSettingsLogServi
         }
 
         await this.userInviteLogHandler.logUserInviteAction(params);
+    }
+
+    // User Role Change
+    public async registerUserRoleChangeLog(
+        params: UserRoleChangeLogParams,
+    ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
+        await this.userManagementLogHandler.logUserRoleChange(params);
+    }
+
+    // User Repository Access
+    public async registerUserRepoAccessLog(
+        params: UserRepoAccessLogParams,
+    ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
+        await this.userManagementLogHandler.logUserRepoAccessChange(params);
     }
 }
