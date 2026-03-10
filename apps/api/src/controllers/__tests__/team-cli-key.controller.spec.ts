@@ -12,6 +12,7 @@ describe('TeamCliKeyController', () => {
         update: jest.Mock;
     };
     let request: { user?: { uuid?: string } };
+    let eventEmitter: { emit: jest.Mock };
 
     const cliKeyConfig = {
         capabilities: ['config:repo:manage'],
@@ -43,12 +44,21 @@ describe('TeamCliKeyController', () => {
         request = {
             user: {
                 uuid: 'user-1',
+                email: 'wellington@example.com',
+                organization: {
+                    uuid: 'org-1',
+                },
             },
+        } as any;
+
+        eventEmitter = {
+            emit: jest.fn(),
         };
 
         controller = new TeamCliKeyController(
             teamCliKeyService as any,
             request as any,
+            eventEmitter as any,
         );
     });
 
@@ -68,6 +78,7 @@ describe('TeamCliKeyController', () => {
             key: 'kodus_secret',
             message: 'Save this key securely. It will not be shown again.',
         });
+        expect(eventEmitter.emit).toHaveBeenCalled();
     });
 
     it('returns config when listing CLI keys', async () => {
