@@ -292,7 +292,10 @@ export class KodyRulesService implements IKodyRulesService {
             this.eventEmitter.emit(AuditLogEvents.KODY_RULES, {
                 organizationAndTeamData,
                 userInfo,
-                actionType: ActionType.CLONE,
+                actionType:
+                    newRule.origin === KodyRulesOrigin.LIBRARY
+                        ? ActionType.CLONE
+                        : ActionType.CREATE,
                 repository: { id: newRule.repositoryId },
                 oldRule: undefined,
                 newRule: newRule,
