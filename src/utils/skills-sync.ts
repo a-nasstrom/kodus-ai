@@ -11,6 +11,7 @@ export const DEFAULT_SYNC_SKILL_NAMES = [
 ] as const;
 
 const LEGACY_BUSINESS_RULES_NAME = 'business-rules-validation';
+const MANAGED_SKILLS_MANIFEST = '.kodus-managed-skills.json';
 
 export type SkillTargetType = 'skill' | 'command';
 export type SkillSyncMode = 'sync' | 'install' | 'uninstall';
@@ -159,6 +160,53 @@ async function removePathIfExists(
     }
 
     return true;
+}
+
+function resolveManagedManifestPath(target: SkillSyncTarget): string {
+    return path.join(target.baseDir, MANAGED_SKILLS_MANIFEST);
+}
+
+async function readManagedSkillNames(
+    target: SkillSyncTarget,
+): Promise<string[]> {
+    try {
+        const raw = await fs.readFile(resolveManagedManifestPath(target), 'utf8');
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+
+        return parsed
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => {
+                try {
+                    return assertValidSkillName(value);
+                } catch {
+                    return null;
+                }
+            })
+            .filter((value): value is string => value !== null);
+    } catch {
+        return [];
+    }
+}
+
+async function writeManagedSkillNames(
+    target: SkillSyncTarget,
+    skillNames: string[],
+    dryRun: boolean,
+): Promise<void> {
+    if (dryRun) {
+        return;
+    }
+
+    const manifestPath = resolveManagedManifestPath(target);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(
+        manifestPath,
+        `${JSON.stringify(skillNames.sort(), null, 2)}\n`,
+        'utf8',
+    );
 }
 
 function applyWriteStatus(
@@ -390,6 +438,7 @@ export async function syncSkillsToTargets(
     const results: SkillSyncTargetResult[] = [];
 
     for (const target of targets) {
+        const currentSkillNames = skills.map((skill) => skill.name);
         let hasTargetDirectory = await isDirectory(target.baseDir);
         if (mode === 'install' && !hasTargetDirectory) {
             const hasActivationPath = await isDirectory(target.activationPath);
@@ -420,12 +469,19 @@ export async function syncSkillsToTargets(
         }
 
         const targetResult = createSyncedTargetResult(target);
+        const previouslyManagedSkillNames = await readManagedSkillNames(target);
+        const staleManagedSkillNames = previouslyManagedSkillNames.filter(
+            (skillName) => !currentSkillNames.includes(skillName),
+        );
 
         if (mode === 'uninstall') {
-            for (const skill of skills) {
+            const uninstallSkillNames = Array.from(
+                new Set([...currentSkillNames, ...previouslyManagedSkillNames]),
+            );
+            for (const skillName of uninstallSkillNames) {
                 const filePath = resolveManagedSkillEntryPath(
                     target,
-                    skill.name,
+                    skillName,
                 );
                 if (await removePathIfExists(filePath, dryRun)) {
                     targetResult.removedManaged += 1;
@@ -433,6 +489,7 @@ export async function syncSkillsToTargets(
                     targetResult.unchanged += 1;
                 }
             }
+            await removePathIfExists(resolveManagedManifestPath(target), dryRun);
         } else {
             for (const skill of skills) {
                 const filePath = resolveManagedSkillPath(target, skill.name);
@@ -443,6 +500,15 @@ export async function syncSkillsToTargets(
                 );
                 applyWriteStatus(targetResult, writeStatus);
             }
+
+            for (const skillName of staleManagedSkillNames) {
+                const entryPath = resolveManagedSkillEntryPath(target, skillName);
+                if (await removePathIfExists(entryPath, dryRun)) {
+                    targetResult.removedManaged += 1;
+                }
+            }
+
+            await writeManagedSkillNames(target, currentSkillNames, dryRun);
         }
 
         const legacyPath =

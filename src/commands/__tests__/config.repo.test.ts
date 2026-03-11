@@ -149,4 +149,21 @@ describe('config repo command', () => {
             "Repository 'kodustech/cli' was added to Kodus successfully.",
         );
     });
+
+    it('defaults --remote without value to the current repository', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        mockRepoConfigService.addRepository.mockResolvedValue({
+            status: 'added',
+            repositoryFullName: 'kodustech/cli',
+        });
+
+        await configCommand.parseAsync(['--remote'], { from: 'user' });
+
+        expect(mockRepoConfigService.addRepository).toHaveBeenCalledWith('.');
+
+        const output = logSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+        expect(output).toContain(
+            "Repository 'kodustech/cli' was added to Kodus successfully.",
+        );
+    });
 });

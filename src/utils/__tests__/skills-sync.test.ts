@@ -265,6 +265,67 @@ describe('skills-sync utilities', () => {
         ).toBe(false);
     });
 
+    it('install mirrors the current bundled skill set on repeat runs', async () => {
+        const tempRoot = await makeTempDir('kodus-skills-reinstall-');
+        tempDirs.push(tempRoot);
+
+        const activationPath = path.join(tempRoot, '.codex');
+        const baseDir = path.join(activationPath, 'skills');
+        await fs.mkdir(activationPath, { recursive: true });
+
+        await syncSkillsToTargets(
+            [
+                {
+                    label: 'Codex reinstall',
+                    type: 'skill',
+                    activationPath,
+                    baseDir,
+                },
+            ],
+            {
+                mode: 'install',
+                skills: [
+                    { name: 'kodus-review', content: 'review v1' },
+                    {
+                        name: 'kodus-business-rules-validation',
+                        content: 'business v1',
+                    },
+                ],
+            },
+        );
+
+        const result = await syncSkillsToTargets(
+            [
+                {
+                    label: 'Codex reinstall',
+                    type: 'skill',
+                    activationPath,
+                    baseDir,
+                },
+            ],
+            {
+                mode: 'install',
+                skills: [{ name: 'kodus-review', content: 'review v2' }],
+            },
+        );
+
+        expect(result.syncedTargets).toBe(1);
+        expect(result.updatedFiles).toBe(1);
+        expect(result.removedManagedEntries).toBe(1);
+        expect(
+            await exists(
+                path.join(
+                    baseDir,
+                    'kodus-business-rules-validation',
+                    'SKILL.md',
+                ),
+            ),
+        ).toBe(false);
+        expect(
+            await fs.readFile(path.join(baseDir, 'kodus-review', 'SKILL.md'), 'utf8'),
+        ).toBe('review v2');
+    });
+
     it('rejects skill names that escape the target directory', async () => {
         const tempRoot = await makeTempDir('kodus-skills-invalid-');
         tempDirs.push(tempRoot);

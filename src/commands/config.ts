@@ -73,7 +73,9 @@ configCommand
     )
     .action(async (options, command) => {
         if (options.remote !== undefined) {
-            await configRemoteAction(options.remote || '.');
+            const repository =
+                typeof options.remote === 'string' ? options.remote : '.';
+            await configRemoteAction(repository);
             return;
         }
 
