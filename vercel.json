@@ -1,0 +1,32 @@
+{
+    "rewrites": [
+        {
+            "source": "/",
+            "destination": "/site/index.html"
+        },
+        {
+            "source": "/install",
+            "destination": "/install.sh"
+        }
+    ],
+    "headers": [
+        {
+            "source": "/install",
+            "headers": [
+                {
+                    "key": "Content-Type",
+                    "value": "application/x-shellscript; charset=utf-8"
+                }
+            ]
+        },
+        {
+            "source": "/install.ps1",
+            "headers": [
+                {
+                    "key": "Content-Type",
+                    "value": "text/plain; charset=utf-8"
+                }
+            ]
+        }
+    ]
+}

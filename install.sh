@@ -167,7 +167,7 @@ Use the Kodus CLI to review changes and resolve issues. Prefer machine-friendly 
 - If missing, ask the user to install the CLI and stop.
 
 2) Ensure authentication if required.
-- If `kodus review` fails with auth, run `kodus auth login` (interactive) and retry.
+- If `kodus review` fails with auth, ask the human to run `kodus auth login` in their terminal, then retry after they confirm.
 - For team keys, use `kodus auth team-key --key <key>` when provided by the user.
 
 3) Run review using prompt-only output.
@@ -296,7 +296,7 @@ Run Kodus business-rules validation from local repository diff scope and optiona
 - If missing, ask the user to install the CLI and stop.
 
 2) Ensure authentication if required.
-- If command fails with auth, run `kodus auth login` (interactive) and retry.
+- If command fails with auth, ask the human to run `kodus auth login` in their terminal, then retry after they confirm.
 - For team keys, use `kodus auth team-key --key <key>` when provided by the user.
 
 3) Choose local diff scope.
