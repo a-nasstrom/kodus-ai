@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { claudeCodeHookAction } from './claude-code.js';
 import { cursorHookAction } from './cursor.js';
+import { codexHookAction } from './codex.js';
 
 export const sessionHooksCommand = new Command('hooks').description(
     'Internal session lifecycle hook handlers',
@@ -23,3 +24,12 @@ sessionHooksCommand
         'Hook event name (sessionStart, sessionEnd, stop, beforeSubmitPrompt, subagentStart, subagentStop)',
     )
     .action(cursorHookAction);
+
+sessionHooksCommand
+    .command('codex')
+    .description('Handle Codex CLI lifecycle hooks')
+    .argument(
+        '<hook-name>',
+        'Hook event name (AfterAgent, AfterToolUse)',
+    )
+    .action(codexHookAction);

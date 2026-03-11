@@ -8,6 +8,7 @@ import {
 } from './hooks.js';
 import { installSessionHooks } from './session-hooks-install.js';
 import { installCursorSessionHooks } from './session-hooks-install-cursor.js';
+import { installCodexSessionHooks } from './session-hooks-install-codex.js';
 import { exitWithCode } from '../../utils/cli-exit.js';
 import { cliError, cliInfo } from '../../utils/logger.js';
 
@@ -59,18 +60,25 @@ export async function enableAction(options: EnableOptions): Promise<void> {
             : 'already configured';
     }
 
-    // 4. Codex notify
+    // 4. Codex notify + session hooks
     let codexStatus = 'skipped';
+    let codexSessionStatus = 'skipped';
     if (installCodex) {
         const codexConfigPath = resolveCodexConfigPath(options.codexConfig);
-        const result = await installCodexNotify(codexConfigPath);
-        if (result.changed) {
+        const notifyResult = await installCodexNotify(codexConfigPath);
+        if (notifyResult.changed) {
             codexStatus = 'installed';
-        } else if (result.skipped) {
+        } else if (notifyResult.skipped) {
             codexStatus = 'skipped (existing notify entry)';
         } else {
             codexStatus = 'already configured';
         }
+
+        const sessionResult =
+            await installCodexSessionHooks(codexConfigPath);
+        codexSessionStatus = sessionResult.changed
+            ? 'installed'
+            : 'already configured';
     }
 
     // Summary
@@ -79,4 +87,5 @@ export async function enableAction(options: EnableOptions): Promise<void> {
     cliInfo(`  Claude Code session hooks: ${sessionStatus}`);
     cliInfo(`  Cursor session hooks: ${cursorSessionStatus}`);
     cliInfo(`  Codex notify: ${codexStatus}`);
+    cliInfo(`  Codex session hooks: ${codexSessionStatus}`);
 }

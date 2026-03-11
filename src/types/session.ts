@@ -184,6 +184,8 @@ export type CursorHookEvent =
     | 'subagentStart'
     | 'subagentStop';
 
+export type CodexHookEvent = 'AfterAgent' | 'AfterToolUse';
+
 // ---------------------------------------------------------------------------
 // Transcript parsing (JSONL)
 // ---------------------------------------------------------------------------
