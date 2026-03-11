@@ -124,9 +124,10 @@ export async function installSessionHooks(
         upsertHook(hooks, 'UserPromptSubmit', '', cmd('user-prompt-submit')) ||
         changed;
     changed =
-        upsertHook(hooks, 'PreToolUse', 'Task', cmd('pre-task')) || changed;
+        upsertHook(hooks, 'SubagentStart', '', cmd('subagent-start')) ||
+        changed;
     changed =
-        upsertHook(hooks, 'PostToolUse', 'Task', cmd('post-task')) || changed;
+        upsertHook(hooks, 'SubagentStop', '', cmd('subagent-stop')) || changed;
     changed =
         upsertHook(hooks, 'PostToolUse', 'TodoWrite', cmd('post-todo')) ||
         changed;

@@ -6,27 +6,33 @@ import type {
     EventType,
     TokenUsage,
     TranscriptParseResult,
-    ClaudeCodeHookEvent,
+    CodexHookEvent,
 } from '../types/session.js';
 
-const HOOK_TO_EVENT_TYPE: Record<ClaudeCodeHookEvent, EventType> = {
-    'session-start': 'SessionStart',
-    'session-end': 'SessionEnd',
-    'stop': 'TurnEnd',
-    'user-prompt-submit': 'TurnStart',
-    'subagent-start': 'SubagentStart',
-    'subagent-stop': 'SubagentEnd',
-    'post-todo': 'TurnEnd',
-    // Legacy aliases — old installations used PreToolUse(Task)/PostToolUse(Task)
-    'pre-task': 'SubagentStart',
-    'post-task': 'SubagentEnd',
+/**
+ * Codex CLI hook-to-event mapping.
+ *
+ * As of v0.100, Codex only supports two hooks:
+ *   - AfterAgent (v0.99+)  — fires after the agent completes a full turn
+ *   - AfterToolUse (v0.100+) — fires after each individual tool call
+ *
+ * Missing hooks (confirmed in development by OpenAI):
+ *   - SessionStart / SessionEnd
+ *   - UserPromptSubmit (turn_start)
+ *   - PreToolUse (blocking)
+ *
+ * We map AfterAgent → TurnEnd. AfterToolUse is observed but not mapped
+ * to a lifecycle event (could be used for analytics later).
+ */
+const HOOK_TO_EVENT_TYPE: Partial<Record<CodexHookEvent, EventType>> = {
+    AfterAgent: 'TurnEnd',
 };
 
-export class ClaudeCodeAgent implements AgentAdapter {
-    readonly agentType: AgentType = 'claude-code';
+export class CodexAgent implements AgentAdapter {
+    readonly agentType: AgentType = 'codex';
 
     parseHookEvent(hookName: string, payload: unknown): LifecycleEvent | null {
-        const eventType = HOOK_TO_EVENT_TYPE[hookName as ClaudeCodeHookEvent];
+        const eventType = HOOK_TO_EVENT_TYPE[hookName as CodexHookEvent];
         if (!eventType) {
             return null;
         }
@@ -36,40 +42,24 @@ export class ClaudeCodeAgent implements AgentAdapter {
                 ? (payload as Record<string, unknown>)
                 : {};
 
-        const sessionId = pickString(obj, ['session_id', 'sessionId']) ?? '';
-        const sessionRef =
+        // Codex doesn't provide session_id in hook payloads yet.
+        // We use the thread_id or conversation_id if available, otherwise
+        // fall back to a generated ID that will be consistent within a session
+        // via the local state file.
+        const sessionId =
             pickString(obj, [
-                'transcript_path',
-                'transcriptPath',
-                'session_ref',
+                'session_id',
+                'sessionId',
+                'thread_id',
+                'threadId',
+                'conversation_id',
             ]) ?? '';
-        const prompt = pickString(obj, ['prompt', 'user_message']);
-        const toolUseId = pickString(obj, ['tool_use_id', 'toolUseId']);
-        const subagentId = pickString(obj, ['subagent_id', 'subagentId']);
-        const subagentType = pickString(obj, ['subagent_type', 'subagentType']);
-        const taskDescription = pickString(obj, [
-            'task_description',
-            'taskDescription',
-        ]);
-
-        let toolInput: unknown;
-        if (obj['tool_input'] !== undefined) {
-            toolInput = obj['tool_input'];
-        } else if (obj['input'] !== undefined) {
-            toolInput = obj['input'];
-        }
 
         return {
             type: eventType,
             sessionId,
-            sessionRef,
-            prompt,
+            sessionRef: '',
             timestamp: new Date().toISOString(),
-            toolUseId,
-            subagentId,
-            subagentType,
-            taskDescription,
-            toolInput,
         };
     }
 
@@ -104,10 +94,6 @@ export class ClaudeCodeAgent implements AgentAdapter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function pickString(
     obj: Record<string, unknown>,
     keys: string[],
@@ -121,4 +107,4 @@ function pickString(
     return undefined;
 }
 
-export const claudeCodeAgent = new ClaudeCodeAgent();
+export const codexAgent = new CodexAgent();

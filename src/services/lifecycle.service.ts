@@ -2,7 +2,12 @@ import { createRequire } from 'node:module';
 import { gitService } from './git.service.js';
 import { hookLogger } from './hook-logger.service.js';
 import { transcriptService } from './transcript.service.js';
-import { saveLocal, loadLocal, removeLocal } from './session-local.service.js';
+import {
+    saveLocal,
+    loadLocal,
+    removeLocal,
+    listStaleSessions,
+} from './session-local.service.js';
 import { api } from './api/index.js';
 import type {
     LifecycleEvent,
@@ -81,6 +86,9 @@ class LifecycleService {
             model_session_id: event.sessionId,
             transcript_path: event.sessionRef,
         });
+
+        // Clean up stale sessions from previous crashes (> 30 min old)
+        await this.cleanupStaleSessions(repoRoot, agentType);
 
         const [branch, baseCommit, gitRemote] = await Promise.all([
             getBranch(),
@@ -173,9 +181,50 @@ class LifecycleService {
         });
 
         const local = await loadLocal(repoRoot, event.sessionId);
-        const turnId = local?.turnId ?? '';
+
+        // Dedup: if this turn was already completed (e.g. Stop + PostToolUse
+        // both firing TurnEnd), skip the duplicate.
+        if (local?.turnCompleted) {
+            await hookLogger.info('turn-end-dedup-skipped', 'lifecycle', {
+                agent: agentType,
+                model_session_id: event.sessionId,
+                turn_id: local.turnId,
+            });
+            return;
+        }
+
         const transcriptPath = local?.transcriptPath ?? event.sessionRef ?? '';
         const transcriptOffset = local?.transcriptOffset ?? 0;
+
+        // When local state is missing it means turn_start never fired
+        // (e.g. UserPromptSubmit hook didn't trigger). Generate a synthetic
+        // turn_start so the backend always receives a matching pair.
+        const turnId = local?.turnId ?? `${Date.now()}`;
+        if (!local) {
+            await hookLogger.warn('turn-end-without-turn-start', 'lifecycle', {
+                agent: agentType,
+                model_session_id: event.sessionId,
+                synthetic_turn_id: turnId,
+            });
+
+            const [synthBranch, synthCommit] = await Promise.all([
+                getBranch(),
+                getHead(),
+            ]);
+
+            sendEvent(
+                {
+                    type: 'turn_start',
+                    sessionId: event.sessionId,
+                    branch: synthBranch,
+                    timestamp: new Date().toISOString(),
+                    turnId,
+                    prompt: '',
+                    commitBefore: synthCommit,
+                },
+                repoRoot,
+            );
+        }
 
         const emptyTokenUsage: TokenUsage = {
             inputTokens: 0,
@@ -231,6 +280,17 @@ class LifecycleService {
             getBranch(),
             getHead(),
         ]);
+
+        // Mark turn as completed BEFORE sending the event to prevent
+        // duplicate turn_end from Stop + PostToolUse(TodoWrite) both firing.
+        // Save even for synthetic turns (when local was null) so subsequent
+        // TurnEnd calls for the same session are deduped.
+        await saveLocal(repoRoot, event.sessionId, {
+            turnId,
+            transcriptPath,
+            transcriptOffset,
+            turnCompleted: true,
+        });
 
         sendEvent(
             {
@@ -336,6 +396,46 @@ class LifecycleService {
             },
             repoRoot,
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Stale Session Cleanup
+    // -------------------------------------------------------------------------
+
+    private async cleanupStaleSessions(
+        repoRoot: string,
+        agentType: AgentType,
+    ): Promise<void> {
+        const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+        try {
+            const stale = await listStaleSessions(repoRoot, STALE_THRESHOLD_MS);
+            if (stale.length === 0) {
+                return;
+            }
+
+            const branch = await getBranch();
+
+            for (const { sessionId } of stale) {
+                await hookLogger.info('stale-session-cleanup', 'lifecycle', {
+                    agent: agentType,
+                    stale_session_id: sessionId,
+                });
+
+                sendEvent(
+                    {
+                        type: 'session_end',
+                        sessionId,
+                        branch,
+                        timestamp: new Date().toISOString(),
+                    },
+                    repoRoot,
+                );
+
+                await removeLocal(repoRoot, sessionId);
+            }
+        } catch {
+            // Best-effort cleanup — never block the current session
+        }
     }
 
     // -------------------------------------------------------------------------

@@ -41,7 +41,8 @@ describe('installSessionHooks', () => {
         expect(hooks['SessionEnd']).toBeDefined();
         expect(hooks['Stop']).toBeDefined();
         expect(hooks['UserPromptSubmit']).toBeDefined();
-        expect(hooks['PreToolUse']).toBeDefined();
+        expect(hooks['SubagentStart']).toBeDefined();
+        expect(hooks['SubagentStop']).toBeDefined();
         expect(hooks['PostToolUse']).toBeDefined();
     });
 
@@ -72,17 +73,26 @@ describe('installSessionHooks', () => {
         );
     });
 
-    it('uses correct matcher for tool hooks', async () => {
+    it('uses native SubagentStart/SubagentStop and PostToolUse(TodoWrite)', async () => {
         await installSessionHooks(tmpDir, 'claude-code');
 
         const settings = await readSettings();
         const hooks = settings.hooks as Record<string, unknown[]>;
 
-        const preToolUse = hooks['PreToolUse'] as Array<{ matcher: string }>;
-        const postToolUse = hooks['PostToolUse'] as Array<{ matcher: string }>;
+        // Native subagent hooks (no matcher needed)
+        const subagentStart = hooks['SubagentStart'] as Array<{
+            matcher: string;
+            hooks: Array<{ command: string }>;
+        }>;
+        const subagentStop = hooks['SubagentStop'] as Array<{
+            matcher: string;
+            hooks: Array<{ command: string }>;
+        }>;
+        expect(subagentStart[0].hooks[0].command).toContain('subagent-start');
+        expect(subagentStop[0].hooks[0].command).toContain('subagent-stop');
 
-        expect(preToolUse.find((m) => m.matcher === 'Task')).toBeDefined();
-        expect(postToolUse.find((m) => m.matcher === 'Task')).toBeDefined();
+        // PostToolUse(TodoWrite) still used for turn_end
+        const postToolUse = hooks['PostToolUse'] as Array<{ matcher: string }>;
         expect(
             postToolUse.find((m) => m.matcher === 'TodoWrite'),
         ).toBeDefined();

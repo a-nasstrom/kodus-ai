@@ -7,9 +7,12 @@ const VALID_HOOKS: Set<ClaudeCodeHookEvent> = new Set([
     'session-end',
     'stop',
     'user-prompt-submit',
+    'subagent-start',
+    'subagent-stop',
+    'post-todo',
+    // Legacy aliases
     'pre-task',
     'post-task',
-    'post-todo',
 ]);
 
 export async function claudeCodeHookAction(hookName: string): Promise<void> {
