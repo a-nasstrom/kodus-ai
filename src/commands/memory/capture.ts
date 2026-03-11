@@ -85,6 +85,10 @@ function resolveAgent(rawAgent: string): string {
 }
 
 async function readStdinIfAvailable(): Promise<string | undefined> {
+    if (process.stdin.isTTY) {
+        return undefined;
+    }
+
     const payload = await readStreamPayload(process.stdin);
     return payload || undefined;
 }

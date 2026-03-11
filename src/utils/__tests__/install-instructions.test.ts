@@ -14,9 +14,12 @@ describe('install instructions', () => {
         const instructions = resolveRemoteInstallInstructions('win32');
 
         expect(instructions.primary).toContain('install.ps1');
-        expect(instructions.primary).toContain('Invoke-RestMethod');
+        expect(instructions.primary).toContain('Invoke-WebRequest');
+        expect(instructions.primary).toContain('-OutFile');
+        expect(instructions.primary).not.toContain('Invoke-Expression');
         expect(instructions.fallback).toContain('Invoke-WebRequest');
-        expect(instructions.fallback).toContain('Invoke-Expression');
+        expect(instructions.fallback).toContain('-OutFile');
+        expect(instructions.fallback).not.toContain('Invoke-Expression');
         expect(instructions.fallback).not.toContain('&&');
     });
 });

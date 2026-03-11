@@ -124,7 +124,7 @@ curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bas
 Windows PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$tmp = Join-Path $env:TEMP 'kodus-install.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 -OutFile $tmp; & $tmp"
 ```
 
 This installs the Kodus CLI globally and deploys the review skill into every supported agent on your machine — Claude Code, Cursor, Windsurf, and others. One command, all environments.
@@ -204,7 +204,7 @@ curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bas
 Windows PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$tmp = Join-Path $env:TEMP 'kodus-install.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 -OutFile $tmp; & $tmp"
 ```
 
 Installs the CLI and deploys the review skill to all detected agents in one step.
@@ -224,7 +224,7 @@ curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bas
 Windows PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$tmp = Join-Path $env:TEMP 'kodus-install.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 -OutFile $tmp; & $tmp"
 ```
 
 Fallback via CLI for common local agent roots:
@@ -285,7 +285,7 @@ curl -fsSL https://raw.githubusercontent.com/kodustech/cli/main/install.sh | bas
 <summary><strong>PowerShell</strong></summary>
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 | Invoke-Expression"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$tmp = Join-Path $env:TEMP 'kodus-install.ps1'; Invoke-WebRequest https://raw.githubusercontent.com/kodustech/cli/main/install.ps1 -OutFile $tmp; & $tmp"
 ```
 
 </details>

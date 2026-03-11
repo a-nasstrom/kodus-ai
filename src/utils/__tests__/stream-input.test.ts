@@ -16,14 +16,15 @@ describe('readStreamPayload', () => {
         await expect(readStreamPayload(stream)).resolves.toBe('');
     });
 
-    it('supports concurrent readers on the same stream', async () => {
+    it('preserves unrelated listeners on the same stream', async () => {
         const stream = createStream();
+        const observedChunks: string[] = [];
 
-        const first = readStreamPayload(stream, {
-            noDataTimeoutMs: 50,
-            brokenStreamTimeoutMs: 200,
+        stream.on('data', (chunk: Buffer | string) => {
+            observedChunks.push(chunk.toString());
         });
-        const second = readStreamPayload(stream, {
+
+        const payload = readStreamPayload(stream, {
             noDataTimeoutMs: 50,
             brokenStreamTimeoutMs: 200,
         });
@@ -31,7 +32,8 @@ describe('readStreamPayload', () => {
         stream.write('payload');
         stream.end();
 
-        await expect(first).resolves.toBe('payload');
-        await expect(second).resolves.toBe('payload');
+        await expect(payload).resolves.toBe('payload');
+        expect(observedChunks).toEqual(['payload']);
+        expect(stream.listenerCount('data')).toBe(1);
     });
 });

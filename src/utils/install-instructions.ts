@@ -13,8 +13,8 @@ export function resolveRemoteInstallInstructions(
 ): RemoteInstallInstructionSet {
     if (platform === 'win32') {
         return {
-            primary: `powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod ${WINDOWS_INSTALLER_URL} | Invoke-Expression"`,
-            fallback: `powershell -NoProfile -ExecutionPolicy Bypass -Command "$response = Invoke-WebRequest ${WINDOWS_INSTALLER_URL}; Invoke-Expression $response.Content"`,
+            primary: `powershell -NoProfile -ExecutionPolicy Bypass -Command "$tmp = Join-Path $env:TEMP 'kodus-install.ps1'; Invoke-WebRequest ${WINDOWS_INSTALLER_URL} -OutFile $tmp; & $tmp"`,
+            fallback: `powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptPath = Join-Path (Get-Location) 'install.ps1'; Invoke-WebRequest ${WINDOWS_INSTALLER_URL} -OutFile $scriptPath; & $scriptPath"`,
         };
     }
 
