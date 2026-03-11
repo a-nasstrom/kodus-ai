@@ -14,6 +14,7 @@ import { PULL_REQUESTS_SERVICE_TOKEN } from '@/platformData/domain/pullRequests/
 import { DeliveryStatus } from '@/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { ImplementationStatus } from '@/platformData/domain/pullRequests/enums/implementationStatus.enum';
 import { PriorityStatus } from '@/platformData/domain/pullRequests/enums/priorityStatus.enum';
+import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { Test, TestingModule } from '@nestjs/testing';
 
 describe('SuggestionService', () => {
@@ -27,6 +28,7 @@ describe('SuggestionService', () => {
 
     const mockPullRequestService = {
         updateSuggestion: jest.fn(),
+        findByNumberAndRepositoryName: jest.fn(),
     };
 
     const mockCommentManagerService = {
@@ -1660,6 +1662,78 @@ __new hunk__
             expect(result.repriorizedSuggestions).toHaveLength(2);
             expect(result.filteredDiscardedSuggestions).toHaveLength(1);
             expect(result.filteredDiscardedSuggestions[0].id).toBe('s3');
+        });
+    });
+
+    describe('resolveImplementedSuggestionsOnPlatform', () => {
+        it('should NOT call markReviewCommentAsResolved for already resolved comments', async () => {
+            const mockPr = {
+                number: 42,
+                files: [
+                    {
+                        suggestions: [
+                            {
+                                comment: { id: 100 },
+                                implementationStatus:
+                                    ImplementationStatus.IMPLEMENTED,
+                                deliveryStatus: DeliveryStatus.SENT,
+                            },
+                            {
+                                comment: { id: 200 },
+                                implementationStatus:
+                                    ImplementationStatus.IMPLEMENTED,
+                                deliveryStatus: DeliveryStatus.SENT,
+                            },
+                        ],
+                    },
+                ],
+            };
+
+            mockPullRequestService.findByNumberAndRepositoryName.mockResolvedValue(
+                mockPr,
+            );
+
+            // Comment 100 is already resolved, comment 200 is not
+            mockCodeManagementService.getPullRequestReviewComments.mockResolvedValue(
+                [
+                    {
+                        id: 100,
+                        threadId: 't-100',
+                        body: 'suggestion 1',
+                        isResolved: true,
+                    },
+                    {
+                        id: 200,
+                        threadId: 't-200',
+                        body: 'suggestion 2',
+                        isResolved: false,
+                    },
+                ],
+            );
+
+            mockCodeManagementService.markReviewCommentAsResolved.mockResolvedValue(
+                undefined,
+            );
+
+            await service.resolveImplementedSuggestionsOnPlatform({
+                organizationAndTeamData:
+                    mockOrganizationAndTeamData as any,
+                repository: { id: 'repo-1', name: 'test-repo' },
+                prNumber: 42,
+                platformType: PlatformType.GITLAB,
+            });
+
+            // Should only resolve the unresolved comment (id: 200)
+            expect(
+                mockCodeManagementService.markReviewCommentAsResolved,
+            ).toHaveBeenCalledTimes(1);
+            expect(
+                mockCodeManagementService.markReviewCommentAsResolved,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    commentId: 't-200',
+                }),
+            );
         });
     });
 });
