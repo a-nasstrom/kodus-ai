@@ -9,6 +9,8 @@ vi.mock('../../services/repo-config.service.js', () => ({
 
 import { repoConfigService } from '../../services/repo-config.service.js';
 import {
+    configCommand,
+    configRemoteAction,
     configRepoAction,
     configRepoAddAction,
     configRepoListAction,
@@ -48,6 +50,25 @@ describe('config repo command', () => {
         });
 
         await configRepoAddAction('kodustech/cli');
+
+        expect(mockRepoConfigService.addRepository).toHaveBeenCalledWith(
+            'kodustech/cli',
+        );
+
+        const output = logSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+        expect(output).toContain(
+            "Repository 'kodustech/cli' was added to Kodus successfully.",
+        );
+    });
+
+    it('supports the explicit remote command', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        mockRepoConfigService.addRepository.mockResolvedValue({
+            status: 'added',
+            repositoryFullName: 'kodustech/cli',
+        });
+
+        await configRemoteAction('kodustech/cli');
 
         expect(mockRepoConfigService.addRepository).toHaveBeenCalledWith(
             'kodustech/cli',
@@ -102,5 +123,30 @@ describe('config repo command', () => {
         expect(output).toContain('Configured repositories:');
         expect(output).toContain('kodustech/cli');
         expect(output).toContain('kodustech/website');
+    });
+
+    it('exposes remote config entrypoints in help', () => {
+        const help = configCommand.helpInformation();
+
+        expect(help).toContain('-r, --remote [repository]');
+        expect(help).toContain('remote [repository]');
+        expect(help).not.toContain('repo [repository]');
+    });
+
+    it('supports -r as a shortcut for remote config', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        mockRepoConfigService.addRepository.mockResolvedValue({
+            status: 'added',
+            repositoryFullName: 'kodustech/cli',
+        });
+
+        await configCommand.parseAsync(['-r', '.'], { from: 'user' });
+
+        expect(mockRepoConfigService.addRepository).toHaveBeenCalledWith('.');
+
+        const output = logSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+        expect(output).toContain(
+            "Repository 'kodustech/cli' was added to Kodus successfully.",
+        );
     });
 });

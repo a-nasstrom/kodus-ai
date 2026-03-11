@@ -34,6 +34,14 @@ export async function configRepoAddAction(repository = '.'): Promise<void> {
     await configRepoAction(repository);
 }
 
+export async function configRemoteAction(repository = '.'): Promise<void> {
+    await configRepoAction(repository);
+}
+
+export async function configRemoteAddAction(repository = '.'): Promise<void> {
+    await configRepoAction(repository);
+}
+
 export async function configRepoListAction(): Promise<void> {
     try {
         const repositories = await repoConfigService.listRepositories();
@@ -58,18 +66,65 @@ export const configCommand = new Command('config').description(
     'Configuration commands',
 );
 
-const repoCommand = configCommand
-    .command('repo')
-    .description('Manage repository configuration in Kodus.')
-    .argument('[repository]', "Repository to add. Use '.' for the current repo.", '.')
-    .action(configRepoAction);
+configCommand
+    .option(
+        '-r, --remote [repository]',
+        "Add remote repository config. Use '.' for the current repo.",
+    )
+    .action(async (options, command) => {
+        if (options.remote !== undefined) {
+            await configRemoteAction(options.remote || '.');
+            return;
+        }
 
-repoCommand
-    .command('add [repository]')
-    .description("Add a repository to Kodus. Use '.' for the current repo.")
-    .action(configRepoAddAction);
+        command.help();
+    });
 
-repoCommand
-    .command('list')
-    .description('List repositories already configured in Kodus.')
-    .action(configRepoListAction);
+function registerRemoteRepositoryConfig(
+    command: Command,
+    description: string,
+    handlers: {
+        action: (repository?: string) => Promise<void>;
+        addAction: (repository?: string) => Promise<void>;
+    },
+) {
+    command
+        .description(description)
+        .argument(
+            '[repository]',
+            "Repository to add. Use '.' for the current repo.",
+            '.',
+        )
+        .action(handlers.action);
+
+    command
+        .command('add [repository]')
+        .description("Add a repository to Kodus. Use '.' for the current repo.")
+        .action(handlers.addAction);
+
+    command
+        .command('list')
+        .description('List repositories already configured in Kodus.')
+        .action(configRepoListAction);
+}
+
+registerRemoteRepositoryConfig(
+    configCommand.command('remote'),
+    'Manage remote repository configuration in Kodus.',
+    {
+        action: configRemoteAction,
+        addAction: configRemoteAddAction,
+    },
+);
+
+const repoAliasCommand = configCommand.command('repo');
+(repoAliasCommand as Command & { _hidden?: boolean })._hidden = true;
+
+registerRemoteRepositoryConfig(
+    repoAliasCommand,
+    'Manage remote repository configuration in Kodus.',
+    {
+        action: configRepoAction,
+        addAction: configRepoAddAction,
+    },
+);

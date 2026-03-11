@@ -5,12 +5,11 @@ REPO_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
-mkdir -p "$TMPDIR/work/skills"
+mkdir -p "$TMPDIR/work/site"
 cp "$REPO_ROOT/install.sh" "$TMPDIR/work/install.sh"
-cp -R "$REPO_ROOT/skills/kodus-business-rules-validation" "$TMPDIR/work/skills/"
-cp -R "$REPO_ROOT/skills/kodus-pr-suggestions-resolver" "$TMPDIR/work/skills/"
-cp -R "$REPO_ROOT/skills/kodus-review" "$TMPDIR/work/skills/"
+cp "$REPO_ROOT/site/install" "$TMPDIR/work/site/install"
 chmod +x "$TMPDIR/work/install.sh"
+chmod +x "$TMPDIR/work/site/install"
 
 mkdir -p "$TMPDIR/work/.claude"
 mkdir -p "$TMPDIR/home"

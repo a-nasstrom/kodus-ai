@@ -175,6 +175,14 @@ describe('CLI smoke', () => {
         expect(stdout).toContain('schema');
     });
 
+    it('prints config help with remote entrypoints', async () => {
+        const { stdout, exitCode } = await runCli(['config', '--help']);
+        expect(exitCode).toBe(0);
+        expect(stdout).toContain('-r, --remote [repository]');
+        expect(stdout).toContain('remote [repository]');
+        expect(stdout).not.toContain('repo [repository]');
+    });
+
     it('prints review subcommand help', async () => {
         const { stdout, exitCode } = await runCli(['review', '--help']);
         expect(exitCode).toBe(0);
