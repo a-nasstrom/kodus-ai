@@ -114,6 +114,19 @@ export class CollectCrossFileContextsService {
     async collectContexts(
         params: CollectContextsParams,
     ): Promise<CollectCrossFileContextsResult> {
+        return this.observabilityService.runInSpan(
+            'CollectCrossFileContextsService::collectContexts',
+            () => this._collectContextsInner(params),
+            {
+                organizationId: params.organizationAndTeamData?.organizationId,
+                prNumber: params.prNumber,
+            },
+        );
+    }
+
+    private async _collectContextsInner(
+        params: CollectContextsParams,
+    ): Promise<CollectCrossFileContextsResult> {
         const {
             remoteCommands,
             changedFiles,
@@ -223,7 +236,7 @@ export class CollectCrossFileContextsService {
         const totalSnippetsBeforeDedup = allSnippets.length;
 
         // 5. Deduplicate and rank
-        let finalContexts = this.deduplicateAndRank(allSnippets);
+        let finalContexts = await this.deduplicateAndRank(allSnippets);
         let totalSearches = plannerQueries.length;
 
         // 6. Sufficiency feedback loop (max 1 iteration)
@@ -559,6 +572,25 @@ export class CollectCrossFileContextsService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
     ): Promise<SearchExecutionResult> {
+        return this.observabilityService.runInSpan(
+            'CollectCrossFileContextsService::executeSearchQueries',
+            () => this._executeSearchQueriesInner(queries, remoteCommands, changedFilePaths, repoRoot, organizationAndTeamData, prNumber),
+            {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+                queryCount: queries.length,
+            },
+        );
+    }
+
+    private async _executeSearchQueriesInner(
+        queries: PlannerQuery[],
+        remoteCommands: RemoteCommands,
+        changedFilePaths: Set<string>,
+        repoRoot: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ): Promise<SearchExecutionResult> {
         const queryResultMap = new Map<string, boolean>();
 
         const tasks = queries.map((query) => async () => {
@@ -650,6 +682,17 @@ export class CollectCrossFileContextsService {
 
     //#region Context Expansion
     private async expandContextWindows(
+        snippets: CrossFileContextSnippet[],
+        remoteCommands: RemoteCommands,
+    ): Promise<CrossFileContextSnippet[]> {
+        return this.observabilityService.runInSpan(
+            'CollectCrossFileContextsService::expandContextWindows',
+            () => this._expandContextWindowsInner(snippets, remoteCommands),
+            { snippetCount: snippets.length },
+        );
+    }
+
+    private async _expandContextWindowsInner(
         snippets: CrossFileContextSnippet[],
         remoteCommands: RemoteCommands,
     ): Promise<CrossFileContextSnippet[]> {
@@ -805,7 +848,17 @@ export class CollectCrossFileContextsService {
     //#endregion
 
     //#region Dedup & Rank
-    private deduplicateAndRank(
+    private async deduplicateAndRank(
+        snippets: CrossFileContextSnippet[],
+    ): Promise<CrossFileContextSnippet[]> {
+        return this.observabilityService.runInSpan(
+            'CollectCrossFileContextsService::deduplicateAndRank',
+            () => this._deduplicateAndRankInner(snippets),
+            { snippetCount: snippets.length },
+        );
+    }
+
+    private _deduplicateAndRankInner(
         snippets: CrossFileContextSnippet[],
     ): CrossFileContextSnippet[] {
         // Group by file
@@ -878,6 +931,33 @@ export class CollectCrossFileContextsService {
 
     //#region Sufficiency Loop
     private async runSufficiencyLoop(params: {
+        changedFiles: FileChange[];
+        plannerQueries: PlannerQuery[];
+        currentContexts: CrossFileContextSnippet[];
+        queryResultMap: Map<string, boolean>;
+        remoteCommands: RemoteCommands;
+        changedFilePaths: Set<string>;
+        repoRoot: string;
+        byokConfig?: BYOKConfig;
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        language: string;
+    }): Promise<{
+        mergedContexts: CrossFileContextSnippet[];
+        additionalSearchCount: number;
+    } | null> {
+        return this.observabilityService.runInSpan(
+            'CollectCrossFileContextsService::runSufficiencyLoop',
+            () => this._runSufficiencyLoopInner(params),
+            {
+                organizationId: params.organizationAndTeamData?.organizationId,
+                prNumber: params.prNumber,
+                currentContextCount: params.currentContexts.length,
+            },
+        );
+    }
+
+    private async _runSufficiencyLoopInner(params: {
         changedFiles: FileChange[];
         plannerQueries: PlannerQuery[];
         currentContexts: CrossFileContextSnippet[];
@@ -999,7 +1079,7 @@ export class CollectCrossFileContextsService {
         );
 
         // Merge with existing contexts and re-deduplicate
-        const mergedContexts = this.deduplicateAndRank([
+        const mergedContexts = await this.deduplicateAndRank([
             ...currentContexts,
             ...expandedAdditional,
         ]);

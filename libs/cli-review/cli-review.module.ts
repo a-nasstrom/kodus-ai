@@ -81,6 +81,8 @@ import { TeamModule } from '@libs/organization/modules/team.module';
         ExecuteCliReviewUseCase,
         SubmitCliSessionCaptureUseCase,
         IngestSessionEventUseCase,
+        ClassifySessionUseCase,
+        SessionEventRepository,
         TrialRateLimiterService,
         AuthenticatedRateLimiterService,
         SessionEventRepository,

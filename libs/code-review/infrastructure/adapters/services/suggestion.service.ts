@@ -2009,8 +2009,12 @@ export class SuggestionService implements ISuggestionService {
                         implementedSuggestionsCommentIds.includes(comment.id),
                     );
 
-            if (foundComments?.length > 0) {
-                const promises = foundComments.map(
+            const unresolvedComments = foundComments?.filter(
+                (comment: PullRequestReviewComment) => !comment.isResolved,
+            );
+
+            if (unresolvedComments?.length > 0) {
+                const promises = unresolvedComments.map(
                     async (foundComment: PullRequestReviewComment) => {
                         const commentId =
                             platformType === PlatformType.BITBUCKET
