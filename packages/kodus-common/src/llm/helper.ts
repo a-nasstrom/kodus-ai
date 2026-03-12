@@ -4,6 +4,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Runnable } from '@langchain/core/runnables';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatOpenAI } from '@langchain/openai';
+import { LLM_TIMEOUT_MS, LLM_MAX_RETRIES } from './providerAdapters/types';
 import { ChatGoogle } from '@langchain/google-gauth';
 
 type ChatAnthropicOptions = ConstructorParameters<typeof ChatAnthropic>[0] & {
@@ -55,6 +56,8 @@ export const getChatGPT = (options?: Partial<FactoryArgs>) => {
         streaming: finalOptions.streaming,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
+        timeout: LLM_TIMEOUT_MS,
+        maxRetries: LLM_MAX_RETRIES,
         configuration: {
             baseURL: finalOptions.baseURL ?? undefined,
         },
@@ -86,6 +89,10 @@ const getChatAnthropic = (options?: Partial<FactoryArgs>) => {
             ? { maxTokens: finalOptions.maxTokens }
             : {}),
         callbacks: finalOptions.callbacks,
+        maxRetries: LLM_MAX_RETRIES,
+        clientOptions: {
+            timeout: LLM_TIMEOUT_MS,
+        },
     });
 };
 
@@ -130,6 +137,7 @@ const getChatGemini = (options?: Partial<FactoryArgs>) => {
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
         maxReasoningTokens: maxReasoningTokens,
+        maxRetries: LLM_MAX_RETRIES,
     });
 };
 
@@ -187,6 +195,7 @@ export const getChatVertexAI = (options?: Partial<FactoryArgs>) => {
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
         maxReasoningTokens: maxReasoningTokens,
+        maxRetries: LLM_MAX_RETRIES,
     });
 };
 
@@ -216,6 +225,8 @@ const getNovitaAI = (options?: Partial<FactoryArgs>) => {
         temperature: finalOptions.temperature,
         maxTokens: finalOptions.maxTokens,
         callbacks: finalOptions.callbacks,
+        timeout: LLM_TIMEOUT_MS,
+        maxRetries: LLM_MAX_RETRIES,
     });
 };
 
@@ -257,6 +268,8 @@ const getGroq = (options?: Partial<FactoryArgs>) => {
         streaming: finalOptions.streaming,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
+        timeout: LLM_TIMEOUT_MS,
+        maxRetries: LLM_MAX_RETRIES,
         configuration: {
             baseURL: finalOptions.baseURL ?? undefined,
         },
@@ -301,6 +314,8 @@ const getCerebras = (options?: Partial<FactoryArgs>) => {
         streaming: finalOptions.streaming,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
+        timeout: LLM_TIMEOUT_MS,
+        maxRetries: LLM_MAX_RETRIES,
         configuration: {
             baseURL: finalOptions.baseURL ?? undefined,
         },
