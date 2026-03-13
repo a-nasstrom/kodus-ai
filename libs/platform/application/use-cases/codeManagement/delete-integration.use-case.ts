@@ -67,7 +67,7 @@ export class DeleteIntegrationUseCase {
                     status: true,
                 });
 
-            if (organizationGithubIntegrations.length === 1) {
+            if ((organizationGithubIntegrations ?? []).length === 1) {
                 await this.mcpManagerService.deleteConnectionByIntegrationId(
                     {
                         organizationId: params.organizationId,
