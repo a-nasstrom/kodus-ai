@@ -63,6 +63,7 @@ describe('CollectCrossFileContextsService', () => {
 
         mockObservabilityService = {
             runLLMInSpan: jest.fn().mockImplementation(({ exec }) => exec([])),
+            runInSpan: jest.fn().mockImplementation((_name, fn) => fn()),
         };
 
         mockTokenChunkingService = {
@@ -119,7 +120,7 @@ describe('CollectCrossFileContextsService', () => {
 
     describe('deduplicateAndRank()', () => {
         const dedup = (snippets: CrossFileContextSnippet[]) =>
-            (service as any).deduplicateAndRank(snippets);
+            (service as any)._deduplicateAndRankInner(snippets);
 
         it('should sort by relevanceScore desc within each file', () => {
             const snippets = [

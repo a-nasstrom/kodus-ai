@@ -98,14 +98,12 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             });
 
             // 1. Create automation execution for tracking
-            if (!isTrialMode) {
-                execution = await this.createAutomationExecution(
-                    organizationAndTeamData,
-                    correlationId,
-                    userEmail,
-                    gitContext,
-                );
-            }
+            execution = await this.createAutomationExecution(
+                organizationAndTeamData,
+                correlationId,
+                userEmail,
+                gitContext,
+            );
 
             // 2. Convert CLI input to FileChange[]
             const changedFiles = this.converter.convertToFileChanges(input);

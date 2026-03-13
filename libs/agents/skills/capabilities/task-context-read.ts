@@ -1,8 +1,8 @@
 import { Thread, createLogger } from '@kodus/flow';
 
 import {
-    executeDeterministicTool,
     DeterministicFallbackReason,
+    executeDeterministicTool,
 } from '../runtime/deterministic-tool-executor';
 import {
     AgentCallOptions,
@@ -16,6 +16,7 @@ import { asRecord, safeJsonParse, safeStringify } from '../runtime/value-utils';
 import { TaskContextNormalized } from './types';
 
 const ISSUE_KEY_REGEX = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
+const ISSUE_NUMBER_REGEX = /(?:#|\bissue\s*#?\s*|\bissues\s*#?\s*)(\d+)\b/gi;
 const URL_REGEX = /https?:\/\/[^\s)]+/gi;
 const ARI_REGEX = /\bari:[^\s,]+/gi;
 const TASK_CONTEXT_CAPABILITY = 'task.context.read';
@@ -32,6 +33,8 @@ export interface TaskContextReadParams {
     skillName: string;
     organizationId: string;
     teamId: string;
+    repositoryOwner?: string;
+    repositoryName?: string;
     pullRequestNumber?: number;
     prBody?: string;
     headRef?: string;
@@ -76,6 +79,7 @@ export interface TaskContextReadHooks {
 
 interface TaskContextHints {
     issueKeys: string[];
+    issueNumbers: number[];
     issueLinks: string[];
     explicitIssueKeys: string[];
     explicitIssueLinks: string[];
@@ -418,6 +422,7 @@ function resolveTaskContextHints(
         ...extractIssueKeys(candidates),
         ...explicitTaskIds,
     ]);
+    const issueNumbers = extractIssueNumbers(candidates);
     const issueLinks = uniqueNonEmpty([
         ...extractLinks(candidates).filter(isLikelyTaskReferenceUrl),
         ...explicitTaskLinks,
@@ -440,6 +445,7 @@ function resolveTaskContextHints(
 
     return {
         issueKeys,
+        issueNumbers,
         issueLinks,
         explicitIssueKeys: explicitTaskIds,
         explicitIssueLinks: explicitTaskLinks,
@@ -459,6 +465,20 @@ function resolveTaskContextHints(
         siteUrls: [...siteUrls],
         resourceIds,
     };
+}
+
+function extractIssueNumbers(text: string): number[] {
+    const issueNumbers = new Set<number>();
+
+    for (const match of text.matchAll(ISSUE_NUMBER_REGEX)) {
+        const rawNumber = match[1];
+        const parsed = Number.parseInt(rawNumber, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+            issueNumbers.add(parsed);
+        }
+    }
+
+    return [...issueNumbers];
 }
 
 function extractIssueKeys(text: string): string[] {
@@ -609,6 +629,7 @@ async function resolveDeterministicTaskContext(input: {
 
     for (const toolName of input.orderedTools) {
         const argsCandidates = buildTaskContextArgsCandidates(
+            input.params,
             input.hints,
             input.taskContextToolSignatures.get(toolName),
         );
@@ -662,36 +683,62 @@ async function resolveDeterministicTaskContext(input: {
 }
 
 function buildTaskContextArgsCandidates(
+    params: TaskContextReadParams,
     hints: TaskContextHints,
     signature?: TaskContextToolSignature,
 ): Record<string, unknown>[] {
+    const allParams = signature?.properties
+        ? Object.keys(signature.properties)
+        : [];
     const requiredParams = signature?.requiredParams ?? [];
 
-    if (!requiredParams.length) {
-        if (signature) {
-            const supportsMaxResults = Boolean(
-                signature.normalizedProperties.maxresults,
-            );
-            return [supportsMaxResults ? { maxResults: 1 } : {}];
+    if (!allParams.length) {
+        if (!signature) {
+            return buildGenericTaskContextArgsCandidates(hints);
         }
-        return buildGenericTaskContextArgsCandidates(hints);
+
+        const supportsMaxResults = Boolean(
+            signature.normalizedProperties.maxresults,
+        );
+
+        return [supportsMaxResults ? { maxResults: 1 } : {}];
     }
 
-    const valueByParam = new Map<string, string[]>();
-    for (const requiredParam of requiredParams) {
+    const valueByParam = new Map<string, unknown[]>();
+    for (const paramName of allParams) {
         const candidates = getCandidateValuesForParam(
-            requiredParam,
+            paramName,
+            params,
             hints,
-            getParamSchema(signature, requiredParam),
+            getParamSchema(signature, paramName),
         );
-        if (!candidates.length) {
+
+        if (candidates.length) {
+            valueByParam.set(paramName, candidates);
+            continue;
+        }
+
+        if (requiredParams.includes(paramName)) {
             return [];
         }
-        valueByParam.set(requiredParam, candidates);
+    }
+
+    const paramsWithValues = [...valueByParam.keys()];
+
+    if (!paramsWithValues.length) {
+        const supportsMaxResults = Boolean(
+            signature?.normalizedProperties?.maxresults,
+        );
+
+        if (requiredParams.length) {
+            return [];
+        }
+
+        return [supportsMaxResults ? { maxResults: 1 } : {}];
     }
 
     const combinations = combineRequiredParamValues(
-        requiredParams,
+        paramsWithValues,
         valueByParam,
         16,
     );
@@ -710,9 +757,21 @@ function buildTaskContextArgsCandidates(
 
 function getCandidateValuesForParam(
     paramName: string,
+    params: TaskContextReadParams,
     hints: TaskContextHints,
     paramSchema?: Record<string, unknown>,
-): string[] {
+): unknown[] {
+    const normalizedName = normalizeParamName(paramName);
+    const staticCandidates = resolveStaticParamCandidates(
+        normalizedName,
+        params,
+        hints,
+        paramSchema,
+    );
+    if (staticCandidates.length) {
+        return staticCandidates;
+    }
+
     if (!supportsStringParam(paramSchema)) {
         return [];
     }
@@ -760,11 +819,7 @@ function getCandidateValuesForParam(
     }
 
     if (intent === 'context') {
-        return siteUrls.length
-            ? siteUrls
-            : urlHosts.length
-              ? urlHosts
-              : [];
+        return siteUrls.length ? siteUrls : urlHosts.length ? urlHosts : [];
     }
 
     if (intent === 'url') {
@@ -934,7 +989,7 @@ function extractSchemaTypes(schema: Record<string, unknown>): Set<string> {
 
 function combineRequiredParamValues(
     requiredParams: string[],
-    valueByParam: Map<string, string[]>,
+    valueByParam: Map<string, unknown[]>,
     limit: number,
 ): Record<string, unknown>[] {
     const results: Record<string, unknown>[] = [];
@@ -961,6 +1016,76 @@ function combineRequiredParamValues(
 
     walk(0, {});
     return results;
+}
+
+function resolveStaticParamCandidates(
+    normalizedParamName: string,
+    params: TaskContextReadParams,
+    hints: TaskContextHints,
+    paramSchema?: Record<string, unknown>,
+): unknown[] {
+    if (normalizedParamName === 'organizationid') {
+        return params.organizationId ? [params.organizationId] : [];
+    }
+
+    if (normalizedParamName === 'teamid') {
+        return params.teamId ? [params.teamId] : [];
+    }
+
+    if (
+        normalizedParamName === 'issuenumber' ||
+        normalizedParamName === 'issueid'
+    ) {
+        return hints.issueNumbers.length ? hints.issueNumbers : [];
+    }
+
+    if (normalizedParamName === 'pullrequestnumber') {
+        return typeof params.pullRequestNumber === 'number' &&
+            params.pullRequestNumber > 0
+            ? [params.pullRequestNumber]
+            : [];
+    }
+
+    if (normalizedParamName === 'repository') {
+        if (
+            !hasObjectType(paramSchema) ||
+            !params.repositoryOwner ||
+            !params.repositoryName
+        ) {
+            return [];
+        }
+
+        return [
+            {
+                owner: params.repositoryOwner,
+                name: params.repositoryName,
+            },
+        ];
+    }
+
+    if (
+        normalizedParamName === 'owner' ||
+        normalizedParamName === 'repositoryowner'
+    ) {
+        return params.repositoryOwner ? [params.repositoryOwner] : [];
+    }
+
+    if (
+        normalizedParamName === 'repo' ||
+        normalizedParamName === 'repositoryname'
+    ) {
+        return params.repositoryName ? [params.repositoryName] : [];
+    }
+
+    return [];
+}
+
+function hasObjectType(schema: Record<string, unknown> | undefined): boolean {
+    if (!schema) {
+        return false;
+    }
+
+    return extractSchemaTypes(schema).has('object');
 }
 
 function buildGenericTaskContextArgsCandidates(
@@ -1171,7 +1296,12 @@ USER_QUESTION: ${input.params.userQuestion ?? ''}
 PULL_REQUEST_DESCRIPTION:
 ${input.params.pullRequestDescription ?? ''}
 KNOWN_TOKENS: ${[...hints.issueKeys, ...hints.issueLinks].join(', ') || '(none)'}
+KNOWN_ISSUE_NUMBERS: ${hints.issueNumbers.join(', ') || '(none)'}
+KNOWN_REPOSITORY_OWNER: ${input.params.repositoryOwner ?? '(unknown)'}
+KNOWN_REPOSITORY_NAME: ${input.params.repositoryName ?? '(unknown)'}
 USER_LANGUAGE: ${userLanguage}
+
+When calling tools that require repository data, prioritize KNOWN_REPOSITORY_OWNER and KNOWN_REPOSITORY_NAME.
 
 Return ONLY JSON:
 {
@@ -1676,7 +1806,9 @@ function looksLikeTaskContextFailure(value: TaskContextNormalized): boolean {
     return failureIndicators.some((indicator) => combined.includes(indicator));
 }
 
-function looksLikeToolErrorCandidate(candidate: Record<string, unknown>): boolean {
+function looksLikeToolErrorCandidate(
+    candidate: Record<string, unknown>,
+): boolean {
     const statusCandidates = [
         candidate.status,
         candidate.statusCode,

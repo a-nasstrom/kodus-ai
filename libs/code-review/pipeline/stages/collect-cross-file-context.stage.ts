@@ -75,15 +75,6 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             ? `branch ${cliContext?.gitContext?.branch ?? 'unknown'}`
             : `PR#${context?.pullRequest?.number}`;
 
-        // Guard: skip in trial mode (expensive, trial = budget conscious)
-        if (cliContext?.isTrialMode) {
-            this.logger.log({
-                message: `Skipping cross-file context collection: trial mode`,
-                context: this.stageName,
-            });
-            return context;
-        }
-
         // Guard: skip in fast mode (fast = speed over depth)
         if (cliContext?.isFastMode) {
             this.logger.log({

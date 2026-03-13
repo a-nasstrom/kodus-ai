@@ -4,15 +4,15 @@ import { createHash } from 'node:crypto';
 
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { BusinessRulesPrepareContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
+import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
 import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
-import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PullRequest } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 
 interface TriggerBusinessValidationInput {
@@ -42,6 +42,7 @@ export interface TriggerBusinessValidationResult {
 interface BusinessValidationRepositoryContext {
     id: string;
     name: string;
+    owner?: string;
     defaultBranch?: string;
 }
 
@@ -248,7 +249,10 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
 
         const pullRequests = await this.codeManagementService.getPullRequests({
             organizationAndTeamData,
-            repository,
+            repository: {
+                id: repository.id,
+                name: repository.name,
+            },
             filters: { number: requestedPrNumber },
         });
 
@@ -265,6 +269,7 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         return this.mapPullRequestContext(selectedPr, selectedPr.prURL || '', {
             id: repository.id,
             name: repository.name,
+            owner: repository.owner,
         });
     }
 
@@ -280,6 +285,20 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             pr.repositoryData?.name ||
             pr.repository ||
             fallbackRepository?.name;
+        const repositoryOwner =
+            this.extractRepositoryOwnerFromFullName(
+                pr.head?.repo?.fullName,
+                pr.head?.repo?.name,
+            ) ||
+            this.extractRepositoryOwnerFromFullName(
+                pr.base?.repo?.fullName,
+                pr.base?.repo?.name,
+            ) ||
+            this.extractRepositoryOwnerFromFullName(
+                pr.repository,
+                repositoryName,
+            ) ||
+            fallbackRepository?.owner;
 
         if (!repositoryId || !repositoryName) {
             throw new BadRequestException(
@@ -294,6 +313,7 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             repository: {
                 id: repositoryId,
                 name: repositoryName,
+                owner: repositoryOwner,
                 defaultBranch: pr.base?.repo?.defaultBranch || pr.base?.ref,
             },
             pullRequestDescription: pr.body || pr.message || '',
@@ -382,6 +402,12 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         return {
             id: String(match.id),
             name: match.name,
+            owner:
+                match.organizationName ||
+                this.extractRepositoryOwnerFromFullName(
+                    match.full_name || match.name,
+                    match.name,
+                ),
             defaultBranch:
                 (match as { defaultBranch?: string }).defaultBranch ||
                 (match as { default_branch?: string }).default_branch,
@@ -425,6 +451,10 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
     ): BusinessValidationRepositoryContext | undefined {
         const repositoryId = input.repositoryId?.trim();
         const repositoryName = input.repository?.trim();
+        const inferredOwner = this.extractRepositoryOwnerFromFullName(
+            repositoryName,
+            repositoryName,
+        );
 
         if (!repositoryId && !repositoryName) {
             return undefined;
@@ -432,7 +462,10 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
 
         return {
             id: repositoryId || repositoryName,
-            name: repositoryName || repositoryId,
+            name: repositoryName?.includes('/')
+                ? repositoryName.split('/').pop() || repositoryName
+                : repositoryName || repositoryId,
+            owner: inferredOwner,
         };
     }
 
@@ -450,6 +483,47 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         }
 
         return diff.trim().length > 0 ? diff : '';
+    }
+
+    private extractRepositoryOwnerFromFullName(
+        fullName?: string,
+        repositoryName?: string,
+    ): string | undefined {
+        if (typeof fullName !== 'string' || !fullName.trim().length) {
+            return undefined;
+        }
+
+        const normalized = fullName.trim();
+        const segments = normalized.split('/').filter(Boolean);
+        if (segments.length < 2) {
+            return undefined;
+        }
+
+        const owner = segments[0].trim();
+        const tail = segments[segments.length - 1].trim();
+
+        if (!owner.length || !tail.length) {
+            return undefined;
+        }
+
+        if (
+            typeof repositoryName === 'string' &&
+            repositoryName.trim().length > 0
+        ) {
+            const normalizedRepositoryName = repositoryName
+                .trim()
+                .split('/')
+                .pop();
+
+            if (
+                normalizedRepositoryName &&
+                tail.toLowerCase() !== normalizedRepositoryName.toLowerCase()
+            ) {
+                return undefined;
+            }
+        }
+
+        return owner;
     }
 
     private buildPrepareContext(params: {
@@ -490,6 +564,7 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             prepareContext.repository = {
                 id: executionContext.repository.id,
                 name: executionContext.repository.name,
+                owner: executionContext.repository.owner,
                 defaultBranch: executionContext.repository.defaultBranch,
             };
             prepareContext.defaultBranch =
@@ -534,11 +609,7 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         const referenceSource = [taskReference, pullRequestDescription]
             .filter(Boolean)
             .join('\n');
-        const ticketSource = [
-            referenceSource,
-            prDiffSignal,
-            normalizedTaskId,
-        ]
+        const ticketSource = [referenceSource, prDiffSignal, normalizedTaskId]
             .filter(Boolean)
             .join('\n');
         const taskLinkSource = [normalizedTaskUrl, referenceSource]

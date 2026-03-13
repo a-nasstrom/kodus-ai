@@ -1,8 +1,8 @@
 import { Thread } from '@kodus/flow';
 
-import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { CapabilityExecutionTrace } from '@libs/agents/skills/runtime/skill-runtime.types';
 import type { TaskContextNormalized } from '@libs/agents/skills/capabilities';
+import { CapabilityExecutionTrace } from '@libs/agents/skills/runtime/skill-runtime.types';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { BlueprintContext } from '@libs/shared/blueprint/blueprint.types';
 
 export type TaskQuality = 'EMPTY' | 'MINIMAL' | 'PARTIAL' | 'COMPLETE';
@@ -45,6 +45,7 @@ export interface BusinessRulesPrepareContext extends Record<string, unknown> {
     repository?: {
         id?: string | number;
         name?: string;
+        owner?: string;
         defaultBranch?: string;
     };
     pullRequest?: {

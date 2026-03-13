@@ -250,15 +250,35 @@ describe('CollectCrossFileContextStage', () => {
     // ─── CLI Mode Guards ────────────────────────────────────────────────────
 
     describe('CLI mode guards', () => {
-        it('should skip when isTrialMode is true', async () => {
+        it('should NOT skip when isTrialMode is true (trial gets full analysis)', async () => {
+            mockSandboxProvider.isAvailable.mockReturnValue(true);
+            mockCodeManagementService.getCloneParams.mockResolvedValue({
+                url: 'https://github.com/org/test-repo.git',
+                auth: { token: 'test-token' },
+            });
+            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
+                remoteCommands: {
+                    grep: jest.fn(),
+                    read: jest.fn(),
+                    listDir: jest.fn(),
+                },
+                cleanup: jest.fn().mockResolvedValue(undefined),
+            });
+            mockCollectContexts.mockResolvedValue({
+                contexts: [createSampleSnippet()],
+                plannerQueries: [],
+                totalSearches: 1,
+                totalSnippetsBeforeDedup: 1,
+            });
+
             const context = createCliCrossFileBaseContext({
                 isTrialMode: true,
             });
 
             const result = await stage.execute(context);
 
-            expect(result.crossFileContexts).toBeUndefined();
-            expect(mockSandboxProvider.isAvailable).not.toHaveBeenCalled();
+            expect(mockSandboxProvider.isAvailable).toHaveBeenCalled();
+            expect(result.crossFileContexts).toBeDefined();
         });
 
         it('should skip when isFastMode is true', async () => {
