@@ -687,34 +687,58 @@ function buildTaskContextArgsCandidates(
     hints: TaskContextHints,
     signature?: TaskContextToolSignature,
 ): Record<string, unknown>[] {
+    const allParams = signature?.properties
+        ? Object.keys(signature.properties)
+        : [];
     const requiredParams = signature?.requiredParams ?? [];
 
-    if (!requiredParams.length) {
-        if (signature) {
-            const supportsMaxResults = Boolean(
-                signature.normalizedProperties.maxresults,
-            );
-            return [supportsMaxResults ? { maxResults: 1 } : {}];
+    if (!allParams.length) {
+        if (!signature) {
+            return buildGenericTaskContextArgsCandidates(hints);
         }
-        return buildGenericTaskContextArgsCandidates(hints);
+
+        const supportsMaxResults = Boolean(
+            signature.normalizedProperties.maxresults,
+        );
+
+        return [supportsMaxResults ? { maxResults: 1 } : {}];
     }
 
     const valueByParam = new Map<string, unknown[]>();
-    for (const requiredParam of requiredParams) {
+    for (const paramName of allParams) {
         const candidates = getCandidateValuesForParam(
-            requiredParam,
+            paramName,
             params,
             hints,
-            getParamSchema(signature, requiredParam),
+            getParamSchema(signature, paramName),
         );
-        if (!candidates.length) {
+
+        if (candidates.length) {
+            valueByParam.set(paramName, candidates);
+            continue;
+        }
+
+        if (requiredParams.includes(paramName)) {
             return [];
         }
-        valueByParam.set(requiredParam, candidates);
+    }
+
+    const paramsWithValues = [...valueByParam.keys()];
+
+    if (!paramsWithValues.length) {
+        const supportsMaxResults = Boolean(
+            signature?.normalizedProperties?.maxresults,
+        );
+
+        if (requiredParams.length) {
+            return [];
+        }
+
+        return [supportsMaxResults ? { maxResults: 1 } : {}];
     }
 
     const combinations = combineRequiredParamValues(
-        requiredParams,
+        paramsWithValues,
         valueByParam,
         16,
     );

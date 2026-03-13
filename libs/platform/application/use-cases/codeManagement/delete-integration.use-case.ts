@@ -59,12 +59,22 @@ export class DeleteIntegrationUseCase {
         }
 
         if (integration.platform === PlatformType.GITHUB) {
-            await this.mcpManagerService.deleteConnectionByIntegrationId(
-                {
-                    organizationId: params.organizationId,
-                },
-                KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID,
-            );
+            const organizationGithubIntegrations =
+                await this.integrationService.find({
+                    organization: { uuid: params.organizationId },
+                    integrationCategory: IntegrationCategory.CODE_MANAGEMENT,
+                    platform: PlatformType.GITHUB,
+                    status: true,
+                });
+
+            if (organizationGithubIntegrations.length === 1) {
+                await this.mcpManagerService.deleteConnectionByIntegrationId(
+                    {
+                        organizationId: params.organizationId,
+                    },
+                    KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID,
+                );
+            }
         }
 
         await this.codeManagementService.deleteWebhook({

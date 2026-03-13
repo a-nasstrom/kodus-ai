@@ -874,6 +874,66 @@ describe('fetchTaskContext capability', () => {
         expect(prompt).toContain('KNOWN_REPOSITORY_NAME: kodus-ai');
     });
 
+    it('uses typed candidates for optional-only tool parameters', async () => {
+        const callTool: CallToolMock = jest.fn().mockResolvedValue({
+            success: true,
+            data: {
+                number: 37,
+                title: 'Optional params issue',
+                body: 'Fetched with optional-only schema params',
+            },
+        });
+
+        const toolCaller: ToolCaller = {
+            callTool,
+            getRegisteredTools: () => [{ name: 'KODUS_GET_GITHUB_ISSUE' }],
+            getToolsForLLM: () => [
+                {
+                    name: 'KODUS_GET_GITHUB_ISSUE',
+                    parameters: {
+                        required: [],
+                        properties: {
+                            issueNumber: { type: 'number' },
+                            repositoryOwner: { type: 'string' },
+                            repositoryName: { type: 'string' },
+                        },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => [
+                'KODUS_GET_GITHUB_ISSUE',
+            ]),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        await fetchTaskContext(
+            toolCaller,
+            createCapabilityRuntime('kodus-github-issues'),
+            {
+                ...createBaseParams(),
+                userQuestion: '@kody -v business-logic use issue #37',
+                repositoryOwner: 'kodustech',
+                repositoryName: 'kodus-ai',
+            },
+            hooks,
+        );
+
+        expect(callTool).toHaveBeenCalledWith(
+            'KODUS_GET_GITHUB_ISSUE',
+            expect.objectContaining({
+                issueNumber: 37,
+                repositoryOwner: 'kodustech',
+                repositoryName: 'kodus-ai',
+            }),
+        );
+    });
+
     it('does not crash when provider payload contains empty objects in text fields', async () => {
         const callTool = jest.fn<ToolCaller['callTool']>().mockResolvedValue({
             result: {

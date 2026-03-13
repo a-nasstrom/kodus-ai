@@ -170,6 +170,8 @@ KEYS=(
     "/prod/kodus-orchestrator/API_BETTERSTACK_HEARTBEAT_WEBHOOK_URL"
 
     "/prod/kodus-orchestrator/API_EXA_KEY"
+
+    "/prod/kodus-orchestrator/API_MCP_GITHUB_ISSUES_SERVER_ENABLED"
 )
 
 # Lista de todas as chaves que você precisa
