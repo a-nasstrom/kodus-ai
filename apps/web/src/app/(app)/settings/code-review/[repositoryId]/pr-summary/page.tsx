@@ -103,7 +103,8 @@ export default function PRSummary(props: AutomationCodeReviewConfigPageProps) {
     const [isExternalReferencesProcessing, setIsExternalReferencesProcessing] =
         useState(false);
 
-    const { resetQueries, generateQueryKey } = useReactQueryInvalidateQueries();
+    const { invalidateQueries, generateQueryKey } =
+        useReactQueryInvalidateQueries();
 
     const handleSubmit = form.handleSubmit(async (formData) => {
         const { language, ...config } = formData;
@@ -119,7 +120,7 @@ export default function PRSummary(props: AutomationCodeReviewConfigPageProps) {
             );
 
             await Promise.all([
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
                         params: {
                             key: ParametersConfigKey.CODE_REVIEW_CONFIG,
@@ -127,7 +128,7 @@ export default function PRSummary(props: AutomationCodeReviewConfigPageProps) {
                         },
                     }),
                 }),
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(
                         PARAMETERS_PATHS.GET_CODE_REVIEW_PARAMETER,
                         {

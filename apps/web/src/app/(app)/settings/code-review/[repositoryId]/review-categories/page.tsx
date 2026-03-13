@@ -28,7 +28,8 @@ export default function ReviewCategories() {
     const form = useFormContext<CodeReviewFormType>();
     const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
-    const { resetQueries, generateQueryKey } = useReactQueryInvalidateQueries();
+    const { invalidateQueries, generateQueryKey } =
+        useReactQueryInvalidateQueries();
 
     const handleSubmit = form.handleSubmit(async (formData) => {
         const { language, ...config } = formData;
@@ -48,7 +49,7 @@ export default function ReviewCategories() {
             }
 
             await Promise.all([
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
                         params: {
                             key: ParametersConfigKey.CODE_REVIEW_CONFIG,
@@ -56,7 +57,7 @@ export default function ReviewCategories() {
                         },
                     }),
                 }),
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(
                         PARAMETERS_PATHS.GET_CODE_REVIEW_PARAMETER,
                         {

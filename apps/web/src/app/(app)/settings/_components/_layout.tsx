@@ -37,7 +37,7 @@ import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { safeArray } from "src/core/utils/safe-array";
 
 import { useCodeReviewRouteParams } from "../_hooks";
-import { countConfigOverrides } from "../_utils/count-overrides";
+import { countConfigOverridesForRoutes } from "../_utils/count-overrides";
 import { FormattedConfigLevel } from "../code-review/_types";
 import {
     AutomationCodeReviewConfigProvider,
@@ -46,6 +46,10 @@ import {
     useFeatureFlags,
 } from "./context";
 import { PerRepository } from "./per-repository/repository";
+import {
+    RouteButtonWithOverrideCount,
+    useCustomMessagesOverrideCount,
+} from "./route-button-with-override-count";
 
 const routes = [
     { label: "General", href: "general" },
@@ -74,11 +78,6 @@ export const SettingsLayout = ({ children }: React.PropsWithChildren) => {
     const platformConfig = useSuspenseGetParameterPlatformConfigs(teamId);
     const { repositoryId, pageName, directoryId } = useCodeReviewRouteParams();
     const featureFlags = useFeatureFlags();
-
-    const globalOverrideCount = countConfigOverrides(
-        configValue.configs,
-        FormattedConfigLevel.GLOBAL,
-    );
 
     const canReadGitSettings = usePermission(
         Action.Read,
@@ -158,6 +157,21 @@ export const SettingsLayout = ({ children }: React.PropsWithChildren) => {
             ),
         [featureFlags],
     );
+
+    const globalConfigOverrideCount = countConfigOverridesForRoutes(
+        configValue.configs,
+        settingsRoutes.map((route) => route.href),
+        FormattedConfigLevel.GLOBAL,
+    );
+
+    const globalCustomMessagesOverrideCount = useCustomMessagesOverrideCount({
+        scopeRepositoryId: "global",
+        level: FormattedConfigLevel.GLOBAL,
+        enabled: true,
+    });
+
+    const globalOverrideCount =
+        globalConfigOverrideCount + globalCustomMessagesOverrideCount;
 
     if (repositoryId && repositoryId !== "global") {
         const repository = safeArray(configValue?.repositories).find(
@@ -260,22 +274,25 @@ export const SettingsLayout = ({ children }: React.PropsWithChildren) => {
                                                             return (
                                                                 <SidebarMenuSubItem
                                                                     key={label}>
-                                                                    <Link
-                                                                        className="w-full"
-                                                                        href={`/settings/code-review/global/${href}`}>
-                                                                        <Button
-                                                                            decorative
-                                                                            size="sm"
-                                                                            variant="cancel"
-                                                                            active={
-                                                                                active
-                                                                            }
-                                                                            className="min-h-auto w-full justify-start px-0 py-2">
-                                                                            {
-                                                                                label
-                                                                            }
-                                                                        </Button>
-                                                                    </Link>
+                                                                    <RouteButtonWithOverrideCount
+                                                                        label={
+                                                                            label
+                                                                        }
+                                                                        href={
+                                                                            href
+                                                                        }
+                                                                        to={`/settings/code-review/global/${href}`}
+                                                                        active={
+                                                                            active
+                                                                        }
+                                                                        level={
+                                                                            FormattedConfigLevel.GLOBAL
+                                                                        }
+                                                                        config={
+                                                                            configValue.configs
+                                                                        }
+                                                                        scopeRepositoryId="global"
+                                                                    />
                                                                 </SidebarMenuSubItem>
                                                             );
                                                         },

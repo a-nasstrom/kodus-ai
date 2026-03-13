@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import {
@@ -19,7 +19,6 @@ import { toast } from "@components/ui/toaster/use-toast";
 import { useReactQueryInvalidateQueries } from "@hooks/use-invalidate-queries";
 import { PARAMETERS_PATHS } from "@services/parameters";
 import { createOrUpdateCodeReviewParameter } from "@services/parameters/fetch";
-import { CodeReviewV2Defaults } from "@services/parameters/hooks";
 import {
     KodyLearningStatus,
     ParametersConfigKey,
@@ -79,7 +78,8 @@ function CustomPromptsContent() {
     const form = useFormContext<CodeReviewFormType>();
     const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
-    const { resetQueries, generateQueryKey } = useReactQueryInvalidateQueries();
+    const { invalidateQueries, generateQueryKey } =
+        useReactQueryInvalidateQueries();
     const defaults = useDefaultCodeReviewConfig()?.v2PromptOverrides;
     const initialized = useRef(false);
 
@@ -111,7 +111,7 @@ function CustomPromptsContent() {
             }
 
             await Promise.all([
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(PARAMETERS_PATHS.GET_BY_KEY, {
                         params: {
                             key: ParametersConfigKey.CODE_REVIEW_CONFIG,
@@ -119,7 +119,7 @@ function CustomPromptsContent() {
                         },
                     }),
                 }),
-                resetQueries({
+                invalidateQueries({
                     queryKey: generateQueryKey(
                         PARAMETERS_PATHS.GET_CODE_REVIEW_PARAMETER,
                         {
