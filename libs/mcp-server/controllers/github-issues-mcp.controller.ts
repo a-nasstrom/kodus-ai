@@ -8,7 +8,6 @@ import {
     HttpStatus,
     Post,
     Res,
-    UseGuards,
 } from '@nestjs/common';
 import {
     ApiBody,
@@ -20,7 +19,6 @@ import {
 import { Request, Response } from 'express';
 
 import { createLogger } from '@kodus/flow';
-import { GithubIssuesMcpEnabledGuard } from '../guards/github-issues-mcp-enabled.guard';
 import { GithubIssuesMcpServerService } from '../services/github-issues-mcp-server.service';
 import { JsonRpcCode } from '../utils/errors';
 import { toJsonRpcError } from '../utils/serialize';
@@ -38,7 +36,6 @@ function accepts(req: Request, mime: string) {
 
 @ApiTags('MCP Github Issues')
 @Controller('mcp/github-issues')
-@UseGuards(GithubIssuesMcpEnabledGuard)
 export class GithubIssuesMcpController {
     private readonly logger = createLogger(GithubIssuesMcpController.name);
 

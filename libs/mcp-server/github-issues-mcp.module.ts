@@ -4,7 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import { GithubModule } from '@libs/platform/modules/github.module';
 
 import { GithubIssuesMcpController } from './controllers/github-issues-mcp.controller';
-import { GithubIssuesMcpEnabledGuard } from './guards/github-issues-mcp-enabled.guard';
 import { McpCoreModule } from './mcp-core.module';
 import { GithubIssuesMcpServerService } from './services/github-issues-mcp-server.service';
 import { GithubIssuesTools } from './tools/githubIssues.tools';
@@ -17,26 +16,13 @@ export class GithubIssuesMcpModule {
         const controllers = [];
         const exports: Provider[] = [McpCoreModule];
 
-        const isEnabled =
-            process.env.API_MCP_GITHUB_ISSUES_SERVER_ENABLED === 'true' ||
-            configService?.get<boolean>(
-                'API_MCP_GITHUB_ISSUES_SERVER_ENABLED',
-                false,
-            );
+        imports.push(forwardRef(() => GithubModule));
 
-        if (isEnabled) {
-            imports.push(forwardRef(() => GithubModule));
+        controllers.push(GithubIssuesMcpController);
 
-            controllers.push(GithubIssuesMcpController);
+        providers.push(GithubIssuesMcpServerService, GithubIssuesTools);
 
-            providers.push(
-                GithubIssuesMcpServerService,
-                GithubIssuesMcpEnabledGuard,
-                GithubIssuesTools,
-            );
-
-            exports.push(GithubIssuesMcpServerService);
-        }
+        exports.push(GithubIssuesMcpServerService);
 
         return {
             module: GithubIssuesMcpModule,
