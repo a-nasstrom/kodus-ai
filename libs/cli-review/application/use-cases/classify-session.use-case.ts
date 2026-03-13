@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import {
     CliSessionClassifiedDecision,
+    CliSessionDecisionOrigin,
     CliSessionDecisionType,
 } from '@libs/cli-review/domain/types/cli-session-capture.types';
 import { SessionEventRepository } from '@libs/cli-review/infrastructure/repositories/session-event.repository';
@@ -24,6 +25,7 @@ const LLMDecisionSchema = z.object({
         'tooling',
         'other',
     ]),
+    origin: z.enum(['human', 'agent', 'collaborative']).optional(),
     decision: z.string().min(1).max(600),
     rationale: z.string().max(1000).optional(),
     confidence: z.number().min(0).max(1).optional(),
@@ -34,9 +36,17 @@ const LLMDecisionExtractionSchema = z.object({
     decisions: z.array(LLMDecisionSchema).max(12),
 });
 
+interface TurnPair {
+    prompt?: string;
+    response?: string;
+    toolCalls: string[];
+    filesModified: string[];
+}
+
 interface AggregatedSession {
     agentType?: string;
     gitRemote?: string;
+    turns: TurnPair[];
     prompts: string[];
     responses: string[];
     toolCalls: string[];
@@ -141,6 +151,7 @@ export class ClassifySessionUseCase {
 
     private aggregateEvents(events: SessionEventModel[]): AggregatedSession {
         const aggregated: AggregatedSession = {
+            turns: [],
             prompts: [],
             responses: [],
             toolCalls: [],
@@ -150,8 +161,12 @@ export class ClassifySessionUseCase {
             subagents: [],
         };
 
+        // Index turn_start by turnId for pairing
+        const pendingTurns = new Map<string, TurnPair>();
+
         for (const event of events) {
             const p = event.payload || {};
+            const turnId = p.turnId as string | undefined;
 
             switch (event.type) {
                 case 'session_start':
@@ -159,23 +174,44 @@ export class ClassifySessionUseCase {
                     aggregated.gitRemote = p.gitRemote as string | undefined;
                     break;
 
-                case 'turn_start':
-                    if (typeof p.prompt === 'string' && p.prompt.trim()) {
-                        aggregated.prompts.push(p.prompt as string);
+                case 'turn_start': {
+                    const prompt =
+                        typeof p.prompt === 'string' && p.prompt.trim()
+                            ? (p.prompt as string)
+                            : undefined;
+
+                    if (prompt) {
+                        aggregated.prompts.push(prompt);
+                    }
+
+                    if (turnId) {
+                        pendingTurns.set(turnId, {
+                            prompt,
+                            toolCalls: [],
+                            filesModified: [],
+                        });
                     }
                     break;
+                }
 
-                case 'turn_end':
-                    if (typeof p.response === 'string' && p.response.trim()) {
-                        aggregated.responses.push(p.response as string);
+                case 'turn_end': {
+                    const response =
+                        typeof p.response === 'string' && p.response.trim()
+                            ? (p.response as string)
+                            : undefined;
+
+                    if (response) {
+                        aggregated.responses.push(response);
                     }
+
+                    const turnToolCalls: string[] = [];
                     if (Array.isArray(p.toolCalls)) {
                         for (const tc of p.toolCalls) {
                             if (typeof tc === 'string') {
-                                aggregated.toolCalls.push(tc);
+                                turnToolCalls.push(tc);
                             } else if (tc?.toolName || tc?.tool) {
                                 const name = tc.toolName ?? tc.tool;
-                                aggregated.toolCalls.push(
+                                turnToolCalls.push(
                                     tc.summary
                                         ? `${name}: ${tc.summary}`
                                         : name,
@@ -183,15 +219,20 @@ export class ClassifySessionUseCase {
                             }
                         }
                     }
+                    aggregated.toolCalls.push(...turnToolCalls);
+
+                    const turnFilesModified: string[] = [];
                     if (Array.isArray(p.filesModified)) {
                         for (const fm of p.filesModified) {
                             if (typeof fm === 'string') {
-                                aggregated.filesModified.push(fm);
+                                turnFilesModified.push(fm);
                             } else if (fm?.path) {
-                                aggregated.filesModified.push(fm.path);
+                                turnFilesModified.push(fm.path);
                             }
                         }
                     }
+                    aggregated.filesModified.push(...turnFilesModified);
+
                     if (Array.isArray(p.filesRead)) {
                         aggregated.filesRead.push(
                             ...(p.filesRead as string[]),
@@ -202,7 +243,26 @@ export class ClassifySessionUseCase {
                             ...(p.commands as string[]),
                         );
                     }
+
+                    // Pair with turn_start
+                    const pair = turnId
+                        ? pendingTurns.get(turnId)
+                        : undefined;
+                    if (pair) {
+                        pair.response = response;
+                        pair.toolCalls = turnToolCalls;
+                        pair.filesModified = turnFilesModified;
+                        aggregated.turns.push(pair);
+                        pendingTurns.delete(turnId);
+                    } else {
+                        aggregated.turns.push({
+                            response,
+                            toolCalls: turnToolCalls,
+                            filesModified: turnFilesModified,
+                        });
+                    }
                     break;
+                }
 
                 case 'subagent_start':
                     aggregated.subagents.push({
@@ -211,6 +271,11 @@ export class ClassifySessionUseCase {
                     });
                     break;
             }
+        }
+
+        // Flush any orphaned turn_starts
+        for (const pair of pendingTurns.values()) {
+            aggregated.turns.push(pair);
         }
 
         // Deduplicate file lists
@@ -242,8 +307,14 @@ export class ClassifySessionUseCase {
         const systemPrompt = [
             'You are classifying a complete coding session into reusable decisions.',
             '',
+            'The session is structured as turns. Each turn has:',
+            '- "prompt": what the HUMAN asked or said',
+            '- "response": what the AI AGENT answered or did',
+            '- "toolCalls": tools the agent used',
+            '- "filesModified": files the agent changed',
+            '',
             'Return ONLY JSON with shape:',
-            '{ "decisions": [ { "type": "...", "decision": "...", "rationale": "...", "confidence": 0.0, "evidence": ["..."] } ] }',
+            '{ "decisions": [ { "type": "...", "origin": "...", "decision": "...", "rationale": "...", "confidence": 0.0, "evidence": ["..."] } ] }',
             '',
             'Allowed decision types:',
             '- architectural_decision: high-level structure or system choice',
@@ -253,20 +324,30 @@ export class ClassifySessionUseCase {
             '- tooling: tool or framework choice',
             '- other: valid but uncategorized decision',
             '',
+            'Allowed origin values:',
+            '- human: the human explicitly requested or decided this (appears in prompt)',
+            '- agent: the agent proposed and implemented this without the human asking for it specifically',
+            '- collaborative: the agent suggested and the human confirmed/refined, or the human asked vaguely and the agent made the specific choice',
+            '',
             'Rules:',
             '- Extract only concrete choices, not generic statements.',
             '- Keep each "decision" concise and self-contained.',
             '- confidence must be between 0 and 1.',
-            '- Consider the full session context: user prompts, assistant responses, tool calls, modified files, and subagents.',
+            '- Use the turn structure to determine origin: if the decision came from a prompt, it is "human". If it appeared first in a response without being asked, it is "agent". If the human asked something general and the agent made the specific technical choice, it is "collaborative".',
             '- If nothing useful exists, return { "decisions": [] }.',
         ].join('\n');
+
+        const turns = aggregated.turns.slice(0, 20).map((t) => ({
+            prompt: t.prompt || '',
+            response: t.response || '',
+            toolCalls: t.toolCalls.slice(0, 5),
+            filesModified: t.filesModified.slice(0, 5),
+        }));
 
         const userPayload = {
             agentType: aggregated.agentType || '',
             gitRemote: aggregated.gitRemote || '',
-            prompts: aggregated.prompts.slice(0, 20),
-            responses: aggregated.responses.slice(0, 20),
-            toolCalls: aggregated.toolCalls.slice(0, 50),
+            turns,
             filesModified: aggregated.filesModified.slice(0, 30),
             filesRead: aggregated.filesRead.slice(0, 20),
             commands: aggregated.commands.slice(0, 20),
@@ -296,9 +377,11 @@ export class ClassifySessionUseCase {
                 decision.confidence,
             );
             const normalizedType = decision.type as CliSessionDecisionType;
+            const origin = decision.origin as CliSessionDecisionOrigin;
 
             return {
                 type: normalizedType,
+                origin,
                 decision: this.trim(decision.decision, 500),
                 rationale: decision.rationale
                     ? this.trim(decision.rationale, 1000)
