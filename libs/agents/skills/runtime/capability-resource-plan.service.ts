@@ -179,12 +179,10 @@ export class CapabilityResourcePlanService {
 
     private resolveProviderSeedCandidates(providerType: string): string[] {
         const normalized = this.normalizeProviderToken(providerType);
+        const compact = normalized.replace(/[-_]/g, '');
         const candidates = [normalized];
 
-        if (
-            normalized.includes('jira') ||
-            normalized.includes('atlassian')
-        ) {
+        if (normalized.includes('jira') || normalized.includes('atlassian')) {
             candidates.push('jira');
         }
         if (normalized.includes('linear')) {
@@ -195,6 +193,13 @@ export class CapabilityResourcePlanService {
         }
         if (normalized.includes('clickup')) {
             candidates.push('clickup');
+        }
+        if (
+            normalized.includes('kodus-github-issues') ||
+            compact.includes('kodusgithubissues') ||
+            (compact.includes('github') && compact.includes('issues'))
+        ) {
+            candidates.push('kodus-github-issues');
         }
 
         return [...new Set(candidates)];

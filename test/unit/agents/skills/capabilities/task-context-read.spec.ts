@@ -386,9 +386,7 @@ describe('fetchTaskContext capability', () => {
         };
 
         const hooks = {
-            getSeedTaskContextTools: jest.fn(async () => [
-                'CLICKUP_GET_TASK',
-            ]),
+            getSeedTaskContextTools: jest.fn(async () => ['CLICKUP_GET_TASK']),
             getCachedTaskContextTools: jest.fn(async () => []),
             saveCachedTaskContextTools: jest.fn(async () => undefined),
             resolvePreferredTool: jest.fn(async () => undefined),
@@ -729,9 +727,7 @@ describe('fetchTaskContext capability', () => {
         };
 
         const hooks = {
-            getSeedTaskContextTools: jest.fn(async () => [
-                'CLICKUP_GET_TASK',
-            ]),
+            getSeedTaskContextTools: jest.fn(async () => ['CLICKUP_GET_TASK']),
             getCachedTaskContextTools: jest.fn(async () => []),
             saveCachedTaskContextTools: jest.fn(async () => undefined),
             resolvePreferredTool: jest.fn(async () => undefined),
@@ -756,6 +752,126 @@ describe('fetchTaskContext capability', () => {
             links: ['https://app.clickup.com/t/86d123'],
             sourceProvider: 'clickup',
         });
+    });
+
+    it('builds deterministic args for KODUS_GET_GITHUB_ISSUE using repository owner/name and issue number', async () => {
+        const callTool: CallToolMock = jest.fn().mockResolvedValue({
+            success: true,
+            data: {
+                number: 37,
+                title: 'Business logic validation issue',
+                body: 'Issue context from GitHub',
+                html_url: 'https://github.com/kodustech/kodus-ai/issues/37',
+            },
+        });
+
+        const toolCaller: ToolCaller = {
+            callTool,
+            getRegisteredTools: () => [{ name: 'KODUS_GET_GITHUB_ISSUE' }],
+            getToolsForLLM: () => [
+                {
+                    name: 'KODUS_GET_GITHUB_ISSUE',
+                    parameters: {
+                        required: [
+                            'organizationId',
+                            'teamId',
+                            'repository',
+                            'issueNumber',
+                        ],
+                        properties: {
+                            organizationId: { type: 'string' },
+                            teamId: { type: 'string' },
+                            repository: {
+                                type: 'object',
+                                properties: {
+                                    owner: { type: 'string' },
+                                    name: { type: 'string' },
+                                },
+                                required: ['owner', 'name'],
+                            },
+                            issueNumber: { type: 'number' },
+                        },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => [
+                'KODUS_GET_GITHUB_ISSUE',
+            ]),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        await fetchTaskContext(
+            toolCaller,
+            createCapabilityRuntime('kodus-github-issues'),
+            {
+                ...createBaseParams(),
+                userQuestion: '@kody -v business-logic use issue #37',
+                repositoryOwner: 'kodustech',
+                repositoryName: 'kodus-ai',
+            },
+            hooks,
+        );
+
+        expect(callTool).toHaveBeenCalledWith('KODUS_GET_GITHUB_ISSUE', {
+            organizationId: 'org-1',
+            teamId: 'team-1',
+            repository: {
+                owner: 'kodustech',
+                name: 'kodus-ai',
+            },
+            issueNumber: 37,
+        });
+    });
+
+    it('includes repository and issue number hints in agent fallback prompt', async () => {
+        const callAgent: CallAgentMock = jest.fn().mockResolvedValue({
+            result: JSON.stringify({
+                taskContext: 'Agent context',
+                title: 'Agent title',
+                id: 'GH-37',
+                toolsUsed: ['KODUS_GET_GITHUB_ISSUE'],
+            }),
+        });
+
+        const toolCaller: ToolCaller = {
+            callTool: jest.fn(),
+            callAgent,
+            getRegisteredTools: () => [{ name: 'KODUS_GET_GITHUB_ISSUE' }],
+            getToolsForLLM: () => [],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => []),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        await fetchTaskContext(
+            toolCaller,
+            createCapabilityRuntime('kodus-github-issues'),
+            {
+                ...createBaseParams(),
+                userQuestion: '@kody -v business-logic for issue #37',
+                repositoryOwner: 'kodustech',
+                repositoryName: 'kodus-ai',
+                taskContextResolutionMode: 'agent_first',
+            },
+            hooks,
+        );
+
+        expect(callAgent).toHaveBeenCalled();
+        const prompt = callAgent.mock.calls[0][1];
+        expect(prompt).toContain('KNOWN_ISSUE_NUMBERS: 37');
+        expect(prompt).toContain('KNOWN_REPOSITORY_OWNER: kodustech');
+        expect(prompt).toContain('KNOWN_REPOSITORY_NAME: kodus-ai');
     });
 
     it('does not crash when provider payload contains empty objects in text fields', async () => {
@@ -1098,7 +1214,8 @@ describe('fetchTaskContext capability', () => {
                                     key: String(args.issueIdOrKey),
                                     fields: {
                                         summary: 'Jira task',
-                                        description: 'Resolved from issue details',
+                                        description:
+                                            'Resolved from issue details',
                                     },
                                 },
                             },
