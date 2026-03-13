@@ -21,19 +21,19 @@ jest.mock('@kodus/flow', () => ({
 
 import { DeleteIntegrationUseCase } from '../delete-integration.use-case';
 import {
-    MOCK_ORG_ID,
-    MOCK_TEAM_ID,
-    MOCK_INTEGRATION_UUID,
     MOCK_AUTH_INTEGRATION_UUID,
     MOCK_INTEGRATION_CONFIG_UUID,
-    createMockIntegrationService,
+    MOCK_INTEGRATION_UUID,
+    MOCK_ORG_ID,
+    MOCK_TEAM_ID,
     createMockAuthIntegrationService,
-    createMockIntegrationConfigService,
     createMockCodeManagementService,
     createMockEventEmitter,
-    createMockRequest,
-    createMockIntegrationEntity,
     createMockIntegrationConfigEntity,
+    createMockIntegrationConfigService,
+    createMockIntegrationEntity,
+    createMockIntegrationService,
+    createMockRequest,
 } from './shared-delete-mocks';
 
 describe('DeleteIntegrationUseCase', () => {
@@ -48,6 +48,9 @@ describe('DeleteIntegrationUseCase', () => {
     let mockCodeManagementService: ReturnType<
         typeof createMockCodeManagementService
     >;
+    let mockMcpManagerService: {
+        deleteConnectionByIntegrationId: jest.Mock;
+    };
     let mockEventEmitter: ReturnType<typeof createMockEventEmitter>;
     let mockRequest: ReturnType<typeof createMockRequest>;
 
@@ -61,6 +64,9 @@ describe('DeleteIntegrationUseCase', () => {
         mockAuthIntegrationService = createMockAuthIntegrationService();
         mockIntegrationConfigService = createMockIntegrationConfigService();
         mockCodeManagementService = createMockCodeManagementService();
+        mockMcpManagerService = {
+            deleteConnectionByIntegrationId: jest.fn().mockResolvedValue(true),
+        };
         mockEventEmitter = createMockEventEmitter();
         mockRequest = createMockRequest();
 
@@ -70,6 +76,7 @@ describe('DeleteIntegrationUseCase', () => {
             mockAuthIntegrationService,
             mockIntegrationConfigService,
             mockEventEmitter,
+            mockMcpManagerService,
             mockRequest,
         );
     });

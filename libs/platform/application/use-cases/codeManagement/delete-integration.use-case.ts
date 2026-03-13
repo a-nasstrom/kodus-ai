@@ -4,16 +4,21 @@ import { REQUEST } from '@nestjs/core';
 
 import { IntegrationCategory } from '@libs/core/domain/enums/integration-category.enum';
 import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
+import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { ActionType } from '@libs/core/infrastructure/config/types/general/codeReviewSettingsLog.type';
+import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
 import { AUTH_INTEGRATION_SERVICE_TOKEN } from '@libs/integrations/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { INTEGRATION_SERVICE_TOKEN } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
 import { AuthIntegrationService } from '@libs/integrations/infrastructure/adapters/services/authIntegration.service';
 import { IntegrationService } from '@libs/integrations/infrastructure/adapters/services/integration.service';
 import { IntegrationConfigService } from '@libs/integrations/infrastructure/adapters/services/integrationConfig.service';
+import {
+    KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID,
+    MCPManagerService,
+} from '@libs/mcp-server/services/mcp-manager.service';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { AuditLogEvents } from '@libs/ee/codeReviewSettingsLog/events/audit-log.events';
 
 @Injectable()
 export class DeleteIntegrationUseCase {
@@ -27,6 +32,7 @@ export class DeleteIntegrationUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IntegrationConfigService,
         private readonly eventEmitter: EventEmitter2,
+        private readonly mcpManagerService: MCPManagerService,
         @Inject(REQUEST)
         private readonly request: Request & {
             user: {
@@ -50,6 +56,25 @@ export class DeleteIntegrationUseCase {
 
         if (!integration) {
             return;
+        }
+
+        if (integration.platform === PlatformType.GITHUB) {
+            const organizationGithubIntegrations =
+                await this.integrationService.find({
+                    organization: { uuid: params.organizationId },
+                    integrationCategory: IntegrationCategory.CODE_MANAGEMENT,
+                    platform: PlatformType.GITHUB,
+                    status: true,
+                });
+
+            if ((organizationGithubIntegrations ?? []).length === 1) {
+                await this.mcpManagerService.deleteConnectionByIntegrationId(
+                    {
+                        organizationId: params.organizationId,
+                    },
+                    KODUS_MCP_GITHUB_ISSUES_INTEGRATION_ID,
+                );
+            }
         }
 
         try {
