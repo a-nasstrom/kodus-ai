@@ -25,5 +25,12 @@ describe('buildSkillSyncTargets', () => {
             activationPath: '/repo/workspace/.gemini',
             baseDir: '/repo/workspace/.gemini/skills',
         });
+
+        expect(targets).toContainEqual({
+            label: 'Kiro user skills',
+            type: 'skill',
+            activationPath: '/users/demo/.kiro',
+            baseDir: '/users/demo/.kiro/skills',
+        });
     });
 });

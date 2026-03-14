@@ -6,27 +6,38 @@ import type {
     EventType,
     TokenUsage,
     TranscriptParseResult,
-    ClaudeCodeHookEvent,
+    CursorHookEvent,
 } from '../types/session.js';
 
-const HOOK_TO_EVENT_TYPE: Record<ClaudeCodeHookEvent, EventType> = {
-    'session-start': 'SessionStart',
-    'session-end': 'SessionEnd',
-    'stop': 'TurnEnd',
-    'user-prompt-submit': 'TurnStart',
-    'subagent-start': 'SubagentStart',
-    'subagent-stop': 'SubagentEnd',
-    'post-todo': 'TurnEnd',
-    // Legacy aliases — old installations used PreToolUse(Task)/PostToolUse(Task)
-    'pre-task': 'SubagentStart',
-    'post-task': 'SubagentEnd',
+const HOOK_TO_EVENT_TYPE: Record<CursorHookEvent, EventType> = {
+    sessionStart: 'SessionStart',
+    sessionEnd: 'SessionEnd',
+    stop: 'TurnEnd',
+    beforeSubmitPrompt: 'TurnStart',
+    subagentStart: 'SubagentStart',
+    subagentStop: 'SubagentEnd',
 };
 
-export class ClaudeCodeAgent implements AgentAdapter {
-    readonly agentType: AgentType = 'claude-code';
+/**
+ * Cursor agent adapter.
+ *
+ * Cursor has its own hooks system (.cursor/hooks.json) with payloads that
+ * differ from Claude Code. This adapter normalizes Cursor-specific payloads
+ * into the shared LifecycleEvent format.
+ *
+ * Cursor hook payloads (from docs):
+ *   sessionStart:       { session_id, is_background_agent, composer_mode }
+ *   sessionEnd:         { session_id, reason, duration_ms, error }
+ *   beforeSubmitPrompt: { session_id, prompt, attachments }
+ *   stop:               { session_id, status, loop_count }
+ *   subagentStart:      { session_id, subagent_id, subagent_type, task_description, ... }
+ *   subagentStop:       { session_id, subagent_id, subagent_type, status, summary, duration_ms, modified_files, ... }
+ */
+export class CursorAgent implements AgentAdapter {
+    readonly agentType: AgentType = 'cursor';
 
     parseHookEvent(hookName: string, payload: unknown): LifecycleEvent | null {
-        const eventType = HOOK_TO_EVENT_TYPE[hookName as ClaudeCodeHookEvent];
+        const eventType = HOOK_TO_EVENT_TYPE[hookName as CursorHookEvent];
         if (!eventType) {
             return null;
         }
@@ -37,39 +48,25 @@ export class ClaudeCodeAgent implements AgentAdapter {
                 : {};
 
         const sessionId = pickString(obj, ['session_id', 'sessionId']) ?? '';
-        const sessionRef =
-            pickString(obj, [
-                'transcript_path',
-                'transcriptPath',
-                'session_ref',
-            ]) ?? '';
-        const prompt = pickString(obj, ['prompt', 'user_message']);
-        const toolUseId = pickString(obj, ['tool_use_id', 'toolUseId']);
+        const prompt = pickString(obj, ['prompt']);
         const subagentId = pickString(obj, ['subagent_id', 'subagentId']);
         const subagentType = pickString(obj, ['subagent_type', 'subagentType']);
         const taskDescription = pickString(obj, [
             'task_description',
             'taskDescription',
+            'task',
         ]);
-
-        let toolInput: unknown;
-        if (obj['tool_input'] !== undefined) {
-            toolInput = obj['tool_input'];
-        } else if (obj['input'] !== undefined) {
-            toolInput = obj['input'];
-        }
 
         return {
             type: eventType,
             sessionId,
-            sessionRef,
+            sessionRef: '',
             prompt,
             timestamp: new Date().toISOString(),
-            toolUseId,
+            toolUseId: subagentId,
             subagentId,
             subagentType,
             taskDescription,
-            toolInput,
         };
     }
 
@@ -104,10 +101,6 @@ export class ClaudeCodeAgent implements AgentAdapter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function pickString(
     obj: Record<string, unknown>,
     keys: string[],
@@ -121,4 +114,4 @@ function pickString(
     return undefined;
 }
 
-export const claudeCodeAgent = new ClaudeCodeAgent();
+export const cursorAgent = new CursorAgent();

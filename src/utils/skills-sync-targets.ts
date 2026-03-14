@@ -192,6 +192,20 @@ const SKILL_SYNC_TARGET_DEFINITIONS: SkillSyncTargetDefinition[] = [
         activationSegments: ['.gemini'],
         baseSegments: ['.gemini', 'skills'],
     },
+    {
+        label: 'Kiro project skills',
+        scope: 'project',
+        type: 'skill',
+        activationSegments: ['.kiro'],
+        baseSegments: ['.kiro', 'skills'],
+    },
+    {
+        label: 'Kiro user skills',
+        scope: 'user',
+        type: 'skill',
+        activationSegments: ['.kiro'],
+        baseSegments: ['.kiro', 'skills'],
+    },
 ];
 
 export function buildSkillSyncTargets(

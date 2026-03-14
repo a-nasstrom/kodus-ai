@@ -221,7 +221,10 @@ export async function syncSkillsToTargets(
                     targetResult.unchanged += 1;
                 }
             }
-            await removePathIfExists(resolveManagedManifestPath(target), dryRun);
+            await removePathIfExists(
+                resolveManagedManifestPath(target),
+                dryRun,
+            );
         } else {
             for (const skill of skills) {
                 const filePath = resolveManagedSkillPath(target, skill.name);
@@ -234,7 +237,10 @@ export async function syncSkillsToTargets(
             }
 
             for (const skillName of staleManagedSkillNames) {
-                const entryPath = resolveManagedSkillEntryPath(target, skillName);
+                const entryPath = resolveManagedSkillEntryPath(
+                    target,
+                    skillName,
+                );
                 if (await removePathIfExists(entryPath, dryRun)) {
                     targetResult.removedManaged += 1;
                 }

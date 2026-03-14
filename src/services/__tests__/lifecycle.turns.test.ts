@@ -40,6 +40,7 @@ vi.mock('../session-local.service.js', () => {
             store.delete(sessionId);
             return Promise.resolve();
         }),
+        listStaleSessions: vi.fn().mockResolvedValue([]),
         _store: store,
     };
 });

@@ -66,6 +66,12 @@ describe('skills-sync utilities', () => {
             activationPath: '/users/demo/.codeium/windsurf',
             baseDir: '/users/demo/.codeium/windsurf/skills',
         });
+        expect(targets).toContainEqual({
+            label: 'Kiro project skills',
+            type: 'skill',
+            activationPath: '/repo/workspace/.kiro',
+            baseDir: '/repo/workspace/.kiro/skills',
+        });
     });
 
     it('syncs skill and command targets and removes legacy entries', async () => {

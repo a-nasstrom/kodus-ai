@@ -6,6 +6,8 @@ import {
     resolveCodexConfigPath,
 } from './hooks.js';
 import { removeSessionHooks } from './session-hooks-install.js';
+import { removeCursorSessionHooks } from './session-hooks-install-cursor.js';
+import { removeCodexSessionHooks } from './session-hooks-install-codex.js';
 import { exitWithCode } from '../../utils/cli-exit.js';
 import { cliError, cliInfo } from '../../utils/logger.js';
 import type { GlobalOptions } from '../../types/cli.js';
@@ -70,20 +72,27 @@ export async function disableAction(
 
         const claudeResult = await removeClaudeCompatibleHooks(gitRoot);
         const sessionResult = await removeSessionHooks(gitRoot);
-        const codexResult = await removeCodexNotify(resolveCodexConfigPath());
-
-        const captureRemoved = claudeResult.removed;
-        const sessionRemoved = sessionResult.removed;
+        const cursorResult = await removeCursorSessionHooks(gitRoot);
+        const codexConfigPath = resolveCodexConfigPath();
+        const codexResult = await removeCodexNotify(codexConfigPath);
+        const codexSessionResult =
+            await removeCodexSessionHooks(codexConfigPath);
 
         cliInfo(chalk.green('\u2713 Decision hooks removed.'));
         cliInfo(
-            `  Decision capture hooks: ${captureRemoved ? 'removed' : 'not found'}`,
+            `  Decision capture hooks: ${claudeResult.removed ? 'removed' : 'not found'}`,
         );
         cliInfo(
-            `  Session tracking hooks: ${sessionRemoved ? 'removed' : 'not found'}`,
+            `  Claude Code session hooks: ${sessionResult.removed ? 'removed' : 'not found'}`,
+        );
+        cliInfo(
+            `  Cursor session hooks: ${cursorResult.removed ? 'removed' : 'not found'}`,
         );
         cliInfo(
             `  Codex notify: ${codexResult.removed ? 'removed' : 'not found'}`,
+        );
+        cliInfo(
+            `  Codex session hooks: ${codexSessionResult.removed ? 'removed' : 'not found'}`,
         );
     } catch (error) {
         const normalized = normalizeCommandError(error);
