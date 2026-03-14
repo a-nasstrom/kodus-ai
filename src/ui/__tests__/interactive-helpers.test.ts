@@ -4,6 +4,7 @@ import {
     formatCategoryBadge,
     generateFixPrompt,
     getFileStats,
+    getQuickFixEmptyMessage,
     groupIssuesByFile,
 } from '../interactive-helpers.js';
 
@@ -83,5 +84,13 @@ describe('generateFixPrompt', () => {
         expect(prompt).toContain('Recommendation: Add sanitization');
         expect(prompt).toContain('2. WARNING at line 22');
         expect(prompt).toContain('Please fix these 2 issues in src/app.ts.');
+    });
+});
+
+describe('getQuickFixEmptyMessage', () => {
+    it('returns a helpful message when no auto-fixable issues are present', () => {
+        expect(getQuickFixEmptyMessage()).toBe(
+            'No auto-fixable issues found. Try `kodus review --interactive` to inspect issues or run `kodus review` to see the full report.',
+        );
     });
 });

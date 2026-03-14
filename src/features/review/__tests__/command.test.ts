@@ -22,4 +22,14 @@ describe('createReviewCommand', () => {
             ]),
         );
     });
+
+    it('includes concrete examples in the help output', () => {
+        const command = createReviewCommand();
+        const help = command.helpInformation();
+
+        expect(help).toContain('Examples:');
+        expect(help).toContain('kodus review');
+        expect(help).toContain('kodus review --staged');
+        expect(help).toContain('kodus review --fail-on error');
+    });
 });

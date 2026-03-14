@@ -111,9 +111,12 @@ export function normalizeCommandError(error: unknown): NormalizedCommandError {
         if (
             isMessageMatch(error.message, [
                 'invalid --',
+                'invalid value for `--',
                 'provide --',
                 'choose a mode:',
                 'cannot be used with',
+                'cannot be used together',
+                'use one of:',
             ])
         ) {
             return {

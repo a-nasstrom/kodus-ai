@@ -5,6 +5,7 @@ import { fixService } from '../services/fix.service.js';
 import { copyTextToClipboard } from '../utils/clipboard.js';
 import {
     generateFixPrompt,
+    getQuickFixEmptyMessage,
     groupIssuesByFile,
 } from './interactive-helpers.js';
 import {
@@ -254,7 +255,7 @@ class InteractiveUI {
         const fixableIssues = result.issues.filter((i) => i.fixable);
 
         if (fixableIssues.length === 0) {
-            console.log(chalk.yellow('No auto-fixable issues found'));
+            console.log(chalk.yellow(getQuickFixEmptyMessage()));
             return;
         }
 

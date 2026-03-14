@@ -35,6 +35,24 @@ describe('command errors', () => {
         expect(normalized.code).toBe('INTERNAL_ERROR');
     });
 
+    it('maps review validation errors to INVALID_INPUT', () => {
+        expect(
+            normalizeCommandError(
+                new Error(
+                    'The `--interactive` and `--fix` options cannot be used together.',
+                ),
+            ).code,
+        ).toBe('INVALID_INPUT');
+
+        expect(
+            normalizeCommandError(
+                new Error(
+                    'Invalid value for `--fail-on`: `nope`. Use one of: info, warning, error, critical.',
+                ),
+            ).code,
+        ).toBe('INVALID_INPUT');
+    });
+
     it('maps network fetch failures to a user-friendly API unavailable message', () => {
         const error = new TypeError('fetch failed') as TypeError & {
             cause?: { code?: string };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    formatFailOnExitMessage,
     formatTrialCompletionMessage,
     shouldFailReview,
     shouldUseInteractiveReview,
@@ -67,6 +68,13 @@ describe('review result helpers', () => {
         expect(shouldFailReview(result, 'error')).toBe(true);
         expect(shouldFailReview(result, 'critical')).toBe(false);
         expect(shouldFailReview(result, undefined)).toBe(false);
+        expect(formatFailOnExitMessage(result, 'error')).toBe(
+            'Exiting with code 1 because 1 issue meets or exceeds `--fail-on error`.',
+        );
+        expect(formatFailOnExitMessage(result, 'warning')).toBe(
+            'Exiting with code 1 because 2 issues meet or exceed `--fail-on warning`.',
+        );
+        expect(formatFailOnExitMessage(result, 'critical')).toBeNull();
     });
 
     it('formats trial completion message from trial info or rate limit', () => {

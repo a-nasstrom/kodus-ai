@@ -35,6 +35,36 @@ export function shouldFailReview(
     );
 }
 
+export function formatFailOnExitMessage(
+    result: ReviewResult,
+    failOn?: string,
+): string | null {
+    if (!failOn) {
+        return null;
+    }
+
+    const severityOrder: Record<string, number> = {
+        info: 0,
+        warning: 1,
+        error: 2,
+        critical: 3,
+    };
+
+    const threshold = severityOrder[failOn] ?? 0;
+    const blockingCount = result.issues.filter(
+        (issue) => (severityOrder[issue.severity] ?? 0) >= threshold,
+    ).length;
+
+    if (blockingCount === 0) {
+        return null;
+    }
+
+    const issueLabel = blockingCount > 1 ? 'issues' : 'issue';
+    const verbPhrase = blockingCount > 1 ? 'meet or exceed' : 'meets or exceeds';
+
+    return `Exiting with code 1 because ${blockingCount} ${issueLabel} ${verbPhrase} \`--fail-on ${failOn}\`.`;
+}
+
 export function formatTrialCompletionMessage(
     result: TrialReviewResult,
 ): string {

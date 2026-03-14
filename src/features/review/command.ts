@@ -27,7 +27,11 @@ import {
 import { applyFieldMask } from '../../utils/field-mask.js';
 import { formatReviewOutput } from '../../utils/review-output.js';
 import { resolveReviewDiff } from './diff.js';
+import { buildReviewErrorHints } from './errors.js';
+import { buildNoChangesMessages } from './no-changes.js';
+import { validateReviewOptions } from './options.js';
 import {
+    formatFailOnExitMessage,
     formatTrialCompletionMessage,
     shouldFailReview,
     shouldUseInteractiveReview,
@@ -51,7 +55,14 @@ type ReviewCommandOptions = {
 
 export function createReviewCommand(): Command {
     return new Command('review')
-        .description('Analyze modified files for code review')
+        .description(`Analyze modified files for code review
+
+Examples:
+  kodus review
+  kodus review --staged
+  kodus review --branch main
+  kodus review src/auth.ts src/config.ts
+  kodus review --fail-on error`)
         .argument('[files...]', 'Specific files to analyze')
         .option('-s, --staged', 'Analyze only staged files')
         .option('-c, --commit <sha>', 'Analyze diff from a specific commit')
@@ -99,6 +110,8 @@ async function reviewAction(
     const fields = parseFieldList(options.fields);
 
     try {
+        validateReviewOptions(options);
+
         assertStructuredOutputForFields({
             fields: options.fields,
             format: globalOpts.format,
@@ -289,6 +302,10 @@ async function reviewAction(
         }
 
         if (shouldFailReview(result, options.failOn)) {
+            const failMessage = formatFailOnExitMessage(result, options.failOn);
+            if (failMessage && !ctx.isAgent) {
+                cliInfo(chalk.yellow(failMessage));
+            }
             exitWithCode(1);
         }
     } catch (error) {
@@ -320,6 +337,9 @@ async function reviewAction(
 
         if (error instanceof Error) {
             cliError(chalk.red(error.message));
+            for (const hint of buildReviewErrorHints(normalized)) {
+                cliInfo(chalk.dim(hint));
+            }
             if (globalOpts.verbose) {
                 cliError(error.stack);
             }
@@ -358,6 +378,9 @@ async function handleNoChanges(
 
     if (!quiet) {
         spinner.fail(chalk.yellow('No changes to review'));
+        for (const message of buildNoChangesMessages(files, options)) {
+            cliInfo(chalk.dim(message));
+        }
     }
 
     if (verbose) {

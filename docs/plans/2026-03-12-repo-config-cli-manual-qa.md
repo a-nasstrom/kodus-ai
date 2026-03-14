@@ -1,9 +1,10 @@
-# Repository Config CLI Manual QA Checklist
+# Review And Repository Config CLI Manual QA Checklist
 
 ## Goal
 
-Validate the repository-config experience from a real terminal session, covering:
+Validate the `review` and repository-config experience from a real terminal session, covering:
 
+- local review UX and failure modes
 - repository add flow
 - guided setup UX
 - direct setting updates
@@ -33,9 +34,97 @@ export KODUS_TEAM_KEY=your-team-key
 node dist/index.js
 ```
 
-## Priority 1: Core Happy Path
+## Priority 1: Review Happy Path
 
-### 1. Command discovery
+### 1. Review command discovery
+
+Run:
+
+```bash
+node dist/index.js review --help
+```
+
+Validate:
+
+- help is readable and easy to scan
+- examples are concrete and copy-pasteable
+- `--staged`, `--branch`, `--interactive`, `--fix`, and `--fail-on` are easy to discover
+
+### 2. Review current working tree
+
+Run:
+
+```bash
+node dist/index.js review
+```
+
+Validate:
+
+- command explains what is being reviewed
+- successful output is readable in terminal mode
+- if there are no changes, the message is actionable and suggests next steps
+
+### 3. Review staged changes
+
+Run:
+
+```bash
+node dist/index.js review --staged
+```
+
+Validate:
+
+- staged scope behaves as expected
+- if nothing is staged, the message explicitly suggests staging files or reviewing the full working tree
+
+### 4. Fail review on severity threshold
+
+Run:
+
+```bash
+node dist/index.js review --fail-on error
+```
+
+Validate:
+
+- command exits with code `1` only when matching issues exist
+- output explains why the command failed
+- the `--fail-on` threshold shown in the message matches the user input exactly
+
+### 5. Interactive and quick-fix paths
+
+Run:
+
+```bash
+node dist/index.js review --interactive
+node dist/index.js review --fix
+```
+
+Validate:
+
+- interactive mode is easy to enter when issues exist
+- `--fix` clearly explains when there are no auto-fixable issues
+- the next step suggested by `--fix` is useful, not generic
+
+### 6. Invalid review option combinations
+
+Run:
+
+```bash
+node dist/index.js review --interactive --fix
+node dist/index.js review --interactive --prompt-only
+node dist/index.js review --fail-on nope
+```
+
+Validate:
+
+- command fails fast before starting analysis
+- errors explain the invalid combination or invalid value clearly
+- hints point the user to `kodus review --help`
+
+## Priority 2: Repository Config Happy Path
+
+### 7. Command discovery
 
 Run:
 
@@ -52,7 +141,7 @@ Validate:
 - wording says the CLI updates the repository's current state directly
 - no mention of reset/default semantics
 
-### 2. Add current repository without setup
+### 8. Add current repository without setup
 
 Run:
 
@@ -66,7 +155,7 @@ Validate:
 - command exits cleanly
 - no interactive prompt appears
 
-### 3. Inspect repository settings
+### 9. Inspect repository settings
 
 Run:
 
@@ -82,7 +171,7 @@ Validate:
 - pattern lists are shown clearly
 - output is usable without reading docs
 
-### 4. Run guided setup
+### 10. Run guided setup
 
 Run:
 
@@ -102,12 +191,12 @@ Suggested inputs:
 
 - automated review: `yes`
 - auto approve: `no`
-- request changes severity: `critical`
+- minimum severity level: `critical`
 - ignored files: `**/*.lock`, `dist/**`
 - base branches: `main`, `release/*`
 - ignored titles: `wip*`, `draft*`
 
-### 5. Confirm persisted state
+### 11. Confirm persisted state
 
 Run:
 
@@ -120,9 +209,9 @@ Validate:
 - values match the setup choices exactly
 - glob patterns are preserved as typed
 
-## Priority 2: Direct Mutation Flow
+## Priority 3: Direct Mutation Flow
 
-### 6. Set scalar values directly
+### 12. Set scalar values directly
 
 Run:
 
@@ -138,7 +227,7 @@ Validate:
 - success output is obvious
 - follow-up `show` reflects the updated values
 
-### 7. Add and remove patterns with human aliases
+### 13. Add and remove patterns with human aliases
 
 Run:
 
@@ -158,7 +247,7 @@ Validate:
 - remove only removes the chosen pattern
 - patterns remain untouched otherwise
 
-### 8. Add and remove patterns with generic commands
+### 14. Add and remove patterns with generic commands
 
 Run:
 
@@ -172,9 +261,9 @@ Validate:
 - generic commands still work for scripts
 - supported field names are understandable from help and error messages
 
-## Priority 3: JSON and Agent Flow
+## Priority 4: JSON and Agent Flow
 
-### 9. Validate JSON output
+### 15. Validate JSON output
 
 Run:
 
@@ -194,7 +283,7 @@ Validate:
 - payload shape is stable enough for automation
 - command result contains enough context to chain the next step
 
-### 10. Validate structured setup preview
+### 16. Validate structured setup preview
 
 Run:
 
@@ -208,9 +297,9 @@ Validate:
 - cancellation returns a non-applied result cleanly
 - apply returns the saved settings
 
-## Priority 4: Browser Handoff
+## Priority 5: Browser Handoff
 
-### 11. Open advanced settings
+### 17. Open advanced settings
 
 Run:
 
@@ -226,9 +315,9 @@ Validate:
 - unsupported sections fail with a helpful error
 - behavior is still useful even without deep-link support
 
-## Priority 5: Error Handling
+## Priority 6: Error Handling
 
-### 12. Invalid key
+### 18. Invalid key
 
 Run:
 
@@ -242,7 +331,7 @@ Validate:
 - error tells the user the key is invalid
 - message nudges the user toward valid usage
 
-### 13. Invalid repository context
+### 19. Invalid repository context
 
 Run outside a git repository:
 
@@ -255,7 +344,7 @@ Validate:
 - error is direct and actionable
 - no stack trace leaks to the user
 
-### 14. Missing authentication
+### 20. Missing authentication
 
 Unset the team key and retry:
 
