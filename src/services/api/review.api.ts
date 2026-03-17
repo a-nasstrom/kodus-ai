@@ -64,21 +64,33 @@ export class RealReviewApi implements IReviewApi {
     ): Promise<ReviewResult> {
         const isTeamKey = accessToken.startsWith('kodus_');
 
-        if (isTeamKey) {
-            return this.requester<ReviewResult>('/cli/review', {
-                method: 'POST',
-                headers: {
-                    'X-Team-Key': accessToken,
-                },
-                body: JSON.stringify({
-                    diff,
-                    config,
-                    ...metrics,
-                }),
-            });
+        const headers: Record<string, string> = isTeamKey
+            ? { 'X-Team-Key': accessToken }
+            : { Authorization: `Bearer ${accessToken}` };
+
+        let endpoint = '/cli/review';
+        if (!isTeamKey) {
+            try {
+                const payload = JSON.parse(
+                    Buffer.from(accessToken.split('.')[1], 'base64').toString(),
+                );
+                if (payload.organizationId) {
+                    endpoint = `/cli/review?teamId=${encodeURIComponent(payload.organizationId)}`;
+                }
+            } catch {
+                // Ignore if cannot decode
+            }
         }
 
-        return this.analyze(diff, accessToken, config);
+        return this.requester<ReviewResult>(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                diff,
+                config,
+                ...metrics,
+            }),
+        });
     }
 
     async getPullRequestSuggestions(

@@ -116,13 +116,35 @@ class ReviewService {
             return result;
         }
 
+        // Personal token: also send git context for repository-scoped rules
+        const gitInfo = await gitService.getGitInfo();
+        const inferredPlatform = gitInfo.remote
+            ? gitService.inferPlatform(gitInfo.remote)
+            : undefined;
+
         createAnalyzeApiRequestVerboseMessages({
             diff,
             reviewConfig,
             mode: 'personal-token',
+            gitInfo: {
+                branch: gitInfo.branch,
+                remote: gitInfo.remote,
+            },
         }).forEach((message) => this.logVerbose(message));
 
-        const result = await api.review.analyze(diff, token, reviewConfig);
+        const result = await api.review.analyzeWithMetrics(
+            diff,
+            token,
+            reviewConfig,
+            {
+                userEmail: gitInfo.userEmail,
+                gitRemote: gitInfo.remote || undefined,
+                branch: gitInfo.branch,
+                commitSha: gitInfo.commitSha,
+                inferredPlatform,
+                cliVersion: CLI_VERSION,
+            },
+        );
 
         createAnalyzeApiResponseVerboseMessages({
             summary: result.summary,
