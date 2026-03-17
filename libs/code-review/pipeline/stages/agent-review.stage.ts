@@ -389,7 +389,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const summaries = fileSuggestions
                     .map(
                         (s, i) =>
-                            `[${i}] ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 150)}`,
+                            `[${i}] [${s.label || 'unknown'}/${s.severity || 'medium'}] lines ${s.relevantLinesStart}-${s.relevantLinesEnd}: ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 200)}`,
                     )
                     .join('\n');
 
@@ -397,14 +397,18 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     keep: z
                         .array(z.number())
                         .describe(
-                            'Indices of suggestions to keep (remove duplicates, keep the most detailed one)',
+                            'Indices of suggestions to keep',
                         ),
                 });
 
                 const dedupResult = await generateText({
                     model: model as any,
                     output: Output.object({ schema: dedupSchema }) as any,
-                    prompt: `These suggestions are for the same file "${filename}". Identify duplicates (suggestions describing the same issue) and return only the indices to KEEP. When two suggestions describe the same issue, keep the one with more detail.
+                    prompt: `These suggestions are for the same file "${filename}". Remove duplicates and return the indices to KEEP.
+
+Two suggestions are DUPLICATES if they have the same ROOT CAUSE — even if described from different angles (e.g., one says "key collision" and another says "DoS via key collision" — same root cause, keep only the more detailed one).
+
+Two suggestions are NOT duplicates if they have DIFFERENT root causes — even if they're on the same lines (e.g., one about "missing cache invalidation" and another about "memory growth" — different problems, keep BOTH).
 
 ${summaries}`,
                 });

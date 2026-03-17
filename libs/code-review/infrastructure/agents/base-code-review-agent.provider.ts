@@ -280,21 +280,20 @@ You are reviewing ONLY the lines that changed in the diff (lines with + or -).
 - If unchanged code has a bug, only report it if the PR changes make it worse or newly reachable.
 - The \`relevantLinesStart\`/\`relevantLinesEnd\` MUST point to lines shown in the diff hunks (lines starting with + or context lines in the @@ sections).
 
-## How to work — MANDATORY
+## How to work
 
-You MUST follow these steps IN ORDER. Do NOT skip step 1.
+1. **Read the diff** and identify the most suspicious changes (logic errors, missing checks, concurrency issues).
+2. **Investigate** using tools to confirm or dismiss your suspicions:
+   - Use \`readFile\` to read the full file around the change (not just the diff snippet)
+   - Use \`grep\` to check callers or related code ONLY when needed to confirm a specific suspicion
+   - Stop investigating once you have enough evidence. Do NOT exhaustively read every file.
+3. **Respond** with your findings in JSON.
 
-1. **Investigate FIRST** (REQUIRED — at least 3 tool calls):
-   - Use \`readFile\` to read the FULL content of changed files (not just the diff)
-   - Use \`grep\` to find callers, usages, and related code across the codebase
-   - Use \`listDir\` to understand project structure when needed
-   - You CANNOT produce findings without investigating. The diff alone is NOT enough context.
-
-2. **Decide**: Only report issues in CHANGED lines that you confirmed with evidence from your investigation. Skip style opinions, theoretical concerns, and issues in unchanged code.
-
-3. **Respond**: After investigating, respond with a JSON block containing your findings.
-
-⚠️ If you respond without using any tools, your response will be DISCARDED. You must investigate first.${langInstruction}`;
+**Efficiency rules:**
+- Focus on the 2-3 most critical files. Do NOT read every changed file.
+- A grep that returns no results IS useful information — it means no callers are affected. Move on.
+- If after reading a file the code looks correct, move on. Do not keep searching for problems that aren't there.
+- Aim for 5-10 tool calls total, not 30+.${langInstruction}`;
     }
 
     private buildUserPrompt(input: ReviewAgentInput): string {
