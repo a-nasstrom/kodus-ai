@@ -30,7 +30,8 @@ const suggestionSchema = z.object({
     oneSentenceSummary: z.string().optional(),
     relevantLinesStart: z.number().optional(),
     relevantLinesEnd: z.number().optional(),
-    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(), // V2 compat
+    level: z.enum(['issue', 'warning']).optional(), // V3: binary classification
 });
 
 const findingsSchema = z.object({
@@ -382,7 +383,7 @@ function looksLikeFindings(text: string): boolean {
         /\b(bug|issue|vulnerability|problem|error|flaw|defect)\b/,
         /\b(fix|should|must|incorrect|missing|broken|unsafe|race condition)\b/,
         /\b(line\s*\d+|\.ts\b|\.js\b|\.go\b|\.rb\b|\.py\b)/,
-        /\b(severity|critical|high|medium)\b/,
+        /\b(severity|critical|high|medium|issue|warning)\b/,
         /\b(existing.?code|improved.?code|suggestion)\b/,
         /```/,
     ];
@@ -431,6 +432,7 @@ async function structureWithFallbackModel(
                                     relevantLinesStart: { type: 'number' },
                                     relevantLinesEnd: { type: 'number' },
                                     severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+                                    level: { type: 'string', enum: ['issue', 'warning'] },
                                 },
                                 required: ['relevantFile', 'suggestionContent', 'existingCode', 'improvedCode'],
                             },
@@ -454,7 +456,7 @@ Rules:
 ${reviewText}
 ---
 
-For each issue found, extract: relevantFile, language, suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
+For each issue found, extract: relevantFile, language, suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low), level (issue or warning).`,
         });
 
         const output: any = (result as any).object ?? (result as any).output;

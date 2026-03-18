@@ -380,7 +380,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const summaries = fileSuggestions
                     .map(
                         (s, i) =>
-                            `[${i}] [${s.label || 'unknown'}/${s.severity || 'medium'}] lines ${s.relevantLinesStart}-${s.relevantLinesEnd}: ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 200)}`,
+                            `[${i}] [${s.label || 'unknown'}/${s.level || 'warning'}] lines ${s.relevantLinesStart}-${s.relevantLinesEnd}: ${s.oneSentenceSummary || s.suggestionContent?.substring(0, 200)}`,
                     )
                     .join('\n');
 

@@ -200,6 +200,7 @@ export abstract class BaseCodeReviewAgentProvider {
                 relevantLinesEnd: s.relevantLinesEnd,
                 label: this.getCategoryLabel(),
                 severity: s.severity || 'medium',
+                level: s.level || 'issue', // Default to issue — if agent didn't classify, assume it's real
                 llmPrompt: s.suggestionContent,
             }));
 
@@ -317,6 +318,7 @@ After investigating with tools, respond with ONLY a JSON block:
       "oneSentenceSummary": "Brief summary",
       "relevantLinesStart": 10,
       "relevantLinesEnd": 15,
+      "level": "issue|warning",
       "severity": "critical|high|medium|low"
     }
   ]
@@ -366,20 +368,13 @@ RULES:
             parts.push(`## Category Guidelines\n${categoryDesc}`);
         }
 
-        // Severity criteria from client config — agent classifies during analysis
-        // because it has full context (code, callers, impact)
-        const severityFlags = input.v2PromptOverrides?.severity?.flags;
-        if (severityFlags) {
-            const flags = Object.entries(severityFlags)
-                .filter(([, v]) => v)
-                .map(([k, v]) => `- **${k}**: ${v}`)
-                .join('\n');
-            if (flags) {
-                parts.push(
-                    `## Severity Classification\nClassify each suggestion using these criteria:\n${flags}`,
-                );
-            }
-        }
+        // V3 level classification: binary issue/warning
+        parts.push(`## Level Classification
+Classify each finding as one of:
+- **issue**: A real bug, vulnerability, or incorrect behavior. This includes: logic errors, null/undefined dereferences, race conditions, data loss risks, security vulnerabilities, broken functionality, incorrect return values, missing error handling that causes crashes.
+- **warning**: A code improvement, performance optimization, style suggestion, or theoretical concern that won't cause incorrect behavior. This includes: missing caching, code style, potential future problems, micro-optimizations, missing indexes.
+
+Most findings from your investigation should be "issue" — if the code will produce wrong results, crash, or has a security hole, it's an issue. Only use "warning" for nice-to-haves.`);
 
         const generationMain =
             input.generationMain ?? input.v2PromptOverrides?.generation?.main;
