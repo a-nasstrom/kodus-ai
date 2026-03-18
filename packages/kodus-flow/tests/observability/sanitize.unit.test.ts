@@ -219,6 +219,17 @@ describe('sanitizeString — URL credential stripping', () => {
         expect(result).not.toContain('plaintext-password');
         expect(result).toContain('[REDACTED]');
     });
+
+    it('processa payloads patológicos sem degradação significativa', () => {
+        const attack = 'prefix ' + 'a://:' + 'a://:!'.repeat(8000);
+        const startedAt = Date.now();
+
+        const result = sanitizeString(attack);
+        const elapsedMs = Date.now() - startedAt;
+
+        expect(result).toBe(attack);
+        expect(elapsedMs).toBeLessThan(100);
+    });
 });
 
 // ---------------------------------------------------------------------------

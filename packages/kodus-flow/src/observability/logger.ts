@@ -180,14 +180,90 @@ function isSensitiveKey(key: string): boolean {
     return result;
 }
 
+function isAsciiAlpha(char: string | undefined): boolean {
+    return !!char && /[A-Za-z]/.test(char);
+}
+
+function isSchemeChar(char: string | undefined): boolean {
+    return !!char && /[A-Za-z0-9+\-.]/.test(char);
+}
+
+function isAuthorityTerminator(char: string | undefined): boolean {
+    return (
+        char === undefined ||
+        char === '/' ||
+        char === '?' ||
+        char === '#' ||
+        /\s/.test(char)
+    );
+}
+
 /**
- * Strips credentials embedded in URL strings.
+ * Strips credentials embedded in URL strings using a linear scan.
  * e.g. "mongodb://user:secret@host/db" → "mongodb://user:[REDACTED]@host/db"
  */
-const URL_CREDENTIAL_RE = /([a-z][a-z0-9+\-.]*:\/\/[^:@\s]*:)([^@\s]+)(@)/gi;
-
 function sanitizeString(value: string): string {
-    return value.replace(URL_CREDENTIAL_RE, '$1[REDACTED]$3');
+    let searchFrom = 0;
+    let lastCommittedIndex = 0;
+    let result = '';
+
+    while (searchFrom < value.length) {
+        const schemeSeparatorIndex = value.indexOf('://', searchFrom);
+
+        if (schemeSeparatorIndex === -1) {
+            break;
+        }
+
+        let schemeStart = schemeSeparatorIndex - 1;
+        while (schemeStart >= 0 && isSchemeChar(value[schemeStart])) {
+            schemeStart--;
+        }
+        schemeStart += 1;
+
+        if (!isAsciiAlpha(value[schemeStart])) {
+            searchFrom = schemeSeparatorIndex + 3;
+            continue;
+        }
+
+        const authorityStart = schemeSeparatorIndex + 3;
+        let authorityEnd = authorityStart;
+        while (
+            authorityEnd < value.length &&
+            !isAuthorityTerminator(value[authorityEnd])
+        ) {
+            authorityEnd++;
+        }
+
+        let atIndex = -1;
+        let colonIndex = -1;
+        for (let index = authorityStart; index < authorityEnd; index++) {
+            const char = value[index];
+            if (char === '@') {
+                atIndex = index;
+                break;
+            }
+            if (char === ':') {
+                colonIndex = index;
+            }
+        }
+
+        if (atIndex === -1 || colonIndex === -1 || colonIndex > atIndex) {
+            searchFrom = authorityEnd;
+            continue;
+        }
+
+        result += value.slice(lastCommittedIndex, colonIndex + 1);
+        result += '[REDACTED]';
+        lastCommittedIndex = atIndex;
+        searchFrom = authorityEnd;
+    }
+
+    if (lastCommittedIndex === 0) {
+        return value;
+    }
+
+    result += value.slice(lastCommittedIndex);
+    return result;
 }
 
 /**
