@@ -370,15 +370,13 @@ export class SimpleLogger {
         }
 
         // Processors run regardless of stdout log level
-        const safeProcessorMetadata = deepSanitize({ ...metadata, component: effectiveServiceName });
+        const safeProcessorMetadata = deepSanitize({
+            ...metadata,
+            component: effectiveServiceName,
+        });
         for (const processor of globalLogProcessors) {
             try {
-                processor.process(
-                    level,
-                    message,
-                    safeProcessorMetadata,
-                    error,
-                );
+                processor.process(level, message, safeProcessorMetadata, error);
             } catch {}
         }
     }

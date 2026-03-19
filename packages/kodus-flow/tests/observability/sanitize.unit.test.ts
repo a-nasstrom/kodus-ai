@@ -6,7 +6,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { deepSanitize, isSensitiveKey, sanitizeString } from '../../src/observability/logger.js';
+import {
+    deepSanitize,
+    isSensitiveKey,
+    sanitizeString,
+} from '../../src/observability/logger.js';
 
 // ---------------------------------------------------------------------------
 // isSensitiveKey
@@ -71,14 +75,18 @@ describe('deepSanitize — redação', () => {
     });
 
     it('redacta campos sensíveis aninhados em 1 nível (o bug original)', () => {
-        const result = deepSanitize({ config: { password: 'mongo-pass', host: 'localhost' } });
+        const result = deepSanitize({
+            config: { password: 'mongo-pass', host: 'localhost' },
+        });
         expect(result.config.password).toBe('[REDACTED]');
         expect(result.config.host).toBe('localhost');
     });
 
     it('redacta campos sensíveis aninhados em 2+ níveis', () => {
         const result = deepSanitize({
-            metadata: { config: { password: 'nested-pass', database: 'kodus' } },
+            metadata: {
+                config: { password: 'nested-pass', database: 'kodus' },
+            },
         });
         expect(result.metadata.config.password).toBe('[REDACTED]');
         expect(result.metadata.config.database).toBe('kodus');
@@ -108,9 +116,12 @@ describe('deepSanitize — redação', () => {
     });
 
     it('redacta campos com casing misto', () => {
-        const result = deepSanitize({ AccessToken: 'tok', CLIENT_SECRET: 'sec' });
-        expect(result.AccessToken).toBe('[REDACTED]');
-        expect(result.CLIENT_SECRET).toBe('[REDACTED]');
+        const input: Record<string, string> = {};
+        input['AccessToken'] = 'tok';
+        input['CLIENT_SECRET'] = 'sec';
+        const result = deepSanitize(input);
+        expect(result['AccessToken']).toBe('[REDACTED]');
+        expect(result['CLIENT_SECRET']).toBe('[REDACTED]');
     });
 
     it('redacta connectionString', () => {
@@ -182,19 +193,27 @@ describe('deepSanitize — structural sharing', () => {
 
 describe('sanitizeString — URL credential stripping', () => {
     it('redacta credenciais em URLs mongodb', () => {
-        const result = sanitizeString('mongodb://user:super-secret@host:27017/db');
+        const result = sanitizeString(
+            'mongodb://user:super-secret@host:27017/db',
+        );
         expect(result).toBe('mongodb://user:[REDACTED]@host:27017/db');
         expect(result).not.toContain('super-secret');
     });
 
     it('redacta credenciais em URLs mongodb+srv', () => {
         // '@' em senha deve ser URL-encoded (%40) em URLs válidas
-        const result = sanitizeString('mongodb+srv://admin:Passw0rd123@cluster.mongodb.net/db');
-        expect(result).toBe('mongodb+srv://admin:[REDACTED]@cluster.mongodb.net/db');
+        const result = sanitizeString(
+            'mongodb+srv://admin:Passw0rd123@cluster.mongodb.net/db',
+        );
+        expect(result).toBe(
+            'mongodb+srv://admin:[REDACTED]@cluster.mongodb.net/db',
+        );
     });
 
     it('redacta credenciais em URLs postgres', () => {
-        const result = sanitizeString('postgresql://user:secret123@localhost:5432/mydb');
+        const result = sanitizeString(
+            'postgresql://user:secret123@localhost:5432/mydb',
+        );
         expect(result).toBe('postgresql://user:[REDACTED]@localhost:5432/mydb');
     });
 
@@ -214,7 +233,8 @@ describe('sanitizeString — URL credential stripping', () => {
     });
 
     it('redacta credenciais em mensagens de erro de conexão', () => {
-        const msg = 'Connection failed: mongodb://admin:plaintext-password@prod-host/kodus';
+        const msg =
+            'Connection failed: mongodb://admin:plaintext-password@prod-host/kodus';
         const result = sanitizeString(msg);
         expect(result).not.toContain('plaintext-password');
         expect(result).toContain('[REDACTED]');
@@ -250,7 +270,9 @@ describe('deepSanitize — URL credential stripping em strings', () => {
         const result = deepSanitize({
             metadata: { config: { uri: 'mongodb://user:pass@host/db' } },
         });
-        expect(result.metadata.config.uri).toBe('mongodb://user:[REDACTED]@host/db');
+        expect(result.metadata.config.uri).toBe(
+            'mongodb://user:[REDACTED]@host/db',
+        );
     });
 
     it('preserva referência de string quando não há credencial na URL', () => {
