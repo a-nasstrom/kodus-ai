@@ -1,10 +1,19 @@
 import { trace } from '@opentelemetry/api';
 import pino from 'pino';
-import { LogArguments, LogProcessor, ExecutionContext } from './types.js';
-import { LogLevel } from '@/core/types/allTypes.js';
+import {
+    LogArguments,
+    LogProcessor as ObjectLogProcessor,
+    ExecutionContext,
+} from './types.js';
+import {
+    LogLevel,
+    LogProcessor as FunctionLogProcessor,
+} from '@/core/types/allTypes.js';
 
 let pinoLogger: pino.Logger | null = null;
-let globalLogProcessors: LogProcessor[] = [];
+type SupportedLogProcessor = ObjectLogProcessor | FunctionLogProcessor;
+
+let globalLogProcessors: SupportedLogProcessor[] = [];
 let spanContextProvider:
     | (() => { traceId: string; spanId: string } | undefined)
     | null = null;
@@ -376,6 +385,17 @@ export class SimpleLogger {
         });
         for (const processor of globalLogProcessors) {
             try {
+                if (typeof processor === 'function') {
+                    processor(
+                        level,
+                        message,
+                        effectiveServiceName,
+                        safeProcessorMetadata,
+                        error,
+                    );
+                    continue;
+                }
+
                 processor.process(level, message, safeProcessorMetadata, error);
             } catch {}
         }
@@ -462,11 +482,11 @@ export function createLogger(component: string): SimpleLogger {
     return new SimpleLogger(component);
 }
 
-export function addLogProcessor(processor: LogProcessor): void {
+export function addLogProcessor(processor: SupportedLogProcessor): void {
     globalLogProcessors.push(processor);
 }
 
-export function removeLogProcessor(processor: LogProcessor): void {
+export function removeLogProcessor(processor: SupportedLogProcessor): void {
     const index = globalLogProcessors.indexOf(processor);
     if (index > -1) {
         globalLogProcessors.splice(index, 1);
