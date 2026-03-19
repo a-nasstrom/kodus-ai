@@ -135,6 +135,7 @@ evals/promptfoo-safeguard/results/
 .entire
 
 scripts/pr-creator/accounts.json
+scripts/pr-creator/prs.json
 scripts/pr-creator/package-lock.json
 scripts/pr-creator/node_modules
 .spectral-report.json
