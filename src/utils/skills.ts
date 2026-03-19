@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 export interface BundledSkillDocument {
     name: string;
     content: string;
+    files?: {
+        relativePath: string;
+        content: string;
+    }[];
 }
 
 export function assertValidSkillName(name: string): string {
@@ -85,9 +89,11 @@ export async function readBundledSkills(
     const documents = await Promise.all(
         skillNames.map(async (rawName) => {
             const name = assertValidSkillName(rawName);
-            const filePath = path.join(root, name, 'SKILL.md');
+            const skillDir = path.join(root, name);
+            const filePath = path.join(skillDir, 'SKILL.md');
             const content = await fs.readFile(filePath, 'utf8');
-            return { name, content };
+            const files = await readBundledSkillFiles(skillDir);
+            return { name, content, files };
         }),
     );
 
@@ -97,4 +103,53 @@ export async function readBundledSkills(
 export async function readBundledSkill(name: string): Promise<string> {
     const [skill] = await readBundledSkills([name]);
     return skill.content;
+}
+
+async function readBundledSkillFiles(
+    skillDir: string,
+): Promise<{ relativePath: string; content: string }[]> {
+    const queue: string[] = ['.'];
+    const files: { relativePath: string; content: string }[] = [];
+
+    while (queue.length > 0) {
+        const currentRelativeDir = queue.shift();
+        if (!currentRelativeDir) {
+            continue;
+        }
+
+        const absoluteDir = path.join(skillDir, currentRelativeDir);
+        const entries = await fs.readdir(absoluteDir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            if (entry.name.startsWith('.')) {
+                continue;
+            }
+
+            const entryRelativePath = path.join(currentRelativeDir, entry.name);
+            if (entry.isDirectory()) {
+                queue.push(entryRelativePath);
+                continue;
+            }
+
+            if (!entry.isFile()) {
+                continue;
+            }
+
+            const normalizedRelativePath = path
+                .normalize(entryRelativePath)
+                .replace(/^\.\//, '');
+            const absoluteFilePath = path.join(
+                skillDir,
+                normalizedRelativePath,
+            );
+            const fileContent = await fs.readFile(absoluteFilePath, 'utf8');
+            files.push({
+                relativePath: normalizedRelativePath,
+                content: fileContent,
+            });
+        }
+    }
+
+    files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    return files;
 }

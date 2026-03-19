@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { type BundledSkillDocument, readBundledSkills } from './skills.js';
 import {
     readManagedSkillNames,
     resolveManagedManifestPath,
@@ -13,11 +12,13 @@ import {
     resolveManagedSkillPath,
 } from './skills-sync-paths.js';
 import { buildSkillSyncTargets } from './skills-sync-targets.js';
+import { type BundledSkillDocument, readBundledSkills } from './skills.js';
 
 export const DEFAULT_SYNC_SKILL_NAMES = [
     'kodus-review',
     'kodus-pr-suggestions-resolver',
     'kodus-business-rules-validation',
+    'kodus-kody-rules',
 ] as const;
 
 const LEGACY_BUSINESS_RULES_NAME = 'business-rules-validation';
@@ -95,6 +96,43 @@ async function writeIfChanged(
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf8');
     return existingContent === null ? 'created' : 'updated';
+}
+
+function resolveManagedSkillNestedFilePath(
+    target: SkillSyncTarget,
+    skillName: string,
+    relativePath: string,
+): string {
+    if (target.type !== 'skill') {
+        throw new Error(
+            'Nested skill files are only supported for skill targets.',
+        );
+    }
+
+    const normalizedRelativePath = path
+        .normalize(relativePath)
+        .replace(/^\.([/\\])/, '');
+    if (
+        !normalizedRelativePath ||
+        normalizedRelativePath.startsWith('..') ||
+        path.isAbsolute(normalizedRelativePath)
+    ) {
+        throw new Error(`Invalid skill file path: ${relativePath}`);
+    }
+
+    const skillRoot = resolveManagedSkillEntryPath(target, skillName);
+    const resolvedPath = path.resolve(skillRoot, normalizedRelativePath);
+    const relativeFromRoot = path.relative(skillRoot, resolvedPath);
+    if (
+        !relativeFromRoot ||
+        relativeFromRoot === '.' ||
+        relativeFromRoot.startsWith('..') ||
+        path.isAbsolute(relativeFromRoot)
+    ) {
+        throw new Error(`Invalid skill file path: ${relativePath}`);
+    }
+
+    return resolvedPath;
 }
 
 function applyWriteStatus(
@@ -227,13 +265,43 @@ export async function syncSkillsToTargets(
             );
         } else {
             for (const skill of skills) {
-                const filePath = resolveManagedSkillPath(target, skill.name);
-                const writeStatus = await writeIfChanged(
-                    filePath,
-                    skill.content,
-                    dryRun,
-                );
-                applyWriteStatus(targetResult, writeStatus);
+                if (target.type === 'command') {
+                    const filePath = resolveManagedSkillPath(
+                        target,
+                        skill.name,
+                    );
+                    const writeStatus = await writeIfChanged(
+                        filePath,
+                        skill.content,
+                        dryRun,
+                    );
+                    applyWriteStatus(targetResult, writeStatus);
+                    continue;
+                }
+
+                const filesToSync =
+                    skill.files && skill.files.length > 0
+                        ? skill.files
+                        : [
+                              {
+                                  relativePath: 'SKILL.md',
+                                  content: skill.content,
+                              },
+                          ];
+
+                for (const skillFile of filesToSync) {
+                    const filePath = resolveManagedSkillNestedFilePath(
+                        target,
+                        skill.name,
+                        skillFile.relativePath,
+                    );
+                    const writeStatus = await writeIfChanged(
+                        filePath,
+                        skillFile.content,
+                        dryRun,
+                    );
+                    applyWriteStatus(targetResult, writeStatus);
+                }
             }
 
             for (const skillName of staleManagedSkillNames) {

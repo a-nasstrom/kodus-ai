@@ -20,6 +20,20 @@ describe('buildSkillSyncTargets', () => {
         });
 
         expect(targets).toContainEqual({
+            label: 'Agents user skills',
+            type: 'skill',
+            activationPath: '/users/demo/.agents',
+            baseDir: '/users/demo/.agents/skills',
+        });
+
+        expect(targets).toContainEqual({
+            label: 'Agents user skills (legacy config path)',
+            type: 'skill',
+            activationPath: '/users/demo/.config/agents',
+            baseDir: '/users/demo/.config/agents/skills',
+        });
+
+        expect(targets).toContainEqual({
             label: 'Gemini project skills',
             type: 'skill',
             activationPath: '/repo/workspace/.gemini',

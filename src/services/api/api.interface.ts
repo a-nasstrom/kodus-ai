@@ -17,8 +17,14 @@ import type {
     ReviewResult,
     TrialReviewResult,
 } from '../../types/review.js';
-import type { TrialStatus } from '../../types/trial.js';
+import type {
+    CreateKodyRuleRequest,
+    KodyRule,
+    UpdateKodyRuleRequest,
+    ViewKodyRulesRequest,
+} from '../../types/rules.js';
 import type { SessionApiEvent } from '../../types/session-events.js';
+import type { TrialStatus } from '../../types/trial.js';
 
 export interface IAuthApi {
     login(email: string, password: string): Promise<AuthResponse>;
@@ -122,6 +128,22 @@ export interface ISessionsApi {
     sendEvent(event: SessionApiEvent, repoRoot: string): Promise<void>;
 }
 
+export interface IRulesApi {
+    createRule(
+        accessToken: string,
+        payload: CreateKodyRuleRequest,
+    ): Promise<KodyRule>;
+    updateRule(
+        accessToken: string,
+        ruleId: string,
+        payload: UpdateKodyRuleRequest,
+    ): Promise<KodyRule>;
+    viewRules(
+        accessToken: string,
+        query?: ViewKodyRulesRequest,
+    ): Promise<KodyRule[]>;
+}
+
 export interface IKodusApi {
     auth: IAuthApi;
     config: IConfigApi;
@@ -129,4 +151,5 @@ export interface IKodusApi {
     trial: ITrialApi;
     memory: IMemoryApi;
     sessions: ISessionsApi;
+    rules: IRulesApi;
 }

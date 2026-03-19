@@ -328,8 +328,66 @@ describe('skills-sync utilities', () => {
             ),
         ).toBe(false);
         expect(
-            await fs.readFile(path.join(baseDir, 'kodus-review', 'SKILL.md'), 'utf8'),
+            await fs.readFile(
+                path.join(baseDir, 'kodus-review', 'SKILL.md'),
+                'utf8',
+            ),
         ).toBe('review v2');
+    });
+
+    it('syncs nested subskill files for skill targets', async () => {
+        const tempRoot = await makeTempDir('kodus-skills-nested-');
+        tempDirs.push(tempRoot);
+
+        const activationPath = path.join(tempRoot, '.codex');
+        const baseDir = path.join(activationPath, 'skills');
+        await fs.mkdir(baseDir, { recursive: true });
+
+        const result = await syncSkillsToTargets(
+            [
+                {
+                    label: 'Codex nested files',
+                    type: 'skill',
+                    activationPath,
+                    baseDir,
+                },
+            ],
+            {
+                mode: 'install',
+                skills: [
+                    {
+                        name: 'kodus-kody-rules',
+                        content: 'root skill',
+                        files: [
+                            {
+                                relativePath: 'SKILL.md',
+                                content: 'root skill',
+                            },
+                            {
+                                relativePath: 'rules/view-kody-rules.md',
+                                content: 'nested rule doc',
+                            },
+                        ],
+                    },
+                ],
+            },
+        );
+
+        expect(result.syncedTargets).toBe(1);
+        expect(result.createdFiles).toBe(2);
+        expect(
+            await exists(path.join(baseDir, 'kodus-kody-rules', 'SKILL.md')),
+        ).toBe(true);
+        expect(
+            await exists(
+                path.join(
+                    baseDir,
+                    'kodus-kody-rules',
+                    'rules',
+                    'view-kody-rules.md',
+                ),
+            ),
+        ).toBe(true);
     });
 
     it('rejects skill names that escape the target directory', async () => {
@@ -354,5 +412,40 @@ describe('skills-sync utilities', () => {
                 },
             ),
         ).rejects.toThrow('Invalid skill name');
+    });
+
+    it('rejects nested skill file paths that resolve to the skill root', async () => {
+        const tempRoot = await makeTempDir('kodus-skills-invalid-path-');
+        tempDirs.push(tempRoot);
+
+        const baseDir = path.join(tempRoot, '.codex', 'skills');
+        await fs.mkdir(baseDir, { recursive: true });
+
+        await expect(
+            syncSkillsToTargets(
+                [
+                    {
+                        label: 'Codex invalid file path',
+                        type: 'skill',
+                        activationPath: path.join(tempRoot, '.codex'),
+                        baseDir,
+                    },
+                ],
+                {
+                    skills: [
+                        {
+                            name: 'kodus-review',
+                            content: 'root',
+                            files: [
+                                {
+                                    relativePath: '.',
+                                    content: 'invalid',
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ),
+        ).rejects.toThrow('Invalid skill file path');
     });
 });

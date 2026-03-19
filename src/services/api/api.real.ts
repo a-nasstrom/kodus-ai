@@ -1,23 +1,20 @@
-import type {
-    IKodusApi,
-    ITrialApi,
-    ISessionsApi,
-} from './api.interface.js';
-import { RealSessionsApi } from './sessions.api.js';
 import {
+    getCloudflareAccessHeaders,
     request,
     resetApiConfigCache,
     resolveApiBaseUrl,
-    getCloudflareAccessHeaders,
 } from './api-core.js';
-import { RealConfigApi } from './config.api.js';
-import { RealReviewApi } from './review.api.js';
+import type { IKodusApi, ISessionsApi, ITrialApi } from './api.interface.js';
 import { RealAuthApi } from './auth.api.js';
-import { RealTrialApi } from './trial.api.js';
+import { RealConfigApi } from './config.api.js';
 import { RealMemoryApi } from './memory.api.js';
+import { RealReviewApi } from './review.api.js';
+import { RealRulesApi } from './rules.api.js';
+import { RealSessionsApi } from './sessions.api.js';
+import { RealTrialApi } from './trial.api.js';
 
 export const _resetConfigCache = resetApiConfigCache;
-export { request, resolveApiBaseUrl, getCloudflareAccessHeaders };
+export { getCloudflareAccessHeaders, request, resolveApiBaseUrl };
 
 export class RealApi implements IKodusApi {
     auth = new RealAuthApi();
@@ -26,4 +23,5 @@ export class RealApi implements IKodusApi {
     trial: ITrialApi = new RealTrialApi();
     memory = new RealMemoryApi();
     sessions: ISessionsApi = new RealSessionsApi();
+    rules = new RealRulesApi();
 }
