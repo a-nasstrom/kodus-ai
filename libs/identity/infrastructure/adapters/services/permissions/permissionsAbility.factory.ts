@@ -1,5 +1,4 @@
 import { AbilityBuilder, createMongoAbility, Subject } from '@casl/ability';
-import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import {
     IPermissionsService,
     PERMISSIONS_SERVICE_TOKEN,
@@ -11,11 +10,6 @@ import {
 } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { AppAbility } from '@libs/identity/domain/permissions/types/permissions.types';
 import { IUser } from '@libs/identity/domain/user/interfaces/user.interface';
-import {
-    ILicenseService,
-    LICENSE_SERVICE_TOKEN,
-    SubscriptionStatus,
-} from '@libs/ee/license/interfaces/license.interface';
 import { Inject, Injectable } from '@nestjs/common';
 
 @Injectable()
@@ -23,30 +17,7 @@ export class PermissionsAbilityFactory {
     constructor(
         @Inject(PERMISSIONS_SERVICE_TOKEN)
         private readonly permissionsService: IPermissionsService,
-        @Inject(LICENSE_SERVICE_TOKEN)
-        private readonly licenseService: ILicenseService,
     ) {}
-
-    private async isEnterpriseOrganization(
-        organizationId: string,
-    ): Promise<boolean> {
-        try {
-            const orgData: OrganizationAndTeamData = {
-                organizationId,
-                teamId: undefined,
-            };
-            const validation =
-                await this.licenseService.validateOrganizationLicense(orgData);
-
-            return (
-                validation?.valid &&
-                validation.subscriptionStatus ===
-                    SubscriptionStatus.LICENSED_SELF_HOSTED
-            );
-        } catch {
-            return false;
-        }
-    }
 
     async createForUser(
         user: IUser,
@@ -62,9 +33,6 @@ export class PermissionsAbilityFactory {
 
             return build() as AppAbility;
         }
-
-        const isEnterprise =
-            await this.isEnterpriseOrganization(userOrganizationId);
 
         let assignedRepoUuids: string[] = [];
         if (repositoryIds) {
@@ -183,34 +151,6 @@ export class PermissionsAbilityFactory {
             default:
                 cannot(Action.Manage, ResourceType.All);
                 break;
-        }
-
-        if (isEnterprise) {
-            canInOrg(Action.Create, ResourceType.KodyRules);
-            canInOrg(Action.Update, ResourceType.KodyRules);
-            canInOrg(Action.Delete, ResourceType.KodyRules);
-
-            canInOrg(Action.Create, ResourceType.CodeReviewSettings);
-            canInOrg(Action.Update, ResourceType.CodeReviewSettings);
-            canInOrg(Action.Delete, ResourceType.CodeReviewSettings);
-
-            canInOrg(Action.Create, ResourceType.Issues);
-            canInOrg(Action.Update, ResourceType.Issues);
-            canInOrg(Action.Delete, ResourceType.Issues);
-
-            canInOrg(Action.Read, ResourceType.Cockpit);
-            canInOrg(Action.Update, ResourceType.Cockpit);
-
-            canInOrg(Action.Read, ResourceType.GitSettings);
-            canInOrg(Action.Update, ResourceType.GitSettings);
-
-            canInOrg(Action.Read, ResourceType.PluginSettings);
-            canInOrg(Action.Update, ResourceType.PluginSettings);
-
-            canInOrg(Action.Read, ResourceType.Logs);
-
-            canInOrg(Action.Read, ResourceType.IssuesSettings);
-            canInOrg(Action.Update, ResourceType.IssuesSettings);
         }
 
         return build() as AppAbility;

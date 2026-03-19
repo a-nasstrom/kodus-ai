@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useMemo } from "react";
+import dynamic from "next/dynamic";
 import NextLink from "next/link";
 import { usePathname } from "next/navigation";
 import { SvgKodus } from "@components/ui/icons/SvgKodus";
@@ -27,10 +28,17 @@ import { cn } from "src/core/utils/components";
 import { SubscriptionBadge } from "src/features/ee/subscription/_components/subscription-badge";
 import { useSubscriptionContext } from "src/features/ee/subscription/_providers/subscription-context";
 
-import { GithubStars } from "./_components/github-stars";
 import { IssuesCount } from "./_components/issues-count";
 import { PendingRulesNotification } from "./_components/pending-rules-notification";
 import { VERSION_QUERY } from "./_components/version-info";
+
+const NoSSRGithubStars = dynamic(
+    () => import("./_components/github-stars").then((mod) => mod.GithubStars),
+    {
+        ssr: false,
+        loading: () => null,
+    },
+);
 
 export const NavMenu = () => {
     const pathname = usePathname();
@@ -193,7 +201,7 @@ export const NavMenu = () => {
 
             <div className="flex items-center gap-4">
                 <ErrorBoundary fallback={null}>
-                    <GithubStars />
+                    <NoSSRGithubStars />
                 </ErrorBoundary>
 
                 <div className="flex items-center gap-2">
