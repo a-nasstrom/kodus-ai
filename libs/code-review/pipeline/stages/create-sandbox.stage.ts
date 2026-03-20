@@ -129,14 +129,16 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
             cleanup = sandbox.cleanup;
 
             this.logger.log({
-                message: `Sandbox created successfully for ${label}`,
+                message: `Sandbox created successfully for ${label} (type=${sandbox.type})`,
                 context: this.stageName,
+                metadata: { sandboxType: sandbox.type },
             });
 
             return this.updateContext(context, (draft) => {
                 draft.sandboxHandle = {
                     remoteCommands: sandbox.remoteCommands,
                     cleanup: sandbox.cleanup,
+                    type: sandbox.type,
                 };
                 draft.getFreshCloneParams = async () => {
                     const freshCloneInfo =
@@ -177,16 +179,31 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
                 }
 
                 // Second attempt with same params
-                const retryResult = await this.sandboxProvider.create(
-                    resolveCloneParams,
+                const cliCtxRetry = context.origin === 'cli'
+                    ? (context as unknown as CliReviewPipelineContext)
+                    : undefined;
+                const cloneInfoRetry = await this.cloneParamsResolver.resolve(
+                    context,
+                    cliCtxRetry,
                 );
-                sandboxHandle = retryResult.sandboxHandle;
+                if (!cloneInfoRetry) throw new Error('Could not resolve clone params on retry');
+
+                const retryResult = await this.sandboxProvider.createSandboxWithRepo({
+                    cloneUrl: cloneInfoRetry.url,
+                    authToken: cloneInfoRetry.authToken,
+                    authUsername: cloneInfoRetry.authUsername,
+                    branch: cloneInfoRetry.branch,
+                    prNumber: cloneInfoRetry.prNumber,
+                    platform: cloneInfoRetry.platform,
+                });
                 cleanup = retryResult.cleanup;
 
                 return this.updateContext(context, (draft) => {
-                    draft.sandboxHandle = sandboxHandle;
-                    draft.sandboxCloneParams =
-                        context.sandboxCloneParams || undefined;
+                    draft.sandboxHandle = {
+                        remoteCommands: retryResult.remoteCommands,
+                        cleanup: retryResult.cleanup,
+                        type: retryResult.type,
+                    };
                 });
             } catch (retryError) {
                 this.logger.error({

@@ -113,7 +113,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 }
             };
 
-            return { remoteCommands, cleanup };
+            return { remoteCommands, cleanup, type: 'local' as const };
         } catch (error) {
             try {
                 await rm(tempDir, { recursive: true, force: true });

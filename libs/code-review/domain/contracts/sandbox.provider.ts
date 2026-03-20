@@ -14,6 +14,8 @@ export interface CreateSandboxParams {
 export interface SandboxInstance {
     remoteCommands: RemoteCommands;
     cleanup: () => Promise<void>;
+    /** Which sandbox provider created this instance */
+    type: 'e2b' | 'local' | 'null';
 }
 
 export interface ISandboxProvider {

@@ -40,6 +40,10 @@ export interface AgentProgressEvent {
     findings?: number;
     durationMs?: number;
     totalTokens?: number;
+    /** How the agent finished — helps surface timeouts and max-steps in the UI */
+    finishReason?: 'stop' | 'timeout' | 'max-steps' | 'error';
+    /** How findings were obtained — 'json-parse' (normal), 'second-chance', 'generate-object' (fallback LLM), 'empty' */
+    source?: string;
 }
 
 export interface ReviewAgentInput {
@@ -252,13 +256,26 @@ export abstract class BaseCodeReviewAgentProvider {
             }));
 
             // Emit progress: agent completed
+            // Only mark as error if the agent hit a hard limit (timeout or MAX_STEPS with tool-calls finish).
+            // source=empty with finishReason=stop is legitimate (agent investigated and found nothing).
+            const hitHardLimit =
+                agentResult.finishReason === 'timeout' ||
+                (agentResult.source === 'empty' &&
+                    agentResult.finishReason === 'tool-calls');
+
             input.onAgentProgress?.({
                 agentName: identity.name,
-                status: 'completed',
+                status: hitHardLimit ? 'error' : 'completed',
                 findings: suggestions.length,
                 durationMs,
                 totalTokens: agentResult.usage.totalTokens,
                 step: agentResult.steps,
+                finishReason: agentResult.finishReason === 'timeout'
+                    ? 'timeout'
+                    : hitHardLimit
+                      ? 'max-steps'
+                      : 'stop',
+                source: agentResult.source,
                 toolCalls: agentResult.toolCalls.map((tc) => ({
                     tool: tc.toolName || tc.tool,
                     args: JSON.stringify(tc.args).substring(0, 100),

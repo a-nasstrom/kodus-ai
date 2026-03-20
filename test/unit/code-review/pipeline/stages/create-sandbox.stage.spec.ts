@@ -126,6 +126,7 @@ describe('CreateSandboxStage', () => {
             const context = createBaseContext({
                 changedFiles: [{ filename: 'test.ts' } as any],
                 sandboxHandle: {
+                    type: 'e2b' as const,
                     remoteCommands: {
                         grep: jest.fn(),
                         read: jest.fn(),

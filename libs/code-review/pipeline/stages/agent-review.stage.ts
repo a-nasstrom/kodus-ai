@@ -736,15 +736,33 @@ ${summaries}`,
                   ? 'Security'
                   : 'Performance';
 
+        const duration = event.durationMs
+            ? `in ${Math.round(event.durationMs / 1000)}s`
+            : '';
+
         switch (event.status) {
             case 'started':
                 return `${icon} Agent — investigating...`;
             case 'investigating':
                 return `${icon} Agent — step ${event.step}, ${event.toolCalls?.length ?? 0} tool calls`;
-            case 'completed':
-                return `${icon} Agent — ${event.findings ?? 0} findings in ${Math.round((event.durationMs ?? 0) / 1000)}s`;
-            case 'error':
-                return `${icon} Agent — failed`;
+            case 'completed': {
+                const suffix =
+                    event.source === 'second-chance'
+                        ? ' (recovered via second-chance)'
+                        : event.source === 'generate-object'
+                          ? ' (structured by fallback)'
+                          : '';
+                return `${icon} Agent — ${event.findings ?? 0} findings ${duration}${suffix}`;
+            }
+            case 'error': {
+                if (event.finishReason === 'timeout') {
+                    return `${icon} Agent — timed out after ${duration} (${event.step ?? 0} steps)`;
+                }
+                if (event.finishReason === 'max-steps') {
+                    return `${icon} Agent — hit step limit (${event.step ?? 0} steps, no findings)`;
+                }
+                return `${icon} Agent — failed ${duration}`;
+            }
             default:
                 return `${icon} Agent`;
         }

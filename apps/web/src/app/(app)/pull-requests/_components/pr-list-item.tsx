@@ -304,6 +304,31 @@ const getFileTimings = (
     return raw;
 };
 
+const getAgentTrace = (metadata?: any) => {
+    if (!metadata || typeof metadata !== "object") return null;
+    const trace = metadata.agentTrace;
+    if (!trace || typeof trace !== "object") return null;
+    return trace as {
+        steps?: number;
+        findings?: number;
+        durationMs?: number;
+        totalTokens?: number;
+        toolCalls?: Array<{ tool: string; args: string }>;
+        toolSummary?: Record<string, number>;
+    };
+};
+
+const formatToolSummary = (toolSummary: Record<string, number>): string => {
+    const total = Object.values(toolSummary).reduce((a, b) => a + b, 0);
+    const parts = Object.entries(toolSummary)
+        .sort(([, a], [, b]) => b - a)
+        .map(([tool, count]) => `${tool}: ${count}`)
+        .join(", ");
+    return `${total} tool call${total !== 1 ? "s" : ""} (${parts})`;
+};
+
+const MAX_TOOL_CALLS_DISPLAY = 20;
+
 const getStageDisplay = (item: CodeReviewTimelineItem) => {
     const labelFromMetadata =
         item.metadata &&
@@ -322,6 +347,7 @@ const getStageDisplay = (item: CodeReviewTimelineItem) => {
     const cta = getMetadataCta(item.metadata);
     const partialErrors = getPartialErrors(item.metadata);
     const fileTimings = getFileTimings(item.metadata);
+    const agentTrace = getAgentTrace(item.metadata);
 
     return {
         label,
@@ -329,6 +355,7 @@ const getStageDisplay = (item: CodeReviewTimelineItem) => {
         cta,
         partialErrors,
         fileTimings,
+        agentTrace,
         visibility:
             item.metadata && typeof item.metadata === "object"
                 ? (item.metadata as Record<string, any>).visibility
@@ -406,14 +433,14 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 <TableCell className="text-text-secondary w-20 font-mono text-sm tabular-nums">
                     #{latest.prNumber}
                 </TableCell>
-                <TableCell className="max-w-[360px]">
+                <TableCell className="min-w-0 max-w-[240px]">
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Link
                                 href={prUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-text-primary hover:text-primary-light flex max-w-[360px] items-center gap-1.5 font-medium hover:underline"
+                                className="text-text-primary hover:text-primary-light flex max-w-[240px] items-center gap-1.5 font-medium hover:underline"
                                 onClick={(e) => e.stopPropagation()}>
                                 <span className="truncate">{latest.title}</span>
                                 <ExternalLinkIcon className="text-text-tertiary size-3 shrink-0" />
@@ -429,7 +456,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                         {latest.repositoryName}
                     </span>
                 </TableCell>
-                <TableCell className="w-40">
+                <TableCell className="hidden w-32 xl:table-cell">
                     <div className="text-text-tertiary flex w-full max-w-[10rem] items-center gap-1.5 text-sm">
                         <GitBranchIcon className="size-3 shrink-0" />
                         <Tooltip>
@@ -444,7 +471,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                         </Tooltip>
                     </div>
                 </TableCell>
-                <TableCell className="w-40">
+                <TableCell className="hidden w-32 lg:table-cell">
                     <span className="text-text-secondary block truncate text-sm">
                         {latest.author.name}
                     </span>
@@ -454,7 +481,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                         {reviewCount}
                     </span>
                 </TableCell>
-                <TableCell className="w-32">
+                <TableCell className="hidden w-28 lg:table-cell">
                     <span className="text-text-tertiary text-sm tabular-nums">
                         <TimeAgoDisplay
                             dateString={latest.createdAt}
@@ -501,8 +528,9 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 <TableRow className="hover:bg-transparent">
                     <TableCell
                         colSpan={10}
-                        className="border-b-card-lv3/60 bg-card-lv2/20 px-4 pt-2 pb-6">
-                        <div className="ml-10 pt-2">
+                        className="border-b-card-lv3/60 bg-card-lv2/20 p-0">
+                        <div className="max-w-[calc(100vw-6rem)] px-4 pt-2 pb-6">
+                        <div className="pt-2">
                             <div className="space-y-3">
                                 {executions.map((execution, index) => {
                                     const executionKey =
@@ -540,26 +568,8 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                     >
                                                 ).visibility === "secondary",
                                         );
-                                    const isDebugVisible =
-                                        debugVisibleByExecution[executionKey] ??
-                                        false;
-                                    const timelineItems = isDebugVisible
-                                        ? execution.codeReviewTimeline
-                                        : execution.codeReviewTimeline.filter(
-                                              (item) =>
-                                                  !(
-                                                      item.metadata &&
-                                                      typeof item.metadata ===
-                                                          "object" &&
-                                                      (
-                                                          item.metadata as Record<
-                                                              string,
-                                                              any
-                                                          >
-                                                      ).visibility ===
-                                                          "secondary"
-                                                  ),
-                                          );
+                                    // Always show all timeline items including agent traces (secondary)
+                                    const timelineItems = execution.codeReviewTimeline;
                                     const timelineItemsSorted = [
                                         ...timelineItems,
                                     ].sort((a, b) => {
@@ -653,31 +663,6 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                     </span>
                                                                 )
                                                             )}
-                                                        </div>
-                                                    )}
-                                                    {hasSecondarySteps && (
-                                                        <div className="mb-3 flex justify-end">
-                                                            <button
-                                                                type="button"
-                                                                className={buttonVariants(
-                                                                    {
-                                                                        variant:
-                                                                            "helper",
-                                                                        size: "xs",
-                                                                    },
-                                                                )}
-                                                                onClick={(
-                                                                    event,
-                                                                ) => {
-                                                                    event.stopPropagation();
-                                                                    toggleDebugVisibility(
-                                                                        executionKey,
-                                                                    );
-                                                                }}>
-                                                                {isDebugVisible
-                                                                    ? "Hide Debug/Technical Steps"
-                                                                    : "Show Debug/Technical Steps"}
-                                                            </button>
                                                         </div>
                                                     )}
                                                     <div className="relative pl-6">
@@ -794,6 +779,67 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                                 timezone,
                                                                                             )}
                                                                                         </p>
+                                                                                    )}
+                                                                                {stageInfo.agentTrace &&
+                                                                                    stageInfo
+                                                                                        .agentTrace
+                                                                                        .toolSummary && (
+                                                                                        <details className="text-text-tertiary mt-2 text-xs">
+                                                                                            <summary className="cursor-pointer">
+                                                                                                {formatToolSummary(
+                                                                                                    stageInfo
+                                                                                                        .agentTrace
+                                                                                                        .toolSummary,
+                                                                                                )}
+                                                                                            </summary>
+                                                                                            {stageInfo
+                                                                                                .agentTrace
+                                                                                                .toolCalls &&
+                                                                                                stageInfo
+                                                                                                    .agentTrace
+                                                                                                    .toolCalls
+                                                                                                    .length >
+                                                                                                    0 && (
+                                                                                                    <ul className="mt-2 space-y-1 pl-4">
+                                                                                                        {stageInfo.agentTrace.toolCalls
+                                                                                                            .slice(
+                                                                                                                0,
+                                                                                                                MAX_TOOL_CALLS_DISPLAY,
+                                                                                                            )
+                                                                                                            .map(
+                                                                                                                (
+                                                                                                                    tc,
+                                                                                                                    tcIdx,
+                                                                                                                ) => (
+                                                                                                                    <li
+                                                                                                                        key={
+                                                                                                                            tcIdx
+                                                                                                                        }
+                                                                                                                        className="truncate font-mono text-xs">
+                                                                                                                        {tc.tool}
+                                                                                                                        ({tc.args})
+                                                                                                                    </li>
+                                                                                                                ),
+                                                                                                            )}
+                                                                                                        {stageInfo
+                                                                                                            .agentTrace
+                                                                                                            .toolCalls
+                                                                                                            .length >
+                                                                                                            MAX_TOOL_CALLS_DISPLAY && (
+                                                                                                            <li className="text-text-tertiary text-xs italic">
+                                                                                                                ...
+                                                                                                                and{" "}
+                                                                                                                {stageInfo
+                                                                                                                    .agentTrace
+                                                                                                                    .toolCalls
+                                                                                                                    .length -
+                                                                                                                    MAX_TOOL_CALLS_DISPLAY}{" "}
+                                                                                                                more
+                                                                                                            </li>
+                                                                                                        )}
+                                                                                                    </ul>
+                                                                                                )}
+                                                                                        </details>
                                                                                     )}
                                                                                 {item.status ===
                                                                                     "partial_error" &&
@@ -933,6 +979,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                     );
                                 })}
                             </div>
+                        </div>
                         </div>
                     </TableCell>
                 </TableRow>

@@ -100,7 +100,7 @@ export class E2BSandboxService implements ISandboxProvider {
                 }
             };
 
-            return { remoteCommands, cleanup };
+            return { remoteCommands, cleanup, type: 'e2b' as const };
         } catch (error) {
             // If setup fails, kill the sandbox before re-throwing
             try {
