@@ -380,12 +380,17 @@ export class GitlabService implements Omit<
                 throw new Error('Gitlab failed to generate auth token');
             }
 
+            const gitlabHost = process.env.API_GITLAB_TOKEN_URL
+                ? new URL(process.env.API_GITLAB_TOKEN_URL).origin
+                : '';
+
             const authDetails = {
                 accessToken: tokenResponse?.data?.access_token,
                 refreshToken: tokenResponse?.data?.refresh_token,
                 tokenType: tokenResponse?.data?.token_type,
                 scope: tokenResponse?.data?.scope,
                 authMode: params?.authMode || AuthMode.OAUTH,
+                ...(gitlabHost && gitlabHost !== 'https://gitlab.com' && { host: gitlabHost }),
             };
 
             const checkRepos = await this.checkRepositoryPermissions({
