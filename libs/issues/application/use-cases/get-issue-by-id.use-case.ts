@@ -257,7 +257,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             case PlatformType.GITHUB:
                 return `${repositoryUrl}/blob/${branch}/${cleanFilePath}`;
             case PlatformType.GITLAB:
-                return `https://gitlab.com/${data.repositoryFullName}/-/blob/${branch}/${cleanFilePath}`;
+                return `${repositoryUrl}/-/blob/${branch}/${cleanFilePath}`;
             case PlatformType.AZURE_REPOS:
                 return `${data.httpUrl}?path=/${cleanFilePath}`;
             case PlatformType.BITBUCKET:
@@ -283,7 +283,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             case PlatformType.GITHUB:
                 return `${repositoryUrl}/pull/${prNumber}`;
             case PlatformType.GITLAB:
-                return `https://gitlab.com/${data.repositoryFullName}/-/merge_requests/${prNumber}`;
+                return `${repositoryUrl}/-/merge_requests/${prNumber}`;
             case PlatformType.AZURE_REPOS:
                 return `${data.httpUrl}/pullrequest/${prNumber}`;
             case PlatformType.BITBUCKET:
@@ -311,8 +311,12 @@ export class GetIssueByIdUseCase implements IUseCase {
                 }
 
                 return `https://github.com/${data.repositoryFullName}`;
-            case PlatformType.GITLAB:
-                return `https://gitlab.com/${data.repositoryFullName}`;
+            case PlatformType.GITLAB: {
+                const gitlabUrl = process.env.WEB_GITLAB_OAUTH_URL
+                    ? new URL(process.env.WEB_GITLAB_OAUTH_URL).origin
+                    : 'https://gitlab.com';
+                return `${gitlabUrl}/${data.repositoryFullName}`;
+            }
             case PlatformType.AZURE_REPOS:
                 return data.httpUrl;
             case PlatformType.BITBUCKET:
