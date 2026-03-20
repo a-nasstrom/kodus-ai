@@ -305,7 +305,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 return snapped;
             });
 
-            // Classify level (issue/warning) using GPT 5.4 mini
+            // Classify level (issue/warning) using Gemini 3 Flash
             // Separated from agent generation for consistency — BYOK models
             // are unreliable at classification but good at finding bugs.
             const prContext = [
@@ -390,12 +390,12 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
      * Groups by file, then asks Gemini Flash which suggestions are duplicates.
      */
     /**
-     * Classify each suggestion as "issue" or "warning" using GPT 5.4 nano
-     * with reasoning. Separated from agent generation because BYOK models
+     * Classify each suggestion as "issue" or "warning" using Gemini 3 Flash
+     * via OpenRouter. Separated from agent generation because BYOK models
      * are inconsistent at classification.
      *
      * Uses XML prompt (dr1) + stripped category labels to avoid keyword
-     * anchoring bias. Eval score: 88% on 18 test cases.
+     * anchoring bias. Eval score: 85% on 34 test cases.
      */
     private async classifyLevels(
         suggestions: Partial<CodeSuggestion>[],
@@ -404,15 +404,16 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
     ): Promise<Partial<CodeSuggestion>[]> {
         if (suggestions.length === 0) return suggestions;
 
-        // Use GPT 5.4 nano with reasoning for classification
-        // Falls back to getInternalModel() if OpenAI key not available
+        // Use Gemini 3 Flash for classification via Google AI
+        // Falls back to getInternalModel() if Google key not available
         let model: any;
-        const openaiKey = process.env.API_OPEN_AI_API_KEY;
-        if (openaiKey) {
-            const { createOpenAI } = require('@ai-sdk/openai');
-            model = createOpenAI({ apiKey: openaiKey })(
-                'gpt-5.4-nano',
-                { reasoningEffort: 'medium' },
+        const googleKey =
+            process.env.API_GOOGLE_AI_API_KEY ||
+            process.env.GOOGLE_API_KEY;
+        if (googleKey) {
+            const { createGoogleGenerativeAI } = require('@ai-sdk/google');
+            model = createGoogleGenerativeAI({ apiKey: googleKey })(
+                'gemini-3-flash-preview',
             );
         } else {
             model = getInternalModel();
@@ -464,10 +465,25 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 prompt: `<LevelClassifier>
   <Context>Each finding was confirmed by an expert code review agent. Classify only — do not question validity.</Context>${prContext ? `\n  <PRContext>${prContext}</PRContext>` : ''}
   <Definitions>
-    <Level name="issue">The code produces WRONG results, crashes, or corrupts data in at least one scenario.</Level>
-    <Level name="warning">The code produces CORRECT results in ALL scenarios but is suboptimal.</Level>
+    <Level name="issue">The code produces WRONG results, crashes, loses data, or silently fails to perform its intended function in at least one scenario.</Level>
+    <Level name="warning">The code produces CORRECT results and performs its intended function in ALL scenarios but is suboptimal in style, performance, or maintainability.</Level>
   </Definitions>
-  <DecisionRule>Ask: "Will any user/request ever get an INCORRECT result, crash, or lose data because of this?" YES → issue. NO → warning. Note: "missing hardening" (rate limits, input caps, entropy) means every request still gets the correct answer — that is warning, not issue. But "concurrent requests get wrong state" or "stale cache serves wrong data" IS wrong results — that is issue.</DecisionRule>
+  <DecisionRule>
+    Ask: "Does the code produce WRONG output, lose data, crash, or fail to perform what it was meant to do — in at least one scenario?"
+    YES → issue. NO → warning.
+
+    "Runs without error" does NOT mean "correct". Code that executes silently but produces the wrong data, targets the wrong destination, or simply does nothing when it should do something — is issue.
+
+    issue = the output, data, or behavior is WRONG or MISSING in some scenario.
+    warning = the output is always CORRECT, but the code is slow, verbose, or hard to maintain.
+
+    If the code performs an action but the result does not reach its intended destination — written to the wrong variable, logged without required fields, returned to the wrong caller, or discarded entirely — the system's observable state is incorrect. That is issue.
+
+    If a security flaw allows an attacker to reconstruct secrets or bypass authentication through observable side-channels (timing, error messages, response size), that is issue — not hardening.
+
+    When in doubt: if the intended result does not reach its correct destination, or a mechanism that exists for a purpose never fulfills that purpose, that is issue.
+    Missing hardening (rate limits, input caps, entropy) where every request still produces the correct answer is warning.
+  </DecisionRule>
   <Findings>
 ${summaries}
   </Findings>
@@ -478,7 +494,7 @@ ${summaries}
             try {
                 const classifyUsage = classifyResult.usage ?? classifyResult.totalUsage;
                 if (classifyUsage) {
-                    const classifyModelName = openaiKey ? 'gpt-5.4-nano' : 'gpt-5.4-mini';
+                    const classifyModelName = googleKey ? 'gemini-3-flash' : 'gpt-5.4-mini';
                     await this.observabilityService.runInSpan(
                         'classify-levels',
                         async () => classifyResult,
