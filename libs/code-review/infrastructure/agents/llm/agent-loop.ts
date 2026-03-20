@@ -143,8 +143,6 @@ export async function runAgentLoop(
                     for (const tc of event.toolCalls) {
                         const args =
                             (tc as any).args || (tc as any).input || {};
-                        allToolCalls.push({ tool: tc.toolName, args });
-
                         const toolResult = (event.toolResults || []).find(
                             (tr: any) =>
                                 tr.toolCallId === tc.toolCallId ||
@@ -153,6 +151,12 @@ export async function runAgentLoop(
                         const resultStr = toolResult?.result
                             ? String(toolResult.result)
                             : '';
+                        allToolCalls.push({
+                            tool: tc.toolName,
+                            toolName: tc.toolName,
+                            args,
+                            result: resultStr.substring(0, 300),
+                        });
 
                         logger.log({
                             message: `[AGENT-TOOL] step=${stepCount} ${tc.toolName}(${JSON.stringify(args).substring(0, 200)}) → ${resultStr ? resultStr.substring(0, 150) : '(empty)'}${resultStr.length > 150 ? '...' : ''}`,
@@ -284,6 +288,95 @@ export async function runAgentLoop(
             message: `[AGENT-FALLBACK-TEXT] result.text empty, using last step text (${finalText.length} chars)`,
             context: 'AgentLoop',
         });
+    }
+
+    // Second chance: when the model hit MAX_STEPS without producing text,
+    // make a follow-up call WITHOUT tools using the full conversation history.
+    // The model already investigated — it just needs a chance to respond.
+    if (
+        !finalText &&
+        result.finishReason === 'tool-calls' &&
+        allToolCalls.length > 0
+    ) {
+        logger.log({
+            message: `[AGENT-SECOND-CHANCE] Agent hit MAX_STEPS with ${allToolCalls.length} tool calls but no text. Making follow-up call to extract findings.`,
+            context: 'AgentLoop',
+        });
+
+        try {
+            // Build a summary of what the agent investigated
+            const investigationSummary = allToolCalls
+                .map((tc) => {
+                    const args =
+                        typeof tc.args === 'string'
+                            ? tc.args
+                            : JSON.stringify(tc.args);
+                    const resultStr =
+                        typeof tc.result === 'string'
+                            ? tc.result?.substring(0, 200)
+                            : '';
+                    return `${tc.toolName}(${args.substring(0, 150)}) → ${resultStr || '(empty)'}`;
+                })
+                .join('\n');
+
+            const secondChanceResult = await generateText({
+                model: input.model,
+                system: input.systemPrompt,
+                prompt: `You have already investigated this code review task using ${allToolCalls.length} tool calls. Here is a summary of your investigation:
+
+<InvestigationLog>
+${investigationSummary.substring(0, 8000)}
+</InvestigationLog>
+
+Based on your investigation above, respond NOW with your findings as a JSON block. Do NOT call any tools. Respond with ONLY the JSON:
+
+\`\`\`json
+{
+  "reasoning": "Summary of what you investigated and found",
+  "suggestions": [
+    {
+      "relevantFile": "path/to/file",
+      "language": "java",
+      "suggestionContent": "Description of the issue with evidence",
+      "existingCode": "problematic code",
+      "improvedCode": "fixed code",
+      "oneSentenceSummary": "Brief summary",
+      "relevantLinesStart": 10,
+      "relevantLinesEnd": 15,
+      "severity": "critical|high|medium|low"
+    }
+  ]
+}
+\`\`\`
+
+If no issues were found during investigation, respond with \`{"reasoning": "...", "suggestions": []}\`.`,
+                maxSteps: 1, // No tools, just respond
+            });
+
+            finalText = secondChanceResult.text || '';
+
+            // Track additional token usage
+            totalInputTokens +=
+                (secondChanceResult as any).totalUsage?.inputTokens ??
+                secondChanceResult.usage?.inputTokens ??
+                0;
+            totalOutputTokens +=
+                (secondChanceResult as any).totalUsage?.outputTokens ??
+                secondChanceResult.usage?.outputTokens ??
+                0;
+
+            if (finalText) {
+                logger.log({
+                    message: `[AGENT-SECOND-CHANCE] Got ${finalText.length} chars response, hasJSON=${finalText.includes('"suggestions"')}`,
+                    context: 'AgentLoop',
+                });
+            }
+        } catch (err) {
+            logger.warn({
+                message: `[AGENT-SECOND-CHANCE] Follow-up call failed: ${err instanceof Error ? err.message : String(err)}`,
+                context: 'AgentLoop',
+            });
+        }
     }
 
     if (allToolCalls.length === 0) {

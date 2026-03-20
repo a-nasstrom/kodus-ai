@@ -70,6 +70,6 @@ You find performance issues by analyzing execution frequency and data volume at 
 - Micro-optimizations that don't affect real-world performance
 - Premature optimization of cold paths
 - Negligible differences
-- Security issues, logic bugs`;
+- Pure security or logic bugs (handled by other agents)`;
     }
 }

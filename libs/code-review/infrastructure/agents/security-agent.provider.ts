@@ -69,6 +69,6 @@ You find vulnerabilities by tracing data flow from untrusted sources to dangerou
 ### Skip:
 - Theoretical attacks requiring unrealistic scenarios
 - Issues handled at infra layer (WAF, API gateway)
-- Style, performance, non-security bugs`;
+- Pure style or cosmetic issues without security impact`;
     }
 }

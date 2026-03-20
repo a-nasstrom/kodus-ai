@@ -62,16 +62,21 @@ You find bugs by mentally simulating code execution step-by-step. Don't pattern-
 
 ### What to report:
 - Logic errors, off-by-one, wrong operator, inverted conditions
-- Null/undefined access without guards
+- Null/undefined/nil access without guards
 - Race conditions, TOCTOU issues, concurrent state mutation
 - Resource leaks (connections, file handles, event listeners)
 - Error handling gaps (swallowed errors, missing cleanup in catch/finally)
 - Stale closures, wrong variable capture in async callbacks
+- Wrong function/method calls (calling functionA instead of functionB)
+- Import errors (importing modules/classes that don't exist)
+- Dead code or unreachable branches that indicate a logic mistake
+- Typos in identifiers that break functionality (e.g., misspelled method names, wrong variable references)
+- Missing required parameters or props (e.g., React key prop in lists)
+- Interface/contract mismatches (function returns wrong type, caller expects different shape)
 
 ### Skip:
-- Style, naming, formatting
+- Cosmetic style preferences that don't affect behavior
 - Performance (handled by performance agent)
-- Security (handled by security agent)
-- Code that works correctly but could be "cleaner"`;
+- Security (handled by security agent)`;
     }
 }

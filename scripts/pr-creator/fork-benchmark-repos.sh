@@ -111,15 +111,21 @@ echo "-------------------------------------------"
 echo "All repos forked and synced!"
 echo ""
 
-# Generate prs.json with the target org from the example template
+# Generate prs.json with the target org
 PRS_FILE="${SCRIPT_DIR}/prs.json"
+PRS_BENCHMARK="${SCRIPT_DIR}/../benchmark/prs-benchmark.json"
 PRS_EXAMPLE="${SCRIPT_DIR}/prs-example.json"
 
-if [[ -f "$PRS_EXAMPLE" ]]; then
+# Prefer prs-benchmark.json (50 PRs) over prs-example.json (20 PRs)
+if [[ -f "$PRS_BENCHMARK" ]]; then
+    sed -E "s|\"repo\": \"[^/]+/|\"repo\": \"${TARGET_ORG}/|g" "$PRS_BENCHMARK" > "$PRS_FILE"
+    PR_COUNT=$(grep -c '"head"' "$PRS_FILE")
+    echo "Generated prs.json from prs-benchmark.json with org '${TARGET_ORG}' (${PR_COUNT} PRs)"
+elif [[ -f "$PRS_EXAMPLE" ]]; then
     sed -E "s|\"repo\": \"[^/]+/|\"repo\": \"${TARGET_ORG}/|g" "$PRS_EXAMPLE" > "$PRS_FILE"
-    echo "Generated prs.json with org '${TARGET_ORG}'"
+    echo "Generated prs.json from prs-example.json with org '${TARGET_ORG}' (20 PRs)"
 else
-    echo "WARNING: prs-example.json not found — create prs.json manually."
+    echo "WARNING: No PR template found — create prs.json manually."
 fi
 
 echo ""
