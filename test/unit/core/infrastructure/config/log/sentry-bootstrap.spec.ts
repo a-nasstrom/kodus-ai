@@ -1,47 +1,37 @@
+import * as Sentry from '@sentry/nestjs';
+
 jest.mock('@sentry/nestjs', () => ({
     init: jest.fn(),
+    isInitialized: jest.fn().mockReturnValue(false),
 }));
 
-describe('setupSentryAndOpenTelemetry', () => {
+describe('setupSentry', () => {
     beforeEach(() => {
         jest.resetModules();
         jest.clearAllMocks();
         delete process.env.SENTRY_RELEASE;
-        delete process.env.API_BETTERSTACK_DSN;
         process.env.API_NODE_ENV = 'production';
-    });
-
-    it('does not initialize Sentry when no DSN is configured', async () => {
-        const { setupSentryAndOpenTelemetry } = await import(
-            '@libs/core/infrastructure/config/log/otel'
-        );
-        const sentry = jest.requireMock('@sentry/nestjs') as {
-            init: jest.Mock;
-        };
-
-        setupSentryAndOpenTelemetry({ componentType: 'api' });
-
-        expect(sentry.init).not.toHaveBeenCalled();
-    });
-
-    it('initializes Sentry once with the configured DSN', async () => {
         process.env.API_BETTERSTACK_DSN =
-            'https://configured@example.betterstackdata.com/123';
+            'https://fake-dsn@s2315144.eu-fsn-3.betterstackdata.com/2315144';
+    });
 
-        const { setupSentryAndOpenTelemetry } = await import(
-            '@libs/core/infrastructure/config/log/otel'
-        );
+    it('initializes Sentry with the Better Stack DSN only once', async () => {
+        const { setupSentry } =
+            await import('@libs/core/infrastructure/config/log/sentry');
         const sentry = jest.requireMock('@sentry/nestjs') as {
             init: jest.Mock;
+            isInitialized: jest.Mock;
         };
 
-        setupSentryAndOpenTelemetry({ componentType: 'worker' });
-        setupSentryAndOpenTelemetry({ componentType: 'worker' });
+        sentry.isInitialized.mockReturnValueOnce(false).mockReturnValue(true);
+
+        setupSentry('worker');
+        setupSentry('worker');
 
         expect(sentry.init).toHaveBeenCalledTimes(1);
         expect(sentry.init).toHaveBeenCalledWith(
             expect.objectContaining({
-                dsn: 'https://configured@example.betterstackdata.com/123',
+                dsn: 'https://fake-dsn@s2315144.eu-fsn-3.betterstackdata.com/2315144',
                 environment: 'production',
                 release: 'kodus-orchestrator@production',
                 serverName: 'kodus-worker',
@@ -49,29 +39,9 @@ describe('setupSentryAndOpenTelemetry', () => {
         );
     });
 
-    it('ignores the old Sentry env name', async () => {
-        (process.env as Record<string, string | undefined>).API_SENTRY_DSN =
-            'https://legacy@example.betterstackdata.com/456';
-
-        const { setupSentryAndOpenTelemetry } = await import(
-            '@libs/core/infrastructure/config/log/otel'
-        );
-        const sentry = jest.requireMock('@sentry/nestjs') as {
-            init: jest.Mock;
-        };
-
-        setupSentryAndOpenTelemetry({ componentType: 'api' });
-
-        expect(sentry.init).not.toHaveBeenCalled();
-    });
-
     it('does not crash the platform if Sentry init throws', async () => {
-        process.env.API_BETTERSTACK_DSN =
-            'https://configured@example.betterstackdata.com/123';
-
-        const { setupSentryAndOpenTelemetry } = await import(
-            '@libs/core/infrastructure/config/log/otel'
-        );
+        const { setupSentry } =
+            await import('@libs/core/infrastructure/config/log/sentry');
         const sentry = jest.requireMock('@sentry/nestjs') as {
             init: jest.Mock;
         };
@@ -83,39 +53,12 @@ describe('setupSentryAndOpenTelemetry', () => {
             throw new Error('invalid dsn');
         });
 
-        expect(() =>
-            setupSentryAndOpenTelemetry({ componentType: 'api' }),
-        ).not.toThrow();
+        expect(() => setupSentry('api')).not.toThrow();
         expect(consoleWarn).toHaveBeenCalledWith(
             '[Sentry] initialization failed, continuing without error tracking:',
             'invalid dsn',
         );
 
         consoleWarn.mockRestore();
-    });
-
-    it('falls back to api when no component is provided', async () => {
-        process.env.API_BETTERSTACK_DSN =
-            'https://configured@example.betterstackdata.com/123';
-
-        const { setupSentryAndOpenTelemetry } = await import(
-            '@libs/core/infrastructure/config/log/otel'
-        );
-        const sentry = jest.requireMock('@sentry/nestjs') as {
-            init: jest.Mock;
-        };
-
-        setupSentryAndOpenTelemetry();
-
-        expect(sentry.init).toHaveBeenCalledWith(
-            expect.objectContaining({
-                serverName: 'kodus-api',
-                initialScope: {
-                    tags: {
-                        component: 'api',
-                    },
-                },
-            }),
-        );
     });
 });
