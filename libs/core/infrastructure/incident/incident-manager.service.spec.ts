@@ -47,6 +47,7 @@ describe('IncidentManagerService', () => {
         expect(betterStackClient.failHeartbeat).toHaveBeenCalledWith(
             'https://heartbeat.example',
             'failure payload',
+            undefined,
         );
     });
 
