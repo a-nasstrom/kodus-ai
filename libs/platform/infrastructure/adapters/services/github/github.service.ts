@@ -374,18 +374,16 @@ export class GithubService
 
             const updatedConfig =
                 await this.integrationConfigService.createOrUpdateConfig(
-                params.configKey,
-                params.configValue,
-                integration?.uuid,
-                params.organizationAndTeamData,
-                params.type,
+                    params.configKey,
+                    params.configValue,
+                    integration?.uuid,
+                    params.organizationAndTeamData,
+                    params.type,
                 );
 
             if (shouldRefreshTokenWebhooks) {
                 const nextRepositories = <Repositories[]>(
-                    updatedConfig?.configValue ??
-                        params.configValue ??
-                        []
+                    (updatedConfig?.configValue ?? params.configValue ?? [])
                 );
                 const removedRepositories = previousRepositories.filter(
                     (previousRepository) =>
@@ -399,8 +397,7 @@ export class GithubService
 
                 if (removedRepositories.length > 0) {
                     await this.deleteWebhook({
-                        organizationAndTeamData:
-                            params.organizationAndTeamData,
+                        organizationAndTeamData: params.organizationAndTeamData,
                         repositories: removedRepositories,
                     });
                 }
@@ -5485,7 +5482,7 @@ This is an experimental feature that generates committable changes. Review the d
     async getRepositoryTree(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-    }): Promise<any[]> {
+    }): Promise<TreeItem[]> {
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
                 params.organizationAndTeamData,
@@ -5583,15 +5580,7 @@ This is an experimental feature that generates committable changes. Review the d
         repo: string;
         octokit: any;
         rootTreeSha: string;
-    }): Promise<
-        {
-            path: string;
-            type: 'file' | 'directory';
-            sha: string;
-            size?: number;
-            url: string;
-        }[]
-    > {
+    }): Promise<TreeItem[]> {
         const { owner, repo, octokit, rootTreeSha } = params;
         const allItems = [];
         const limit = pLimit(3);

@@ -2,7 +2,8 @@ import { createLogger } from '@kodus/flow';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 
 import { Reaction } from '@libs/code-review/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
+import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { extractOrganizationAndTeamData } from '@libs/common/utils/helpers';
 import { IntegrationCategory } from '@libs/core/domain/enums/integration-category.enum';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { PullRequestState } from '@libs/core/domain/enums/pullRequestState.enum';
@@ -17,13 +18,11 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
-import { extractOrganizationAndTeamData } from '@libs/common/utils/helpers';
 import {
     CodeManagementConnectionStatus,
     ICodeManagementService,
 } from '@libs/platform/domain/platformIntegrations/interfaces/code-management.interface';
-import { PlatformIntegrationFactory } from './platformIntegration.factory';
-import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
+import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import {
     PullRequest,
     PullRequestAuthor,
@@ -31,9 +30,10 @@ import {
     PullRequestReviewState,
     PullRequestsWithChangesRequested,
 } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
-import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { RepositoryFile } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
+import { PlatformIntegrationFactory } from './platformIntegration.factory';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
@@ -1154,7 +1154,7 @@ export class CodeManagementService implements ICodeManagementService {
             repositoryId: string;
         },
         type?: PlatformType,
-    ): Promise<any> {
+    ): Promise<TreeItem[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 params.organizationAndTeamData,

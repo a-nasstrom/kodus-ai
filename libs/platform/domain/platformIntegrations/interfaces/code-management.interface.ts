@@ -6,7 +6,7 @@ import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/
 import { TreeItem } from '@libs/core/infrastructure/config/types/general/tree.type';
 import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
 
-import { ICommonPlatformIntegrationService } from './common.interface';
+import { IntegrationCategory } from '@libs/core/domain/enums/integration-category.enum';
 import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 import { Organization } from '../types/codeManagement/organization.type';
 import {
@@ -20,7 +20,7 @@ import {
 } from '../types/codeManagement/pullRequests.type';
 import { Repositories } from '../types/codeManagement/repositories.type';
 import { RepositoryFile } from '../types/codeManagement/repositoryFile.type';
-import { IntegrationCategory } from '@libs/core/domain/enums/integration-category.enum';
+import { ICommonPlatformIntegrationService } from './common.interface';
 
 export type CodeManagementConnectionStatus = {
     hasConnection: boolean; // Whether there is a connection with the tool (e.g., GitHub)
@@ -220,7 +220,7 @@ export interface ICodeManagementService extends ICommonPlatformIntegrationServic
     getRepositoryTree(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-    }): Promise<any>;
+    }): Promise<TreeItem[]>;
 
     getRepositoryTreeByDirectory(params: {
         organizationAndTeamData: OrganizationAndTeamData;

@@ -4081,7 +4081,7 @@ ${copyPrompt}
     async getRepositoryTree(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-    }): Promise<any[]> {
+    }): Promise<TreeItem[]> {
         try {
             const { organizationAndTeamData, repositoryId } = params;
 
@@ -4134,10 +4134,14 @@ ${copyPrompt}
                 path: item.path?.startsWith('/')
                     ? item.path.substring(1)
                     : item.path, // Remove '/' inicial se existir
-                type: item.gitObjectType === 'tree' ? 'directory' : 'file',
+                type:
+                    item.gitObjectType === 'tree'
+                        ? ('directory' as const)
+                        : ('file' as const),
                 sha: item.objectId,
                 size: undefined,
                 url: item.url,
+                hasChildren: item.gitObjectType === 'tree', // Marcar diretórios para possível navegação futura
             }));
 
             this.logger.debug({

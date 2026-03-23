@@ -4437,7 +4437,7 @@ export class BitbucketService implements Omit<
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
         treeType?: 'all' | 'directories' | 'files';
-    }): Promise<any[]> {
+    }): Promise<TreeItem[]> {
         try {
             const {
                 organizationAndTeamData,
@@ -4513,11 +4513,11 @@ export class BitbucketService implements Omit<
         workspace: string,
         repositoryId: string,
         maxDepth: number = 10, // Evitar timeout, pode ajustar conforme necessário
-    ): Promise<any[]> {
+    ): Promise<TreeItem[]> {
         try {
             const bitbucketAPI =
                 this.instanceBitbucketApi(bitbucketAuthDetails);
-            const allItems: any[] = [];
+            const allItems: TreeItem[] = [];
             let hasNext = true;
             let nextPageUrl: string | null = null;
             let pageNum = 1;
@@ -4578,12 +4578,13 @@ export class BitbucketService implements Omit<
                         path: item.path,
                         type:
                             item.type === 'commit_directory'
-                                ? 'directory'
-                                : 'file',
+                                ? ('directory' as const)
+                                : ('file' as const),
                         sha: item.commit?.hash || '',
                         size: item.size || undefined,
                         url: item.links?.self?.href || '',
                         commit: item.commit, // Manter dados do commit se necessário
+                        hasChildren: item.type === 'commit_directory', // Marcar diretórios para possível navegação futura
                     };
 
                     allItems.push(normalizedItem);

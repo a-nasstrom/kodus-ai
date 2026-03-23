@@ -185,11 +185,10 @@ export class SyncCentralizedConfigUseCase {
     }): Promise<ConfigFileMeta[]> {
         const { organizationAndTeamData, repository } = params;
 
-        const repoTree =
-            await this.codeManagementService.getRepositoryTreeByDirectory({
-                organizationAndTeamData,
-                repositoryId: repository.id,
-            });
+        const repoTree = await this.codeManagementService.getRepositoryTree({
+            organizationAndTeamData,
+            repositoryId: repository.id,
+        });
 
         const repositories =
             await this.integrationConfigService.findIntegrationConfigFormatted<
