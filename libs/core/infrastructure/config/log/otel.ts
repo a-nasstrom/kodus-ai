@@ -2,7 +2,13 @@ import * as Sentry from '@sentry/nestjs';
 
 let sentryInitialized = false;
 
-export function setupSentryAndOpenTelemetry() {
+interface SetupSentryOptions {
+    componentType?: string;
+}
+
+export function setupSentryAndOpenTelemetry(
+    options: SetupSentryOptions = {},
+) {
     if (sentryInitialized) {
         return;
     }
@@ -15,7 +21,7 @@ export function setupSentryAndOpenTelemetry() {
 
     const environment =
         process.env.API_NODE_ENV || process.env.NODE_ENV || 'development';
-    const componentType = process.env.COMPONENT_TYPE || 'api';
+    const componentType = options.componentType || 'api';
 
     try {
         Sentry.init({

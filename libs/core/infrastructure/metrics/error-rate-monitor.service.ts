@@ -86,7 +86,7 @@ export class ErrorRateMonitorService {
             if (errorRate >= this.thresholdPercent) {
                 await this.incidentManager.failHeartbeat(
                     'API_BETTERSTACK_HEARTBEAT_ERROR_RATE_URL',
-                    `HTTP error rate is ${errorRate.toFixed(1)}% (threshold: ${this.thresholdPercent}%) over the last ${this.windowMinutes} minutes. Total errors: ${errorCounts}, total requests: ${requestCounts}. ${formatHeartbeatContext({
+                    `HTTP error rate is ${errorRate.toFixed(1)}% (threshold: ${this.thresholdPercent}%) over the last ${this.windowMinutes} minutes. Total errors: ${errorCounts}, total requests: ${requestCounts}. ${this.formatContext({
                         monitor: 'error_rate',
                         windowStart: since,
                         windowEnd: now,
@@ -142,5 +142,13 @@ export class ErrorRateMonitorService {
                 error: error instanceof Error ? error : undefined,
             });
         }
+    }
+
+    private formatContext(extra: Record<string, Date | number | string>) {
+        return formatHeartbeatContext(
+            this.configService.get<string>('API_NODE_ENV'),
+            this.configService.get<string>('COMPONENT_TYPE', 'worker'),
+            extra,
+        );
     }
 }

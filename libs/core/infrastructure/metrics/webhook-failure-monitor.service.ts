@@ -82,7 +82,7 @@ export class WebhookFailureMonitorService {
                 const breakdown = await this.getFailureBreakdown(since);
                 await this.incidentManager.failHeartbeat(
                     'API_BETTERSTACK_HEARTBEAT_WEBHOOK_URL',
-                    `Webhook failure rate is ${failureRate.toFixed(1)}% (threshold: ${this.thresholdPercent}%) over the last ${this.windowMinutes} minutes. Failed: ${failed}, Total: ${total}. ${formatHeartbeatContext({
+                    `Webhook failure rate is ${failureRate.toFixed(1)}% (threshold: ${this.thresholdPercent}%) over the last ${this.windowMinutes} minutes. Failed: ${failed}, Total: ${total}. ${this.formatContext({
                         monitor: 'webhook_failure_rate',
                         windowStart: since,
                         windowEnd: now,
@@ -209,5 +209,13 @@ export class WebhookFailureMonitorService {
                 error: error instanceof Error ? error : undefined,
             });
         }
+    }
+
+    private formatContext(extra: Record<string, Date | number | string>) {
+        return formatHeartbeatContext(
+            this.configService.get<string>('API_NODE_ENV'),
+            this.configService.get<string>('COMPONENT_TYPE', 'worker'),
+            extra,
+        );
     }
 }

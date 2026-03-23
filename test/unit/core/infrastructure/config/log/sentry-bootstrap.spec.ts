@@ -9,7 +9,6 @@ describe('setupSentryAndOpenTelemetry', () => {
         delete process.env.SENTRY_RELEASE;
         delete process.env.API_BETTERSTACK_DSN;
         process.env.API_NODE_ENV = 'production';
-        process.env.COMPONENT_TYPE = 'api';
     });
 
     it('does not initialize Sentry when no DSN is configured', async () => {
@@ -20,7 +19,7 @@ describe('setupSentryAndOpenTelemetry', () => {
             init: jest.Mock;
         };
 
-        setupSentryAndOpenTelemetry();
+        setupSentryAndOpenTelemetry({ componentType: 'api' });
 
         expect(sentry.init).not.toHaveBeenCalled();
     });
@@ -36,8 +35,8 @@ describe('setupSentryAndOpenTelemetry', () => {
             init: jest.Mock;
         };
 
-        setupSentryAndOpenTelemetry();
-        setupSentryAndOpenTelemetry();
+        setupSentryAndOpenTelemetry({ componentType: 'worker' });
+        setupSentryAndOpenTelemetry({ componentType: 'worker' });
 
         expect(sentry.init).toHaveBeenCalledTimes(1);
         expect(sentry.init).toHaveBeenCalledWith(
@@ -45,7 +44,7 @@ describe('setupSentryAndOpenTelemetry', () => {
                 dsn: 'https://configured@example.betterstackdata.com/123',
                 environment: 'production',
                 release: 'kodus-orchestrator@production',
-                serverName: 'kodus-api',
+                serverName: 'kodus-worker',
             }),
         );
     });
@@ -61,7 +60,7 @@ describe('setupSentryAndOpenTelemetry', () => {
             init: jest.Mock;
         };
 
-        setupSentryAndOpenTelemetry();
+        setupSentryAndOpenTelemetry({ componentType: 'api' });
 
         expect(sentry.init).not.toHaveBeenCalled();
     });
@@ -84,12 +83,39 @@ describe('setupSentryAndOpenTelemetry', () => {
             throw new Error('invalid dsn');
         });
 
-        expect(() => setupSentryAndOpenTelemetry()).not.toThrow();
+        expect(() =>
+            setupSentryAndOpenTelemetry({ componentType: 'api' }),
+        ).not.toThrow();
         expect(consoleWarn).toHaveBeenCalledWith(
             '[Sentry] initialization failed, continuing without error tracking:',
             'invalid dsn',
         );
 
         consoleWarn.mockRestore();
+    });
+
+    it('falls back to api when no component is provided', async () => {
+        process.env.API_BETTERSTACK_DSN =
+            'https://configured@example.betterstackdata.com/123';
+
+        const { setupSentryAndOpenTelemetry } = await import(
+            '@libs/core/infrastructure/config/log/otel'
+        );
+        const sentry = jest.requireMock('@sentry/nestjs') as {
+            init: jest.Mock;
+        };
+
+        setupSentryAndOpenTelemetry();
+
+        expect(sentry.init).toHaveBeenCalledWith(
+            expect.objectContaining({
+                serverName: 'kodus-api',
+                initialScope: {
+                    tags: {
+                        component: 'api',
+                    },
+                },
+            }),
+        );
     });
 });

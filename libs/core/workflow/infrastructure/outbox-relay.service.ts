@@ -9,6 +9,7 @@ import {
     OnApplicationBootstrap,
     OnModuleDestroy,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 import {
@@ -105,6 +106,7 @@ export class OutboxRelayService
         @Inject(MESSAGE_BROKER_SERVICE_TOKEN)
         private readonly messageBroker: IMessageBrokerService,
         private readonly observability: ObservabilityService,
+        private readonly configService: ConfigService,
         private readonly distributedLockService: DistributedLockService,
         @Optional()
         private readonly incidentManager?: IncidentManagerService,
@@ -317,65 +319,94 @@ export class OutboxRelayService
                             12 * 60 * 60 * 1000, // 12 hours (very conservative to avoid reprocessing without checkpoints)
                     };
 
-                    // Reclaim messages for each consumer type with its specific timeout
-                    for (const [consumerId, timeoutMs] of Object.entries(
-                        consumerTimeouts,
-                    )) {
-                        const threshold = new Date(Date.now() - timeoutMs);
-                        const reclaimed =
-                            await this.inboxRepository.reclaimStaleMessagesByConsumer(
-                                consumerId,
-                                threshold,
-                            );
+                    const reclaimResults = await Promise.allSettled(
+                        Object.entries(consumerTimeouts).map(
+                            async ([consumerId, timeoutMs]) => {
+                                const threshold = new Date(
+                                    Date.now() - timeoutMs,
+                                );
+                                const reclaimed =
+                                    await this.inboxRepository.reclaimStaleMessagesByConsumer(
+                                        consumerId,
+                                        threshold,
+                                    );
 
-                        if (reclaimed > 0) {
-                            totalReclaimed += reclaimed;
-                            this.logger.warn({
-                                message: `Reclaimed ${reclaimed} stale ${consumerId} messages`,
+                                return {
+                                    consumerId,
+                                    timeoutMs,
+                                    threshold,
+                                    reclaimed,
+                                };
+                            },
+                        ),
+                    );
+
+                    for (const result of reclaimResults) {
+                        if (result.status === 'rejected') {
+                            this.logger.error({
+                                message:
+                                    'Failed to reclaim stale inbox messages for a consumer',
+                                context: OutboxRelayService.name,
+                                error:
+                                    result.reason instanceof Error
+                                        ? result.reason
+                                        : undefined,
+                            });
+                            continue;
+                        }
+
+                        const { consumerId, timeoutMs, threshold, reclaimed } =
+                            result.value;
+
+                        if (reclaimed <= 0) {
+                            continue;
+                        }
+
+                        totalReclaimed += reclaimed;
+                        this.logger.warn({
+                            message: `Reclaimed ${reclaimed} stale ${consumerId} messages`,
+                            context: OutboxRelayService.name,
+                            metadata: {
+                                consumerId,
+                                thresholdMinutes: timeoutMs / 60000,
+                                reclaimedCount: reclaimed,
+                                ageThreshold: threshold.toISOString(),
+                            },
+                        });
+
+                        if (reclaimed > 5) {
+                            this.logger.error({
+                                message: `HIGH RECLAIM RATE: ${reclaimed} ${consumerId} jobs stuck!`,
                                 context: OutboxRelayService.name,
                                 metadata: {
                                     consumerId,
-                                    thresholdMinutes: timeoutMs / 60000,
-                                    reclaimedCount: reclaimed,
-                                    ageThreshold: threshold.toISOString(),
+                                    reclaimed,
+                                    possibleCause:
+                                        'Worker crashes, memory issues, or job timeouts',
                                 },
                             });
 
-                            // Alert if reclaim rate is high (possible systemic issue)
-                            if (reclaimed > 5) {
-                                this.logger.error({
-                                    message: `HIGH RECLAIM RATE: ${reclaimed} ${consumerId} jobs stuck!`,
-                                    context: OutboxRelayService.name,
-                                    metadata: {
+                            this.incidentManager
+                                ?.failHeartbeat(
+                                    'API_BETTERSTACK_HEARTBEAT_OUTBOX_URL',
+                                    `High inbox reclaim rate for ${consumerId}: ${reclaimed} stale messages reclaimed. Possible cause: worker crashes, memory issues, or job timeouts. ${this.formatContext({
+                                        monitor: 'inbox_reclaim_rate',
                                         consumerId,
                                         reclaimed,
-                                        possibleCause:
-                                            'Worker crashes, memory issues, or job timeouts',
-                                    },
-                                });
-
-                                this.incidentManager
-                                    ?.failHeartbeat(
-                                        'API_BETTERSTACK_HEARTBEAT_OUTBOX_URL',
-                                        `High inbox reclaim rate for ${consumerId}: ${reclaimed} stale messages reclaimed. Possible cause: worker crashes, memory issues, or job timeouts. ${formatHeartbeatContext({
-                                            monitor: 'inbox_reclaim_rate',
-                                            consumerId,
-                                            reclaimed,
-                                        })}`,
-                                    )
-                                    .catch((err) => {
-                                        this.logger.error({
-                                            message:
-                                                'Failed to report outbox heartbeat failure',
-                                            context: OutboxRelayService.name,
-                                            error:
-                                                err instanceof Error
-                                                    ? err
-                                                    : undefined,
-                                            metadata: { consumerId, reclaimed },
-                                        });
+                                    })}`,
+                                )
+                                .catch((err) => {
+                                    this.logger.error({
+                                        message:
+                                            'Failed to report outbox heartbeat failure',
+                                        context: OutboxRelayService.name,
+                                        error:
+                                            err instanceof Error
+                                                ? err
+                                                : undefined,
+                                        metadata: { consumerId, reclaimed },
                                     });
-                            }
+                                });
                         }
                     }
 
@@ -583,7 +614,7 @@ export class OutboxRelayService
                         this.incidentManager
                             ?.failHeartbeat(
                                 'API_BETTERSTACK_HEARTBEAT_OUTBOX_URL',
-                                `Outbox message permanently failed: ${message.uuid} (job: ${jobId || 'N/A'}) after ${this.maxAttemptsOutbox} attempts. Exchange: ${message.exchange}, Routing: ${message.routingKey}. Error: ${error.message}. ${formatHeartbeatContext({
+                                `Outbox message permanently failed: ${message.uuid} (job: ${jobId || 'N/A'}) after ${this.maxAttemptsOutbox} attempts. Exchange: ${message.exchange}, Routing: ${message.routingKey}. Error: ${error.message}. ${this.formatContext({
                                     monitor: 'outbox_permanent_failure',
                                     instanceId: this.instanceId,
                                     messageId: message.uuid,
@@ -670,5 +701,13 @@ export class OutboxRelayService
                 error: error instanceof Error ? error : undefined,
             });
         }
+    }
+
+    private formatContext(extra: Record<string, Date | number | string>) {
+        return formatHeartbeatContext(
+            this.configService.get<string>('API_NODE_ENV'),
+            this.configService.get<string>('COMPONENT_TYPE', 'worker'),
+            extra,
+        );
     }
 }

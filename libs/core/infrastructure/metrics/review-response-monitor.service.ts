@@ -101,7 +101,7 @@ export class ReviewResponseMonitorService {
                     avg >= this.avgCriticalMs ? 'critical' : 'warning';
                 await this.incidentManager.failHeartbeat(
                     'API_BETTERSTACK_HEARTBEAT_REVIEW_MONITOR_URL',
-                    `Code review average response time is ${this.formatDuration(avg)} (${severity} threshold: ${this.formatDuration(this.avgThresholdMs)}, critical: ${this.formatDuration(this.avgCriticalMs)}). p50=${this.formatDuration(p50)}, p95=${this.formatDuration(p95)}, count=${values.length} in last 30 minutes. ${formatHeartbeatContext({
+                    `Code review average response time is ${this.formatDuration(avg)} (${severity} threshold: ${this.formatDuration(this.avgThresholdMs)}, critical: ${this.formatDuration(this.avgCriticalMs)}). p50=${this.formatDuration(p50)}, p95=${this.formatDuration(p95)}, count=${values.length} in last 30 minutes. ${this.formatContext({
                         monitor: 'review_response_time',
                         windowStart: since,
                         windowEnd: now,
@@ -168,5 +168,13 @@ export class ReviewResponseMonitorService {
         if (ms < 1000) return `${ms.toFixed(0)}ms`;
         if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
         return `${(ms / 60_000).toFixed(1)}min`;
+    }
+
+    private formatContext(extra: Record<string, Date | number | string>) {
+        return formatHeartbeatContext(
+            this.configService.get<string>('API_NODE_ENV'),
+            this.configService.get<string>('COMPONENT_TYPE', 'worker'),
+            extra,
+        );
     }
 }

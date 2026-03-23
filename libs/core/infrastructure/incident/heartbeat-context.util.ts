@@ -15,11 +15,10 @@ function normalizeHeartbeatValue(value: HeartbeatValue): string | undefined {
 }
 
 export function formatHeartbeatContext(
+    env?: string,
+    component?: string,
     extra: Record<string, HeartbeatValue> = {},
 ): string {
-    const env = process.env.API_NODE_ENV;
-    const component = process.env.COMPONENT_TYPE;
-
     const context = {
         env,
         component,

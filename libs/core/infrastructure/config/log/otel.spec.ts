@@ -25,7 +25,6 @@ describe('otel', () => {
             ...originalEnv,
             API_BETTERSTACK_DSN: 'https://examplePublicKey@example.ingest.sentry.io/1',
             API_NODE_ENV: 'production',
-            COMPONENT_TYPE: 'api',
         };
     });
 
@@ -34,7 +33,7 @@ describe('otel', () => {
     });
 
     it('captures and flushes reported exceptions after sentry setup', async () => {
-        setupSentryAndOpenTelemetry();
+        setupSentryAndOpenTelemetry({ componentType: 'api' });
 
         await reportExceptionToSentry(new Error('bootstrap failed'), {
             context: 'Bootstrap',

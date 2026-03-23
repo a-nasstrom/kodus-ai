@@ -133,7 +133,7 @@ async function bootstrap() {
 
         handleNestJSWebpackHmr(app, module);
     } catch (error) {
-        await reportExceptionToSentry(error, {
+        void reportExceptionToSentry(error, {
             context: 'Bootstrap',
             extra: { component: 'webhook', phase: 'bootstrap' },
         });

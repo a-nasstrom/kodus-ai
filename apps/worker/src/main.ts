@@ -91,7 +91,7 @@ async function bootstrap() {
         handleNestJSWebpackHmr(appContext, module);
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
-        await reportExceptionToSentry(error, {
+        void reportExceptionToSentry(error, {
             context: 'Bootstrap',
             extra: { component: 'worker', phase: 'bootstrap' },
         });
