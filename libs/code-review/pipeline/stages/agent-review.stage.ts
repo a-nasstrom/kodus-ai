@@ -385,6 +385,30 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const deduped = [...dedupedNonRules, ...kodyRulesForDedup];
 
+            // Enrich kody_rules suggestions with links to the rule page
+            const baseUrl = process.env.API_USER_INVITE_BASE_URL || '';
+            for (const s of deduped) {
+                if (s.label !== 'kody_rules' || !s.brokenKodyRulesIds?.[0]) continue;
+                const ruleId = s.brokenKodyRulesIds[0];
+                const rule = kodyRulesById.get(ruleId);
+                if (!rule?.title) continue;
+
+                const repoPath = rule.repositoryId === 'global' ? 'global' : rule.repositoryId;
+                const ruleLink = `${baseUrl}/settings/code-review/${repoPath}/kody-rules/${ruleId}`;
+                const escapedTitle = rule.title.replace(/([[\]\\`*_{}()#+\-.!])/g, '\\$1');
+                const markdownLink = `[${escapedTitle}](${ruleLink})`;
+
+                let content = s.suggestionContent || '';
+                if (content.includes(rule.title)) {
+                    // Replace the first occurrence of the title with the link
+                    content = content.replace(rule.title, markdownLink);
+                } else {
+                    // Append a link line at the end
+                    content += `\n\nKody rule violation: ${markdownLink}`;
+                }
+                s.suggestionContent = content;
+            }
+
             // Separate PR-level kody rules (no file/lines) from file-level suggestions.
             // PR-level suggestions go to validSuggestionsByPR → CreatePrLevelCommentsStage.
             const prLevelSuggestions = deduped.filter(
