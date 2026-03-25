@@ -97,18 +97,7 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             return context;
         }
 
-        // Guard: skip if crossFileDependenciesAnalysis is disabled
-        if (context.codeReviewConfig?.crossFileDependenciesAnalysis === false) {
-            this.logger.log({
-                message: `Skipping cross-file context collection: crossFileDependenciesAnalysis is disabled for ${label}`,
-                context: this.stageName,
-                metadata: {
-                    organizationAndTeamData: context?.organizationAndTeamData,
-                    prNumber: context?.pullRequest?.number,
-                },
-            });
-            return context;
-        }
+
 
         // Guard: skip if no changed files
         if (!context?.changedFiles?.length) {

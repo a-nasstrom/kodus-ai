@@ -48,12 +48,12 @@ export const Filters = ({
                     <Button
                         size="md"
                         variant="helper"
-                        className="w-[200px] justify-between">
-                        <span>{getModelSelectionText()}</span>
+                        className="min-w-[200px] max-w-[350px] justify-between">
+                        <span className="truncate">{getModelSelectionText()}</span>
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
-                    className="w-[200px]"
+                    className="min-w-[200px] max-w-[400px]"
                     onCloseAutoFocus={(e) => e.preventDefault()}>
                     <DropdownMenuLabel>Models</DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -87,7 +87,7 @@ export const Filters = ({
                                 <Checkbox
                                     checked={selectedModels.includes(model)}
                                 />
-                                <span>{model}</span>
+                                <span className="break-all">{model}</span>
                             </div>
                         </DropdownMenuItem>
                     ))}

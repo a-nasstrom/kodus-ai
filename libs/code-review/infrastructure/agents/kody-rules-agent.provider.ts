@@ -147,8 +147,11 @@ You validate code against the team's custom rules listed below. Your ONLY job is
                 })
                 .join('\n\n') || 'No changed files provided.';
 
+        const prDescription = input.prBody
+            ? input.prBody
+            : '';
         const prContextSection = input.prTitle
-            ? `\n  <PRContext>Title: ${input.prTitle}${input.prBody ? '\n' + input.prBody.substring(0, 500) : ''}</PRContext>`
+            ? `\n  <PRContext>Title: ${input.prTitle}\nDescription: ${prDescription || '(empty)'}</PRContext>`
             : '';
 
         return `<ReviewTask>${prContextSection}
@@ -157,37 +160,53 @@ ${diffsSection}
   </Diffs>
 
   <OutputFormat>
-After investigating with tools, respond with ONLY a JSON block:
+After investigating with tools, respond with ONLY a JSON block.
+There are TWO formats depending on the rule scope:
 
+**File-level rule violation** (scope: Per-file) — includes file, lines, and code:
 \`\`\`json
 {
-  "reasoning": "Summary of which rules you checked and what you found",
-  "suggestions": [
-    {
-      "ruleUuid": "uuid-of-the-violated-rule",
-      "relevantFile": "path/to/file.ts",
-      "language": "typescript",
-      "suggestionContent": "Violates rule 'Rule Title': description of violation with evidence",
-      "existingCode": "code that violates the rule",
-      "improvedCode": "code that follows the rule",
-      "oneSentenceSummary": "Brief: violates 'Rule Title'",
-      "relevantLinesStart": 10,
-      "relevantLinesEnd": 15,
-      "severity": "critical|high|medium|low"
-    }
-  ]
+  "ruleUuid": "uuid-of-the-violated-rule",
+  "relevantFile": "path/to/file.ts",
+  "language": "typescript",
+  "suggestionContent": "Violates rule 'Rule Title': description of violation with evidence",
+  "existingCode": "code that violates the rule",
+  "improvedCode": "code that follows the rule",
+  "oneSentenceSummary": "Brief: violates 'Rule Title'",
+  "relevantLinesStart": 10,
+  "relevantLinesEnd": 15
 }
 \`\`\`
 
-IMPORTANT: "ruleUuid" MUST be the exact UUID provided for the violated rule. This is required for tracking.
+**PR-level rule violation** (scope: Pull request level) — NO file, lines, or code:
+\`\`\`json
+{
+  "ruleUuid": "uuid-of-the-violated-rule",
+  "suggestionContent": "Violates rule 'Rule Title': description of the PR-level violation",
+  "oneSentenceSummary": "Brief: violates 'Rule Title'"
+}
+\`\`\`
+
+Full response structure:
+\`\`\`json
+{
+  "reasoning": "Summary of which rules you checked and what you found",
+  "suggestions": [ ...file-level and/or PR-level violations... ]
+}
+\`\`\`
+
+IMPORTANT:
+- "ruleUuid" MUST be the exact UUID provided for the violated rule. This is required for tracking.
+- For PR-level rules, do NOT include "relevantFile", "relevantLinesStart", "relevantLinesEnd", "existingCode", or "improvedCode".
+- For file-level rules, ALL fields including file and lines are required.
 
 If no violations found, respond with \`{"reasoning": "Checked all rules, no violations found", "suggestions": []}\`.
   </OutputFormat>
 
   <Rules>
     <Rule>Check EVERY rule against the diffs and use tools to investigate further if needed.</Rule>
-    <Rule>For PR-level rules (e.g., "must have tests"), check the full list of changed files.</Rule>
-    <Rule>For file-level rules, check the diff of each applicable file.</Rule>
+    <Rule>For PR-level rules (e.g., "must have tests", "PR description requirements"), evaluate the PR as a whole — check the PR title, description, and the full list of changed files. Do NOT attach these to a specific file.</Rule>
+    <Rule>For file-level rules, check the diff of each applicable file and report with file path and line numbers.</Rule>
     <Rule>If a rule has a Reference file, use readFile to read it and understand the expected pattern before checking.</Rule>
     <Rule>Only report actual violations — not code that follows the rules.</Rule>
     <Rule>Include the rule title in the suggestionContent so the team knows which rule was violated.</Rule>

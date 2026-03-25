@@ -51,6 +51,7 @@ export interface ReviewAgentInput {
     changedFiles: FileChange[];
     remoteCommands: RemoteCommands;
     prNumber: number;
+    repositoryId?: string;
     repositoryFullName: string;
     languageResultPrompt: string;
     memoryRules?: Partial<IKodyRule>[];
@@ -158,6 +159,15 @@ export abstract class BaseCodeReviewAgentProvider {
                 model,
                 systemPrompt,
                 userPrompt,
+                agentName: identity.name,
+                telemetryMetadata: {
+                    organizationId:
+                        input.organizationAndTeamData?.organizationId,
+                    teamId: input.organizationAndTeamData?.teamId,
+                    pullRequestId: input.prNumber,
+                    repositoryId: input.repositoryId,
+                    provider: modelName,
+                },
                 remoteCommands: input.remoteCommands,
                 documentationSearchService: input.documentationSearchService,
                 documentationSearchOptions: {
@@ -165,7 +175,6 @@ export abstract class BaseCodeReviewAgentProvider {
                     byokConfig: byokConfig,
                 },
                 byokConfig: byokConfig,
-                agentName: identity.name,
                 gitHubToken: input.gitHubToken,
                 changedFiles: input.changedFiles,
                 prNumber: input.prNumber,
@@ -263,13 +272,16 @@ export abstract class BaseCodeReviewAgentProvider {
             const validFiles = new Set(
                 input.changedFiles.map((f) => f.filename),
             );
+            const isKodyRules = this.getCategoryLabel() === 'kody_rules';
             const rawSuggestions = (
                 agentResult.findings?.suggestions || []
             ).filter(
                 (s) =>
-                    s.relevantFile &&
                     s.suggestionContent &&
-                    validFiles.has(s.relevantFile),
+                    // Kody Rules PR-level suggestions may not have a relevantFile
+                    (isKodyRules
+                        ? !s.relevantFile || validFiles.has(s.relevantFile)
+                        : s.relevantFile && validFiles.has(s.relevantFile)),
             );
 
             const suggestions = rawSuggestions.map((s) => ({

@@ -17,7 +17,6 @@ const CODE_REVIEW_ROUTE_OVERRIDE_PATH_PREFIXES: Record<string, string[]> = {
         "isRequestChangesActive",
         "runOnDraft",
         "enableCommittableSuggestions",
-        "crossFileDependenciesAnalysis",
     ],
     "review-categories": ["reviewOptions", "codeReviewVersion"],
     "custom-prompts": ["v2PromptOverrides"],

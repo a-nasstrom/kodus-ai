@@ -258,17 +258,11 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
             dryRun,
         } = context;
 
-        // Sort and prioritize suggestions
-        const { sortedPrioritizedSuggestions, allDiscardedSuggestions } =
-            await this.suggestionService.sortAndPrioritizeSuggestions(
-                organizationAndTeamData,
-                codeReviewConfig,
-                pullRequest,
-                validSuggestionsToAnalyze,
-                discardedSuggestionsBySafeGuard,
-            );
+        // v3 pipeline: suggestions are already filtered by classify (level=issue/critical)
+        // and deduplicated by agent-review.stage. No additional severity/quantity filtering needed.
+        const sortedPrioritizedSuggestions = validSuggestionsToAnalyze;
+        const allDiscardedSuggestions = [...discardedSuggestionsBySafeGuard];
 
-        // Extract discarded-by-quantity suggestions and group by severity for fallback
         const fallbackSuggestionsBySeverity =
             this.groupDiscardedByQuantitySuggestions(allDiscardedSuggestions);
 

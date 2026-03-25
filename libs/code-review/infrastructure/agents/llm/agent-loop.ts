@@ -23,6 +23,46 @@ if (process.env.LANGCHAIN_TRACING_V2 === 'true') {
         // LangSmith wrapping not available — use original
     }
 }
+
+/** Re-export the LangSmith-wrapped generateText for use outside the agent loop. */
+export { generateText as tracedGenerateText };
+
+/**
+ * Standard metadata sent to LangSmith for every LLM call in the code review pipeline.
+ * Centralised here so adding a new field only requires changing one place.
+ */
+export interface LangSmithTelemetryMetadata {
+    organizationId?: string;
+    teamId?: string;
+    pullRequestId?: number;
+    repositoryId?: string;
+    provider?: string;
+}
+
+/**
+ * Build the `providerOptions.langsmith` object for a generateText call.
+ * Fields in `metadata` appear in the **Metadata tab** of LangSmith.
+ * `name` sets the run name.
+ */
+export function buildLangSmithProviderOptions(
+    runName: string,
+    meta?: LangSmithTelemetryMetadata,
+) {
+    return {
+        langsmith: {
+            name: runName,
+            metadata: meta
+                ? {
+                      organizationId: meta.organizationId,
+                      teamId: meta.teamId,
+                      pullRequestId: meta.pullRequestId,
+                      repositoryId: meta.repositoryId,
+                      provider: meta.provider,
+                  }
+                : undefined,
+        },
+    };
+}
 import { z } from 'zod';
 import { createLogger } from '@kodus/flow';
 import { EnhancedJSONParser } from '@kodus/flow';
@@ -66,6 +106,7 @@ export interface AgentLoopInput {
     documentationSearchOptions?: Record<string, unknown>;
     byokConfig?: BYOKConfig;
     agentName?: string; // e.g. 'kodus-bug-review-agent' — used for LangSmith trace identification
+    telemetryMetadata?: LangSmithTelemetryMetadata;
     maxSteps?: number;
     onStepFinish?: (event: any) => void;
     gitHubToken?: string; // For cross-repo reference reading
@@ -135,6 +176,11 @@ export async function runAgentLoop(
             abortSignal: abortController.signal,
             system: input.systemPrompt,
             prompt: input.userPrompt,
+            experimental_telemetry: { isEnabled: true, functionId: input.agentName ?? 'agent-loop' },
+            providerOptions: buildLangSmithProviderOptions(
+                input.agentName ?? 'agent-loop',
+                input.telemetryMetadata,
+            ),
             tools,
             stopWhen: stepCountIs(input.maxSteps || MAX_STEPS),
             // Last 2 steps: remove tools entirely to force text response.

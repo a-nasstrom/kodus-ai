@@ -20,7 +20,6 @@ ignorePaths:
 ignoredTitleKeywords: []
 baseBranches: []
 enableCommittableSuggestions: true
-crossFileDependenciesAnalysis: true
 
 # review categories
 codeReviewVersion: 'v2' # legacy | v2

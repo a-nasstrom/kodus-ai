@@ -48,6 +48,19 @@ export class CodeReviewPipelineObserver implements IPipelineObserver {
         context: CodeReviewPipelineContext,
         observerContext: PipelineObserverContext,
     ): Promise<void> {
+        // Clean up sandbox to prevent disk space leaks
+        if (context.sandboxHandle?.cleanup) {
+            try {
+                await context.sandboxHandle.cleanup();
+            } catch (err) {
+                this.logger.warn({
+                    message: 'Sandbox cleanup failed on pipeline finish',
+                    context: CodeReviewPipelineObserver.name,
+                    error: err,
+                });
+            }
+        }
+
         if (context.statusInfo.status === AutomationStatus.SKIPPED) {
             const reason = context.statusInfo.message;
 

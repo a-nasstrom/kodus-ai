@@ -225,9 +225,7 @@ describe('CreateFileCommentsStage', () => {
 
             const result = await (stage as any).executeStage(context);
 
-            expect(
-                mockSuggestionService.sortAndPrioritizeSuggestions,
-            ).toHaveBeenCalled();
+            // sortAndPrioritizeSuggestions is no longer called — v2 filtering removed
             expect(
                 mockCommentManagerService.createLineComments,
             ).toHaveBeenCalled();

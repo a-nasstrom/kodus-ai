@@ -32,7 +32,7 @@ import {
 import { MinimumLevelFilter } from "../suggestion-control/_components/minimum-level-filter";
 import { AutomatedReviewActive } from "./_components/automated-review-active";
 import { BaseBranches } from "./_components/base-branches";
-import { CrossfileDependenciesAnalysis } from "./_components/crossfile-dependencies-analysis";
+
 import { EnableCommittableSuggestions } from "./_components/enable-committable-suggestions";
 import { IgnorePaths } from "./_components/ignore-paths";
 import { IgnoredTitleKeywords } from "./_components/ignored-title-keywords";
@@ -234,11 +234,6 @@ export default function General() {
                 <AsyncBoundary errorVariant="minimal">
                     <div data-field-name="enableCommittableSuggestions">
                         <EnableCommittableSuggestions />
-                    </div>
-                </AsyncBoundary>
-                <AsyncBoundary errorVariant="minimal">
-                    <div data-field-name="crossFileDependenciesAnalysis">
-                        <CrossfileDependenciesAnalysis />
                     </div>
                 </AsyncBoundary>
                 <div data-field-name="ignorePaths">
