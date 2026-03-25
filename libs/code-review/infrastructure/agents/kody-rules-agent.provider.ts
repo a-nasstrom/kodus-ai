@@ -169,8 +169,7 @@ There are TWO formats depending on the rule scope:
   "improvedCode": "code that follows the rule",
   "oneSentenceSummary": "Brief: violates 'Rule Title'",
   "relevantLinesStart": 10,
-  "relevantLinesEnd": 15,
-  "severity": "critical|high|medium|low"
+  "relevantLinesEnd": 15
 }
 \`\`\`
 
@@ -179,8 +178,7 @@ There are TWO formats depending on the rule scope:
 {
   "ruleUuid": "uuid-of-the-violated-rule",
   "suggestionContent": "Violates rule 'Rule Title': description of the PR-level violation",
-  "oneSentenceSummary": "Brief: violates 'Rule Title'",
-  "severity": "critical|high|medium|low"
+  "oneSentenceSummary": "Brief: violates 'Rule Title'"
 }
 \`\`\`
 

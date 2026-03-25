@@ -476,7 +476,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             suggestionContent: s.suggestionContent || '',
                             oneSentenceSummary: s.oneSentenceSummary || '',
                             label: s.label as any || 'kody_rules',
-                            severity: s.severity as any,
+                            level: s.level,
+                            severity: s.level as any, // Use resolved severityLevel for badge display
                             brokenKodyRulesIds: s.brokenKodyRulesIds,
                             deliveryStatus: DeliveryStatus.NOT_SENT,
                         })),
