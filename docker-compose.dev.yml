@@ -203,7 +203,10 @@ services:
             - '15672:15672'
             - '15692:15692'
         environment:
-            - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit disk_free_limit 1000000000
+            - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-dev}
+            - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-devpass}
+            - RABBITMQ_HOSTNAME=${RABBITMQ_HOSTNAME:-rabbitmq}
+            - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit disk_free_limit 1000000000 -rabbit heartbeat 60
         volumes:
             - rabbitmq-data:/var/lib/rabbitmq
         restart: unless-stopped
@@ -225,11 +228,7 @@ services:
             nofile:
                 soft: 65536
                 hard: 65536
-        environment:
-            RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-dev}
-            RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-devpass}
-            RABBITMQ_HOSTNAME: ${RABBITMQ_HOSTNAME:-rabbitmq}
-            RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: '-rabbit heartbeat 60'
+
         command: /usr/local/bin/init-definitions.sh
 
     db_postgres:

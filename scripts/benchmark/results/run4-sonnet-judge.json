@@ -1,0 +1,514 @@
+{
+  "evaluated_at": "2026-03-25T20:20:16.185Z",
+  "tool": "kodus",
+  "summary": {
+    "total_prs": 20,
+    "total_golden_comments": 55,
+    "total_true_positives": 19,
+    "total_false_positives": 79,
+    "total_false_negatives": 36,
+    "precision": 0.194,
+    "recall": 0.345,
+    "f1": 0.248
+  },
+  "by_repo": {
+    "sentry": {
+      "prs": 4,
+      "golden_comments": 12,
+      "true_positives": 9,
+      "false_positives": 9,
+      "false_negatives": 3,
+      "precision": 0.5,
+      "recall": 0.75,
+      "f1": 0.6
+    },
+    "grafana-codex": {
+      "prs": 4,
+      "golden_comments": 10,
+      "true_positives": 1,
+      "false_positives": 15,
+      "false_negatives": 9,
+      "precision": 0.063,
+      "recall": 0.1,
+      "f1": 0.077
+    },
+    "discourse-cursor": {
+      "prs": 4,
+      "golden_comments": 13,
+      "true_positives": 3,
+      "false_positives": 27,
+      "false_negatives": 10,
+      "precision": 0.1,
+      "recall": 0.231,
+      "f1": 0.14
+    },
+    "cal.com": {
+      "prs": 4,
+      "golden_comments": 13,
+      "true_positives": 5,
+      "false_positives": 18,
+      "false_negatives": 8,
+      "precision": 0.217,
+      "recall": 0.385,
+      "f1": 0.278
+    },
+    "keycloak": {
+      "prs": 4,
+      "golden_comments": 7,
+      "true_positives": 1,
+      "false_positives": 10,
+      "false_negatives": 6,
+      "precision": 0.091,
+      "recall": 0.143,
+      "f1": 0.111
+    }
+  },
+  "by_severity": {
+    "Critical": {
+      "total": 3,
+      "found": 1,
+      "recall": 0.333
+    },
+    "High": {
+      "total": 15,
+      "found": 8,
+      "recall": 0.533
+    },
+    "Medium": {
+      "total": 21,
+      "found": 7,
+      "recall": 0.333
+    },
+    "Low": {
+      "total": 16,
+      "found": 3,
+      "recall": 0.188
+    }
+  },
+  "evaluations": [
+    {
+      "pr_title": "Enhanced Pagination Performance for High-Volume Audit Logs",
+      "repo": "sentry",
+      "source_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+      "tool": "kodus",
+      "true_positives": 3,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "precision": 0.75,
+      "recall": 1,
+      "f1": 0.857,
+      "matches": [
+        {
+          "golden_comment": "Django querysets do not support negative slicing",
+          "candidate_comment": "WHAT: User-controlled cursor offset is passed to QuerySet slicing without non-negative validation when is_prev is true. WHY: Allows an attacker to trigger a Django AssertionError and cause a 500 Internal Server Error by providing a forged cursor with a negative offset (e.g., ?cursor=0:-1:1). HOW: Ensure offset is always non-negative by applying max(0, offset) regardless of the is_prev state. **Also found in:** - `src/sentry/api/paginator.py:877-882` - `src/sentry/api/paginator.py:179-184` start_",
+          "reasoning": "Both comments identify the same core issue: Django querysets cannot handle negative slicing operations. The golden comment states this directly, while the candidate provides more detail about how negative offsets in cursor-based pagination can cause Django AssertionErrors and 500 errors. The candidate specifically mentions that negative offset values trigger Django's inability to handle negative slicing, which is exactly what the golden comment describes.",
+          "match": true,
+          "confidence": 0.95
+        },
+        {
+          "golden_comment": "When requests are authenticated with API keys or org auth tokens (which have user_id=None), organization_context.member is None. Line 71 attempts to access organization_context.member.has_global_access without checking if member is None, causing an AttributeError crash when optimized_pagination=true is used, even though the request passed all permission checks with valid org:write scope.",
+          "candidate_comment": "WHAT: organization_context.member is accessed without a null check when checking for global access. WHY: Triggers an AttributeError and 500 error for superusers who are not members of the organization they are attempting to view. HOW: Add a null check for organization_context.member before accessing its attributes. enable_advanced = request.user.is_superuser or (organization_context.member and organization_context.member.has_global_access)",
+          "reasoning": "Both comments identify the same core issue: accessing organization_context.member.has_global_access without checking if member is None first, which causes an AttributeError. The golden comment focuses on API key/org token authentication scenarios where user_id=None, while the candidate focuses on superusers not being organization members. Despite different triggering scenarios, both point to the identical code bug - the missing null check before accessing member attributes on line 71.",
+          "match": true,
+          "confidence": 0.9
+        },
+        {
+          "golden_comment": "get_item_key assumes a numeric key, but the paginator is used with order_by=-datetime in the audit logs endpoint; calling math.floor/ceil on a datetime will raise a TypeError.",
+          "candidate_comment": "WHAT: math.floor and math.ceil are called directly on a datetime object in OptimizedCursorPaginator.get_item_key without numeric conversion. WHY: Causes a TypeError and 500 Internal Server Error when the optimized_pagination flag is used on the audit logs endpoint, as audit logs use datetime keys. HOW: Convert the datetime value to a float timestamp before applying math functions, similar to the implementation in DateTimePaginator. **Also found in:** - `src/sentry/api/paginator.py:839-841` def g",
+          "reasoning": "Both comments identify the exact same underlying issue: math.floor/ceil are being called on datetime objects in the paginator code, which causes a TypeError. The golden comment mentions this happens in audit logs endpoint with order_by=-datetime, while the candidate provides more technical detail about the specific methods and suggests a solution. They're describing the same bug.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 3/3 bugs. 1 false positives."
+    },
+    {
+      "pr_title": "Enhanced Pagination Performance for High-Volume Audit Logs",
+      "repo": "sentry",
+      "source_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+      "tool": "kodus",
+      "true_positives": 3,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "precision": 0.75,
+      "recall": 1,
+      "f1": 0.857,
+      "matches": [
+        {
+          "golden_comment": "Django querysets do not support negative slicing",
+          "candidate_comment": "WHAT: User-controlled cursor offset is passed to QuerySet slicing without non-negative validation when is_prev is true. WHY: Allows an attacker to trigger a Django AssertionError and cause a 500 Internal Server Error by providing a forged cursor with a negative offset (e.g., ?cursor=0:-1:1). HOW: Ensure offset is always non-negative by applying max(0, offset) regardless of the is_prev state. **Also found in:** - `src/sentry/api/paginator.py:877-882` - `src/sentry/api/paginator.py:179-184` start_",
+          "reasoning": "Both comments identify the same core issue: Django querysets cannot handle negative slicing operations. The golden comment states this directly, while the candidate provides more detail about how negative offsets in cursor-based pagination can cause Django AssertionErrors and 500 errors. The candidate specifically mentions that negative offset values trigger Django's inability to handle negative slicing, which is exactly what the golden comment describes.",
+          "match": true,
+          "confidence": 0.95
+        },
+        {
+          "golden_comment": "When requests are authenticated with API keys or org auth tokens (which have user_id=None), organization_context.member is None. Line 71 attempts to access organization_context.member.has_global_access without checking if member is None, causing an AttributeError crash when optimized_pagination=true is used, even though the request passed all permission checks with valid org:write scope.",
+          "candidate_comment": "WHAT: organization_context.member is accessed without a null check when checking for global access. WHY: Triggers an AttributeError and 500 error for superusers who are not members of the organization they are attempting to view. HOW: Add a null check for organization_context.member before accessing its attributes. enable_advanced = request.user.is_superuser or (organization_context.member and organization_context.member.has_global_access)",
+          "reasoning": "Both comments identify the same core issue: accessing organization_context.member.has_global_access without checking if member is None first, which causes an AttributeError. The golden comment focuses on API key/org token authentication scenarios where user_id=None, while the candidate focuses on superusers not being organization members. Despite different triggering scenarios, both point to the identical code bug - the missing null check before accessing member attributes on line 71.",
+          "match": true,
+          "confidence": 0.9
+        },
+        {
+          "golden_comment": "get_item_key assumes a numeric key, but the paginator is used with order_by=-datetime in the audit logs endpoint; calling math.floor/ceil on a datetime will raise a TypeError.",
+          "candidate_comment": "WHAT: math.floor and math.ceil are called directly on a datetime object in OptimizedCursorPaginator.get_item_key without numeric conversion. WHY: Causes a TypeError and 500 Internal Server Error when the optimized_pagination flag is used on the audit logs endpoint, as audit logs use datetime keys. HOW: Convert the datetime value to a float timestamp before applying math functions, similar to the implementation in DateTimePaginator. **Also found in:** - `src/sentry/api/paginator.py:839-841` def g",
+          "reasoning": "Both comments identify the exact same underlying issue: math.floor/ceil are being called on datetime objects in the paginator code, which causes a TypeError. The golden comment mentions this happens in audit logs endpoint with order_by=-datetime, while the candidate provides more technical detail about the specific methods and suggests a solution. They're describing the same bug.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 3/3 bugs. 1 false positives."
+    },
+    {
+      "pr_title": "feat(upsampling) - Support upsampled error count with performance optimizations",
+      "repo": "sentry",
+      "source_url": "https://github.com/getsentry/sentry/pull/94376",
+      "tool": "kodus",
+      "true_positives": 2,
+      "false_positives": 5,
+      "false_negatives": 1,
+      "precision": 0.286,
+      "recall": 0.667,
+      "f1": 0.4,
+      "matches": [
+        {
+          "golden_comment": "Using Python’s built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won’t match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
+          "candidate_comment": "WHAT: The cache key uses Python's built-in `hash()` function on a tuple of project IDs. WHY: Python 3 hash randomization makes this value inconsistent across different worker processes, causing the shared Redis cache to have a near-zero hit rate while being polluted with redundant keys. HOW: Use a stable hashing algorithm like `hashlib.md5` or a canonical string representation if caching is truly necessary. project_key = hashlib.md5(\",\".join(map(str, sorted(snuba_params.project_ids))).encode()).",
+          "reasoning": "Both comments identify the exact same underlying issue: Python's built-in hash() function is non-deterministic across processes due to hash randomization, causing cache key mismatches in a multi-process environment. The golden comment mentions invalidate_upsampling_cache may fail, while the candidate mentions Redis cache hit rate issues and key pollution - these are different manifestations of the same root problem. Both suggest using deterministic alternatives.",
+          "match": true,
+          "confidence": 0.95
+        },
+        {
+          "golden_comment": "The upsampling eligibility check passes the outer dataset instead of the actual dataset used by scoped_dataset. In paths where the query ultimately runs against discover (e.g., dashboard split) while the original dataset is metrics, upsampling may be skipped even when all projects are allowlisted.",
+          "candidate_comment": "The `_get_event_stats` function uses the `dataset` variable from the outer scope instead of the `scoped_dataset` passed as an argument. This logic error causes upsampling transformations to be applied to transaction datasets when the original request was for the `discover` dataset, resulting in incorrect zeroed-out counts. should_upsample = is_errors_query_for_error_upsampled_projects( snuba_params, organization, scoped_dataset, request",
+          "reasoning": "Both comments identify the same core issue: the upsampling eligibility check uses the wrong dataset variable. The golden comment mentions 'passes the outer dataset instead of the actual dataset used by scoped_dataset' and the candidate identifies 'uses the dataset variable from the outer scope instead of the scoped_dataset passed as an argument'. Both describe the same bug where the wrong dataset parameter is being used for upsampling decisions, though they describe slightly different consequences.",
+          "match": true,
+          "confidence": 0.85
+        }
+      ],
+      "comment": "Found 2/3 bugs. 5 false positives. Missed: \"sample_rate = 0.0 is falsy and skipped...\""
+    },
+    {
+      "pr_title": "GitHub OAuth Security Enhancement",
+      "repo": "sentry",
+      "source_url": "https://github.com/getsentry/sentry/pull/67876",
+      "tool": "kodus",
+      "true_positives": 1,
+      "false_positives": 2,
+      "false_negatives": 2,
+      "precision": 0.333,
+      "recall": 0.333,
+      "f1": 0.333,
+      "matches": [
+        {
+          "golden_comment": "OAuth state uses pipeline.signature (static) instead of a per-request random value",
+          "candidate_comment": "The `state` parameter in `OAuthLoginView` uses the predictable `pipeline.signature` instead of a cryptographically secure random value tied to the user session. This allows an attacker to perform an OAuth CSRF attack, potentially linking their own GitHub installation to a victim's Sentry organization by crafting a callback URL with a valid `code` and the known `state` hash. if not request.GET.get(\"state\"): state = secrets.token_hex() pipeline.bind_state(\"oauth_state\", state) redirect_uri = absol",
+          "reasoning": "Both the golden comment and candidate issue identify the exact same security vulnerability: the OAuth state parameter uses a static/predictable value (pipeline.signature) instead of a cryptographically secure random value. The candidate provides more technical detail about the CSRF attack vector and potential impact, but the core issue is identical - using a predictable state value in OAuth flow instead of a random one.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 1/3 bugs. 2 false positives. Missed: \"Null reference if github_authenticated_user state is missing...\", \"The code attempts to access integration.metadata[sender][log...\""
+    },
+    {
+      "pr_title": "Anonymous: Add configurable device limit",
+      "repo": "grafana-codex",
+      "source_url": "https://github.com/grafana/grafana/pull/79265",
+      "tool": "kodus",
+      "true_positives": 1,
+      "false_positives": 4,
+      "false_negatives": 4,
+      "precision": 0.2,
+      "recall": 0.2,
+      "f1": 0.2,
+      "matches": [
+        {
+          "golden_comment": "Anonymous authentication now fails entirely if anonDeviceService.TagDevice returns ErrDeviceLimitReached. Previously, device tagging was asynchronous and non-blocking. This change prevents anonymous users from authenticating when the device limit is reached.",
+          "candidate_comment": "Anonymous authentication fails when the device limit is reached, allowing a Denial of Service (DoS) attack. An unauthenticated attacker can spoof arbitrary device IDs to exhaust the limit and block access for all other anonymous users because the limit is enforced by blocking the authentication process. if err := a.anonDeviceService.TagDevice(ctx, httpReqCopy, anonymous.AnonDeviceUI); err != nil { a.log.Warn(\"Failed to tag anonymous session\", \"error\", err)",
+          "reasoning": "Both comments identify the same core issue: anonymous authentication now fails when the device limit is reached, whereas it previously worked because device tagging was non-blocking. The candidate adds security implications (DoS attack potential) but correctly identifies the same underlying bug - that the authentication process is now blocked by device limit enforcement.",
+          "match": true,
+          "confidence": 0.9
+        }
+      ],
+      "comment": "Found 1/5 bugs. 4 false positives. Missed: \"Race condition: Multiple concurrent requests could pass the ...\", \"This call won’t compile: dbSession.Exec(args...) is given a ...\", \"Returning ErrDeviceLimitReached when no rows were updated is...\", \"Time window calculation inconsistency: Using device.UpdatedA...\""
+    },
+    {
+      "pr_title": "AuthZService: improve authz caching",
+      "repo": "grafana-codex",
+      "source_url": "https://github.com/grafana/grafana/pull/103633",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 5,
+      "false_negatives": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/2 bugs. 5 false positives. Missed: \"The Check operation exhibits asymmetric cache trust logic: c...\", \"The test comment says the cached permissions 'allow access',...\""
+    },
+    {
+      "pr_title": "Plugins: Chore: Renamed instrumentation middleware to metrics middleware",
+      "repo": "grafana-codex",
+      "source_url": "https://github.com/grafana/grafana/pull/76186",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 4,
+      "false_negatives": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/2 bugs. 4 false positives. Missed: \"The ContextualLoggerMiddleware methods (QueryData, CallResou...\", \"The traceID is no longer logged for plugin requests. During ...\""
+    },
+    {
+      "pr_title": "Advanced Query Processing Architecture",
+      "repo": "grafana-codex",
+      "source_url": "https://github.com/grafana/grafana/pull/107534",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 2,
+      "false_negatives": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/1 bugs. 2 false positives. Missed: \"The applyTemplateVariables method is called with request.fil...\""
+    },
+    {
+      "pr_title": "FEATURE: automatically downsize large images",
+      "repo": "discourse-cursor",
+      "source_url": "https://github.com/discourse/discourse/commit/ffbaf8c54269df2ce510de91245760fddce09896",
+      "tool": "kodus",
+      "true_positives": 2,
+      "false_positives": 5,
+      "false_negatives": 1,
+      "precision": 0.286,
+      "recall": 0.667,
+      "f1": 0.4,
+      "matches": [
+        {
+          "golden_comment": "Hardcoding maxSizeKB = 10 * 1024 ignores Discourse.SiteSettings['max_' + type + '_size_kb'], so the client-side limit can diverge from server-side and per-type settings (also applies to the 413 handler below).",
+          "candidate_comment": "Hardcoded 10MB limit in JavaScript bypasses SiteSettings. This allows large files to be uploaded regardless of admin configuration, shifting the validation burden from a cheap client-side check to expensive server-side downsizing. **Also found in:** - `app/assets/javascripts/discourse/lib/utilities.js:181-184` var maxSizeKB = Discourse.SiteSettings['max_' + type + '_size_kb'] || (10 * 1024); if (fileSizeKB > maxSizeKB) {",
+          "reasoning": "Both comments identify the same core issue: hardcoding maxSizeKB = 10 * 1024 bypasses the proper SiteSettings configuration. The golden comment focuses on how this ignores the dynamic site settings and can cause client-server divergence. The candidate issue describes the same problem - hardcoded limits bypassing admin configuration - though it emphasizes the performance impact of shifting validation to server-side. Both point to the same underlying bug where the hardcoded value overrides the intended configuration system.",
+          "match": true,
+          "confidence": 0.9
+        },
+        {
+          "golden_comment": "Passing 80% as the dimensions can fail for animated GIFs when allow_animated_thumbnails is true, since the animated path uses gifsicle --resize-fit which expects WxH geometry, not a percentage; downsizing would then silently fail.",
+          "candidate_comment": "Using percentages in `dimensions` for `gifsicle` will likely cause command failure as it expects `WIDTHxHEIGHT` format for `--resize-fit`. # For percentages, gifsicle should use --scale dimensions.to_s.end_with?('%') ? \"--scale #{dimensions.to_f / 100.0}\" : \"--resize-fit #{dimensions}\"",
+          "reasoning": "Both comments identify the same core issue: using percentage dimensions (like '80%') with gifsicle's --resize-fit flag will fail because gifsicle expects WIDTHxHEIGHT format, not percentages. The golden comment focuses on the context of animated GIFs and silent failure, while the candidate provides a technical solution, but they're addressing the identical underlying problem.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 2/3 bugs. 5 false positives. Missed: \"The downsize method is defined twice. The second definition,...\""
+    },
+    {
+      "pr_title": "FEATURE: per-topic unsubscribe option in emails",
+      "repo": "discourse-cursor",
+      "source_url": "https://github.com/discourse/discourse/commit/6669a2d94d76eea3b99b8c476d12b1eb66726b07",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 5,
+      "false_negatives": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/2 bugs. 5 false positives. Missed: \"logic: Potential nil pointer exception - if no TopicUser rec...\", \"Typo in property name: 'stopNotificiationsText' should be 's...\""
+    },
+    {
+      "pr_title": "Add comprehensive email validation for blocked users",
+      "repo": "discourse-cursor",
+      "source_url": "https://github.com/discourse/discourse/commit/5f8a130277dbddc95d133cd2832be639baf89213",
+      "tool": "kodus",
+      "true_positives": 1,
+      "false_positives": 5,
+      "false_negatives": 1,
+      "precision": 0.167,
+      "recall": 0.5,
+      "f1": 0.25,
+      "matches": [
+        {
+          "golden_comment": "BlockedEmail.should_block_email? method has side effects during a read operation - it updates statistics even when just checking if an email should be blocked. This could cause race conditions in concurrent environments and makes the method name misleading.",
+          "candidate_comment": "BlockedEmail.should_block? performs a synchronous database update (record.save) within the validation cycle. **Also found in:** - `app/models/blocked_email.rb:13-17` - `app/models/blocked_email.rb:15-17` def self.should_block?(email)",
+          "reasoning": "Both comments identify the same core issue: the should_block method performs database updates (side effects) during what should be a read-only validation operation. The golden comment mentions 'updates statistics' while the candidate mentions 'synchronous database update (record.save)', but both are describing the same problematic behavior of having side effects in a method that appears to be a simple check.",
+          "match": true,
+          "confidence": 0.9
+        }
+      ],
+      "comment": "Found 1/2 bugs. 5 false positives. Missed: \"Regex pattern @(#{domains}) only matches domain suffixes, no...\""
+    },
+    {
+      "pr_title": "Enhance embed URL handling and validation system",
+      "repo": "discourse-cursor",
+      "source_url": "https://github.com/discourse/discourse/commit/4f8aed295a29954023b2849c060ef4fb299d1b5d",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 12,
+      "false_negatives": 6,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/6 bugs. 12 false positives. Missed: \"SSRF vulnerability using open(url) without validation...\", \"The current origin validation using indexOf is insufficient ...\", \"postMessage targetOrigin should be the origin (scheme+host+p...\", \"The code sets X-Frame-Options: ALLOWALL which completely dis...\", \"The TopicEmbed.import method is susceptible to a NoMethodErr...\", \"The ERB block closes with end if, which is invalid Ruby/ERB ...\""
+    },
+    {
+      "pr_title": "Async import of the appStore packages",
+      "repo": "cal.com",
+      "source_url": "https://github.com/calcom/cal.com/pull/8087",
+      "tool": "kodus",
+      "true_positives": 1,
+      "false_positives": 3,
+      "false_negatives": 1,
+      "precision": 0.25,
+      "recall": 0.5,
+      "f1": 0.333,
+      "matches": [
+        {
+          "golden_comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+          "candidate_comment": "Errors in the async callback of forEach will not be caught by the surrounding try-catch block, and the deletions are not awaited before sending emails. Use a for...of loop or await Promise.all() to ensure that calendar/video event deletions are completed and any errors are properly handled before proceeding to send the reschedule email. **Also found in:** - `packages/app-store/wipemycalother/lib/reschedule.ts:124-131` - `packages/trpc/server/routers/viewer/bookings.tsx:553-559` - `packages/trpc/",
+          "reasoning": "Both comments identify the same core issue: using forEach with async callbacks causes problems because the async operations are not properly awaited, leading to unhandled errors and incomplete execution. The candidate correctly identifies that errors won't be caught by try-catch blocks and suggests the same solutions (for...of loop or Promise.all). While the golden comment provides more technical detail about 'fire-and-forget' behavior and race conditions, both are describing the same fundamental async/await problem with forEach.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 1/2 bugs. 3 false positives. Missed: \"Consider adding try-catch around the await to handle import ...\""
+    },
+    {
+      "pr_title": "feat: 2fa backup codes",
+      "repo": "cal.com",
+      "source_url": "https://github.com/calcom/cal.com/pull/10600",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 4,
+      "false_negatives": 4,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/4 bugs. 4 false positives. Missed: \"The exported function TwoFactor handles backup codes and is ...\", \"Error message mentions 'backup code login' but this is a dis...\", \"Backup code validation is case-sensitive due to the use of i...\", \"Because backupCodes are decrypted and mutated in memory befo...\""
+    },
+    {
+      "pr_title": "fix: handle collective multiple host on destinationCalendar",
+      "repo": "cal.com",
+      "source_url": "https://github.com/calcom/cal.com/pull/10967",
+      "tool": "kodus",
+      "true_positives": 3,
+      "false_positives": 6,
+      "false_negatives": 2,
+      "precision": 0.333,
+      "recall": 0.6,
+      "f1": 0.428,
+      "matches": [
+        {
+          "golden_comment": "Potential null reference if mainHostDestinationCalendar is undefined if evt.destinationCalendar is null or an empty array ",
+          "candidate_comment": "Null pointer dereference occurs when `evt.destinationCalendar` is null or empty and the location is set to Google Meet. **Also found in:** - `packages/core/EventManager.ts:118-120` const [mainHostDestinationCalendar] = evt.destinationCalendar ?? []; if (evt.location === MeetLocationType && mainHostDestinationCalendar?.integration !== \"google_calendar\") {",
+          "reasoning": "Both comments identify the same underlying issue: potential null/undefined reference when evt.destinationCalendar is null or empty, leading to mainHostDestinationCalendar being undefined. The candidate correctly identifies this as a null pointer dereference and provides the specific code location and context where this occurs.",
+          "match": true,
+          "confidence": 0.95
+        },
+        {
+          "golden_comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+          "candidate_comment": "Inverted logic for `IS_TEAM_BILLING_ENABLED` allows users to reserve organization slugs without paying and prevents slug creation in non-billing environments. **Also found in:** - `packages/trpc/server/routers/viewer/organizations/create.handler.ts:151-151` ...(!IS_TEAM_BILLING_ENABLED ? { slug } : {}), ...(IS_TEAM_BILLING_ENABLED ? { requestedSlug: slug } : {}),",
+          "reasoning": "Both comments identify the same core issue: inverted logic in the IS_TEAM_BILLING_ENABLED condition that causes slug to be set when billing is enabled (instead of disabled) and requestedSlug to also be set when billing is enabled, resulting in both properties being set when billing is on and neither when billing is off. The candidate also correctly identifies the security implication of allowing slug reservation without payment.",
+          "match": true,
+          "confidence": 0.95
+        },
+        {
+          "golden_comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+          "candidate_comment": "Updating the Calendar interface's createEvent signature causes type errors in all implementations that were not updated (LarkCalendarService, Office365CalendarService, BaseCalendarService, etc.). These implementations will fail to compile as they do not accept the required credentialId parameter. 221:   createEvent(event: CalendarEvent, credentialId?: number): Promise<NewCalendarEventType>;",
+          "reasoning": "Both comments identify the exact same issue: the Calendar interface's createEvent method signature was updated to require a credentialId parameter, but the implementing classes (Lark, Office365, etc.) were not updated accordingly, causing a contract violation/compilation failure. The candidate provides more technical detail about the type errors and compilation failures, while the golden comment is more concise, but they describe the identical underlying problem.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 3/5 bugs. 6 false positives. Missed: \"The optional chaining on mainHostDestinationCalendar?.integr...\", \"Logic error: when externalCalendarId is provided, you're sea...\""
+    },
+    {
+      "pr_title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+      "repo": "cal.com",
+      "source_url": "https://github.com/calcom/cal.com/pull/22345",
+      "tool": "kodus",
+      "true_positives": 1,
+      "false_positives": 5,
+      "false_negatives": 1,
+      "precision": 0.167,
+      "recall": 0.5,
+      "f1": 0.25,
+      "matches": [
+        {
+          "golden_comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+          "candidate_comment": "Use the pre-computed `teamIds` variable (which includes the organization ID) when fetching `userIdsFromOrg` instead of re-mapping `teamsFromOrg`. const userIdsFromOrg = teamsFromOrg.length > 0 ? await MembershipRepository.findAllByTeamIds({ }).then((members) => members.map((m) => m.userId))",
+          "reasoning": "Both comments identify the same core issue: the conditional check `teamsFromOrg.length > 0` can exclude organization-level members when there are no child teams. The golden comment suggests using teamIds (which includes orgId) or removing the guard, while the candidate suggests using the pre-computed teamIds variable instead of re-mapping teamsFromOrg. Both are addressing the same underlying problem of potentially missing org-only members due to the conditional logic.",
+          "match": true,
+          "confidence": 0.85
+        }
+      ],
+      "comment": "Found 1/2 bugs. 5 false positives. Missed: \"In getBaseConditions(), the else if (filterConditions) and f...\""
+    },
+    {
+      "pr_title": "Fixing Re-authentication with passkeys",
+      "repo": "keycloak",
+      "source_url": "https://github.com/keycloak/keycloak/pull/41249",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 4,
+      "false_negatives": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "Found 0/2 bugs. 4 false positives. Missed: \"ConditionalPasskeysEnabled() called without UserModel parame...\", \"With isConditionalPasskeysEnabled(UserModel user) requiring ...\""
+    },
+    {
+      "pr_title": "Add caching support for IdentityProviderStorageProvider.getForLogin operations",
+      "repo": "keycloak",
+      "source_url": "https://github.com/keycloak/keycloak/pull/32918",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "No candidates. Missed all 2 golden comments."
+    },
+    {
+      "pr_title": "Add AuthzClientCryptoProvider for authorization client cryptographic operations",
+      "repo": "keycloak",
+      "source_url": "https://github.com/keycloak/keycloak/pull/33832",
+      "tool": "kodus",
+      "true_positives": 1,
+      "false_positives": 6,
+      "false_negatives": 1,
+      "precision": 0.143,
+      "recall": 0.5,
+      "f1": 0.222,
+      "matches": [
+        {
+          "golden_comment": "Returns wrong provider (default keystore instead of BouncyCastle)",
+          "candidate_comment": "The getBouncyCastleProvider method returns the default JVM provider instead of the BouncyCastle provider. This violates the interface contract and can cause failures in components that rely on BouncyCastle-specific algorithms or features when this provider is active.",
+          "reasoning": "Both comments identify the exact same issue: the getBouncyCastleProvider method is returning the default JVM/keystore provider instead of the BouncyCastle provider. The candidate provides more detail about the consequences, but the core problem is identical.",
+          "match": true,
+          "confidence": 0.95
+        }
+      ],
+      "comment": "Found 1/2 bugs. 6 false positives. Missed: \"Dead code exists where ASN1Encoder instances are created and...\""
+    },
+    {
+      "pr_title": "Add rolling-updates feature flag and compatibility framework",
+      "repo": "keycloak",
+      "source_url": "https://github.com/keycloak/keycloak/pull/36882",
+      "tool": "kodus",
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "matches": [],
+      "comment": "No candidates. Missed all 1 golden comments."
+    }
+  ]
+}

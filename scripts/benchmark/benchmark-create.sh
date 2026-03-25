@@ -28,10 +28,10 @@ echo "  ✓ Pipeline cleaned"
 
 # Restart worker
 echo "▸ Restarting worker..."
-docker exec 1cf0a7d802e5_kodus_worker rm -rf /usr/src/app/node_modules/.cache/webpack 2>/dev/null || true
-docker restart 1cf0a7d802e5_kodus_worker > /dev/null 2>&1
+docker exec kodus_worker rm -rf /usr/src/app/node_modules/.cache/webpack 2>/dev/null || true
+docker restart kodus_worker > /dev/null 2>&1
 sleep 25
-COMPILED=$(docker logs 1cf0a7d802e5_kodus_worker 2>&1 | grep "compiled" | tail -1)
+COMPILED=$(docker logs kodus_worker 2>&1 | grep "compiled" | tail -1)
 if echo "$COMPILED" | grep -q "successfully"; then
   echo "  ✓ Worker compiled successfully"
 else
@@ -52,4 +52,4 @@ echo "Wait for reviews to finish, then run:"
 echo "  ./scripts/benchmark/benchmark-evaluate.sh $TOTAL_PRS"
 echo ""
 echo "Check progress with:"
-echo "  docker logs 1cf0a7d802e5_kodus_worker --since 30s 2>&1 | grep -c AGENT"
+echo "  docker logs kodus_worker --since 30s 2>&1 | grep -c AGENT"

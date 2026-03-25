@@ -63,7 +63,7 @@ const mongoCmd = (query) => {
   ).trim();
 };
 
-const results = { all: [], issueOnly: [], issueCritical: [] };
+const results = { all: [], issueOnly: [], issueCritical: [], withWarning: [] };
 const golden = [];
 
 for (const repo of repos) {
@@ -74,7 +74,7 @@ for (const repo of repos) {
 
     let prData;
     try {
-      const query = 'JSON.stringify(db.pullRequests.findOne({headBranchRef: \"' + bpr.head + '\"}, {number: 1, files: 1}))';
+      const query = 'JSON.stringify(db.pullRequests.find({headBranchRef: \"' + bpr.head + '\"}, {number: 1, files: 1}).sort({createdAt: -1}).limit(1).toArray()[0])';
       const raw = mongoCmd(query);
       prData = JSON.parse(raw);
     } catch { prData = null; }

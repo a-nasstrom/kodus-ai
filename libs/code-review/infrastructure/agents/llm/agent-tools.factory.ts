@@ -119,7 +119,7 @@ export function buildAgentTools(
                         const excludeTestsArgs = excludeTests
                             ? ` --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*__tests__*'`
                             : '';
-                        const modeArg = namesOnly ? ' -l' : ' -n -C 3';
+                        const modeArg = namesOnly ? ' -l' : ' -n -C 5';
                         const cmd = `rg '${safePattern}'${globArg}${excludeTestsArgs}${modeArg} '${safePath}'`;
                         const { stdout, exitCode } =
                             await remoteCommands.exec(cmd);
@@ -176,7 +176,9 @@ export function buildAgentTools(
         ),
 
         readFile: mkTool(
-            'Read file contents with injected line numbers. Always use startLine/endLine — line numbers come from two sources: (1) diff @@ markers for changed code, (2) grep results ("file:lineNumber:content") for callers and other files. Only read the full file when it is small (<150 lines). Never read a whole file to find a specific method — grep first to get the line number.',
+            'Read file contents with injected line numbers. Always use startLine/endLine from grep results or diff @@ markers. ' +
+                'Rule of thumb: readFile(file, startLine=grepLine-20, endLine=grepLine+30) gives enough context to understand a caller. ' +
+                'Only read the full file when it is small (<150 lines). Never read a whole file to find a method — grep first.',
             {
                 type: 'object',
                 properties: {

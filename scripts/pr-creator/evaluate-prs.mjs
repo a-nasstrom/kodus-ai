@@ -1,4 +1,5 @@
-import fs from 'fs/promises';
+import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { execSync } from 'child_process';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -33,7 +34,7 @@ async function main() {
     console.log("📊 KODUS AI - AVALIAÇÃO DE ASSERTIVIDADE DOS PRS");
     console.log("==================================================\n");
 
-    const prsData = JSON.parse(await fs.readFile('prs.json', 'utf-8'));
+    const prsData = JSON.parse(await fsPromises.readFile('prs.json', 'utf-8'));
     const goldenMap = {};
     for (const item of prsData.prs) {
         if (!goldenMap[item.repo]) goldenMap[item.repo] = {};
