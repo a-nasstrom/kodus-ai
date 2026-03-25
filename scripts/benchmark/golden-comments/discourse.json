@@ -172,11 +172,11 @@
         "severity": "Medium"
       },
       {
-        "comment": "record_for_host compares lower(host) = ? but does not normalize the parameter's case, so mixed-case referer hosts may fail to match even though comparison intends to be case-insensitive.",
+        "comment": "record_for_host compares lower(host) = ? but does not normalize the parameter’s case, so mixed‑case referer hosts may fail to match even though comparison intends to be case‑insensitive.",
         "severity": "Medium"
       },
       {
-        "comment": "Because this migration inserts embeddable_hosts rows with raw SQL, any existing embeddable_hosts values that include http:// or /https:// or path segments won't go through the EmbeddableHost model's normalization, so the new host lookup (which compares only the bare host) may fail for migrated data. Consider ensuring that migrated hosts are normalized to the same format as newly created EmbeddableHost records so existing embedding configurations keep working.",
+        "comment": "Because this migration inserts embeddable_hosts rows with raw SQL, any existing embeddable_hosts values that include http:// or /https:// or path segments won’t go through the EmbeddableHost model’s normalization, so the new host lookup (which compares only the bare host) may fail for migrated data. Consider ensuring that migrated hosts are normalized to the same format as newly created EmbeddableHost records so existing embedding configurations keep working.",
         "severity": "High"
       }
     ]

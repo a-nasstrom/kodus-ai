@@ -12,7 +12,7 @@
         "severity": "Medium"
       },
       {
-        "comment": "This call won't compile: dbSession.Exec(args...) is given a []interface{} where the first element is the query, but Exec's signature requires a first parameter of type string (not an interface{} splat).",
+        "comment": "This call won’t compile: dbSession.Exec(args...) is given a []interface{} where the first element is the query, but Exec’s signature requires a first parameter of type string (not an interface{} splat).",
         "severity": "Medium"
       },
       {

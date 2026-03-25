@@ -2,11 +2,8 @@
   {
     "pr_title": "Enhanced Pagination Performance for High-Volume Audit Logs",
     "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+    "az_comment": "reviewed commit is not in the repo",
     "comments": [
-      {
-        "comment": "Importing non-existent OptimizedCursorPaginator",
-        "severity": "Low"
-      },
       {
         "comment": "Django querysets do not support negative slicing",
         "severity": "High"
@@ -25,6 +22,7 @@
     "pr_title": "Optimize spans buffer insertion with eviction during insert",
     "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
     "original_url": "https://github.com/getsentry/sentry/pull/92393",
+    "az_comment": "reviewed commit is not in the repo",
     "comments": [
       {
         "comment": "OptimizedCursorPaginator negative-offset branch slices QuerySet with a negative start index",
@@ -44,13 +42,14 @@
     "pr_title": "feat(upsampling) - Support upsampled error count with performance optimizations",
     "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
     "original_url": "https://github.com/getsentry/sentry/pull/94376",
+    "az_comment": "reviewed commit is not in the repo",
     "comments": [
       {
         "comment": "sample_rate = 0.0 is falsy and skipped",
         "severity": "Low"
       },
       {
-        "comment": "Using Python's built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won't match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
+        "comment": "Using Python’s built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won’t match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
         "severity": "Low"
       },
       {
@@ -80,6 +79,7 @@
   {
     "pr_title": "Replays Self-Serve Bulk Delete System",
     "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/5",
+    "az_comment": "there is no such PR, it is a mix of many PRs",
     "comments": [
       {
         "comment": "Breaking changes in error response format",
@@ -112,7 +112,7 @@
         "severity": "High"
       },
       {
-        "comment": "Sleep in test_consumer.py won't actually wait because time.sleep was monkeypatched above; consider restoring sleep or using a different sync to ensure the flusher has time to process.",
+        "comment": "Sleep in test_consumer.py won’t actually wait because time.sleep was monkeypatched above; consider restoring sleep or using a different sync to ensure the flusher has time to process.",
         "severity": "Medium"
       },
       {

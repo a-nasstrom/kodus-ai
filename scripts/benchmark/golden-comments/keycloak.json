@@ -3,6 +3,7 @@
     "pr_title": "Fixing Re-authentication with passkeys",
     "url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
     "original_url": "https://github.com/keycloak/keycloak/pull/41249",
+    "az_comment": "reviewed commit is not in the repo",
     "comments": [
       {
         "comment": "ConditionalPasskeysEnabled() called without UserModel parameter",
@@ -93,7 +94,7 @@
         "severity": "Medium"
       },
       {
-        "comment": "The totpStep1 value uses Traditional Chinese terms in the Simplified Chinese file (zh_CN), which is likely incorrect for this locale. Please verify the locale-appropriate translation.",
+        "comment": "The totpStep1 value uses Traditional Chinese terms in the Simplified Chinese file (zh_CN), which is likely incorrect for this locale. Please verify the locale‑appropriate translation.",
         "severity": "Medium"
       },
       {
@@ -115,7 +116,7 @@
         "severity": "Critical"
       },
       {
-        "comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4\u20135 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
+        "comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4–5 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
         "severity": "High"
       },
       {
@@ -151,7 +152,7 @@
         "severity": "Critical"
       },
       {
-        "comment": "The reader thread isn't waited for; flipping deletedAll to true and asserting immediately can race and miss exceptions added just after the flag change, making this test flaky.",
+        "comment": "The reader thread isn’t waited for; flipping deletedAll to true and asserting immediately can race and miss exceptions added just after the flag change, making this test flaky.",
         "severity": "Medium"
       }
     ]
