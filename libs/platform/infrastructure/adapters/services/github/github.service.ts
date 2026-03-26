@@ -832,33 +832,6 @@ export class GithubService
         const resolvedMessage = message?.trim() || 'chore: update files';
 
         try {
-            const createdBranch =
-                resolvedBranchName === resolvedBaseBranch
-                    ? {
-                          name: resolvedBranchName,
-                          sha: '',
-                      }
-                    : await this.createBranch({
-                          organizationAndTeamData,
-                          repository,
-                          branchName: resolvedBranchName,
-                          sourceBranch: resolvedBaseBranch,
-                      });
-
-            if (!createdBranch) {
-                this.logger.error({
-                    message: 'Failed to create branch for uploading files',
-                    context: GithubService.name,
-                    metadata: {
-                        repository: repository.name,
-                        branchName: resolvedBranchName,
-                        baseBranch: resolvedBaseBranch,
-                    },
-                });
-
-                return false;
-            }
-
             const githubAuthDetail = await this.getGithubAuthDetails(
                 organizationAndTeamData,
             );
@@ -870,39 +843,63 @@ export class GithubService
 
             const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
 
-            const uploadPromises = files.map((file) =>
-                octokit.rest.repos.createOrUpdateFileContents({
-                    owner,
-                    repo: repository.name,
-                    path: file.path,
-                    message: resolvedMessage,
-                    content: Buffer.from(file.content).toString('base64'),
-                    branch: createdBranch.name,
+            const { data: baseRef } = await octokit.rest.git.getRef({
+                owner,
+                repo: repository.name,
+                ref: `heads/${resolvedBaseBranch}`,
+            });
+            const baseSha = baseRef.object.sha;
+
+            const treeItems = await Promise.all(
+                files.map(async (file) => {
+                    const { data: blob } = await octokit.rest.git.createBlob({
+                        owner,
+                        repo: repository.name,
+                        content: Buffer.from(file.content).toString('base64'),
+                        encoding: 'base64',
+                    });
+
+                    return {
+                        path: file.path,
+                        mode: '100644' as const,
+                        type: 'blob' as const,
+                        sha: blob.sha,
+                    };
                 }),
             );
 
-            const results = await Promise.allSettled(uploadPromises);
-            const hasRejectedUploads = results.some(
-                (result) => result.status === 'rejected',
-            );
-
-            results.forEach((result, index) => {
-                if (result.status === 'rejected') {
-                    this.logger.error({
-                        message: `Failed to upload file ${files[index].path}`,
-                        context: GithubService.name,
-                        error: result.reason,
-                        metadata: {
-                            repository: repository.name,
-                            branchName: resolvedBranchName,
-                            baseBranch: resolvedBaseBranch,
-                            filePath: files[index].path,
-                        },
-                    });
-                }
+            const { data: tree } = await octokit.rest.git.createTree({
+                owner,
+                repo: repository.name,
+                tree: treeItems,
+                base_tree: baseSha,
             });
 
-            return !hasRejectedUploads;
+            const { data: commit } = await octokit.rest.git.createCommit({
+                owner,
+                repo: repository.name,
+                message: resolvedMessage,
+                tree: tree.sha,
+                parents: [baseSha],
+            });
+
+            if (resolvedBranchName === resolvedBaseBranch) {
+                await octokit.rest.git.updateRef({
+                    owner,
+                    repo: repository.name,
+                    ref: `heads/${resolvedBranchName}`,
+                    sha: commit.sha,
+                });
+            } else {
+                await octokit.rest.git.createRef({
+                    owner,
+                    repo: repository.name,
+                    ref: `refs/heads/${resolvedBranchName}`,
+                    sha: commit.sha,
+                });
+            }
+
+            return true;
         } catch (error) {
             this.logger.error({
                 message: 'Error uploading files to GitHub',
@@ -917,145 +914,6 @@ export class GithubService
             });
 
             return false;
-        }
-    }
-
-    private async createBranch(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: { id: string; name: string };
-        branchName: string;
-        sourceBranch: string;
-    }): Promise<{
-        name: string;
-        sha: string;
-    } | null> {
-        const {
-            organizationAndTeamData,
-            repository,
-            branchName,
-            sourceBranch,
-        } = params;
-
-        try {
-            const githubAuthDetail = await this.getGithubAuthDetails(
-                organizationAndTeamData,
-            );
-
-            const octokit = await this.instanceOctokit(
-                organizationAndTeamData,
-                githubAuthDetail,
-            );
-
-            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
-
-            try {
-                const existingBranchRef = await octokit.rest.git.getRef({
-                    owner,
-                    repo: repository.name,
-                    ref: `heads/${branchName}`,
-                });
-
-                if (existingBranchRef.status === 200) {
-                    return {
-                        name: branchName,
-                        sha: existingBranchRef.data.object.sha,
-                    };
-                }
-            } catch (existingBranchError) {
-                if ((existingBranchError as any)?.status !== 404) {
-                    throw existingBranchError;
-                }
-            }
-
-            const sourceBranchRef = await octokit.rest.git.getRef({
-                owner,
-                repo: repository.name,
-                ref: `heads/${sourceBranch}`,
-            });
-
-            if (sourceBranchRef.status !== 200) {
-                this.logger.error({
-                    message: `Source branch ${sourceBranch} not found`,
-                    context: GithubService.name,
-                    metadata: {
-                        repository: repository.name,
-                        sourceBranch,
-                        status: sourceBranchRef.status,
-                    },
-                });
-                return null;
-            }
-
-            const newBranchRef = await octokit.rest.git.createRef({
-                owner,
-                repo: repository.name,
-                ref: `refs/heads/${branchName}`,
-                sha: sourceBranchRef.data.object.sha,
-            });
-
-            if (newBranchRef.status === 201) {
-                return {
-                    name: branchName,
-                    sha: sourceBranchRef.data.object.sha,
-                };
-            }
-
-            this.logger.error({
-                message: `Failed to create branch ${branchName}`,
-                context: GithubService.name,
-                metadata: {
-                    repository: repository.name,
-                    branchName,
-                    sourceBranch,
-                    status: newBranchRef.status,
-                },
-            });
-            return null;
-        } catch (error) {
-            if ((error as any)?.status === 422) {
-                try {
-                    const githubAuthDetail = await this.getGithubAuthDetails(
-                        organizationAndTeamData,
-                    );
-
-                    const octokit = await this.instanceOctokit(
-                        organizationAndTeamData,
-                        githubAuthDetail,
-                    );
-
-                    const owner = await this.getCorrectOwner(
-                        githubAuthDetail,
-                        octokit,
-                    );
-
-                    const existingBranchRef = await octokit.rest.git.getRef({
-                        owner,
-                        repo: repository.name,
-                        ref: `heads/${branchName}`,
-                    });
-
-                    if (existingBranchRef.status === 200) {
-                        return {
-                            name: branchName,
-                            sha: existingBranchRef.data.object.sha,
-                        };
-                    }
-                } catch {
-                    // fall through to the error log below when branch lookup also fails
-                }
-            }
-
-            this.logger.error({
-                message: `Error creating branch ${branchName}`,
-                context: GithubService.name,
-                error,
-                metadata: {
-                    repository: repository.name,
-                    branchName,
-                    sourceBranch,
-                },
-            });
-            return null;
         }
     }
 
