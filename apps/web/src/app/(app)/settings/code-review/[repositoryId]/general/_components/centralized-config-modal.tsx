@@ -334,7 +334,7 @@ export const CentralizedConfigModal = ({
                             Managing centralized config is easier with our CLI.
                             See the setup guide in our docs.
                             <a
-                                href="https://docs.kodus.io"
+                                href="https://docs.kodus.io/how_to_use/en/code_review/configs/centralized_config#cli-dedicated-section"
                                 target="_blank"
                                 rel="noreferrer"
                                 className="text-primary-light ml-1 inline-flex items-center gap-1 underline">
