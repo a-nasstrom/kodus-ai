@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, AlertDescription } from "@components/ui/alert";
 import { Button } from "@components/ui/button";
 import { Page } from "@components/ui/page";
 import { toast } from "@components/ui/toaster/use-toast";
@@ -18,7 +17,6 @@ import {
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import {
-    AlertCircleIcon,
     DownloadIcon,
     RotateCcwIcon,
     SaveIcon,
@@ -30,6 +28,7 @@ import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { unformatConfig } from "src/core/utils/helpers";
 
 import { CodeReviewPagesBreadcrumb } from "../../_components/breadcrumb";
+import { CentralizedConfigReadOnlyAlert } from "../../_components/centralized-config-readonly-alert";
 import GeneratingConfig from "../../_components/generating-config";
 import { CodeReviewSaveButton } from "../../_components/save-button";
 import { useCodeReviewSettingsMutation } from "../../_hooks/use-code-review-settings-mutation";
@@ -264,16 +263,7 @@ export default function General() {
             </Page.Header>
 
             <Page.Content>
-                {isCentralizedReadOnly && (
-                    <Alert variant="warning">
-                        <AlertCircleIcon />
-                        <AlertDescription>
-                            Centralized config is enabled. Code review parameter
-                            fields on this page are read-only and controlled by
-                            the <code>kodus</code> repository.
-                        </AlertDescription>
-                    </Alert>
-                )}
+                <CentralizedConfigReadOnlyAlert />
 
                 <fieldset disabled={isCentralizedReadOnly} className="contents">
                     <div data-field-name="automatedReviewActive">
@@ -339,7 +329,9 @@ export default function General() {
                                 },
                             }
                         }
-                        onSaved={centralizedConfig.refetch}
+                        onSaved={async () => {
+                            await centralizedConfig.refetch();
+                        }}
                     />
                 )}
             </Page.Content>

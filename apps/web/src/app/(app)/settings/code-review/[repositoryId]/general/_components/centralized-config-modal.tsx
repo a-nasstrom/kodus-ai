@@ -46,7 +46,7 @@ type CentralizedConfigModalProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     centralizedConfig: CentralizedConfigValue;
-    onSaved: () => Promise<void>;
+    onSaved: () => Promise<unknown>;
 };
 
 type ActionStatus = {
