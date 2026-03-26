@@ -90,6 +90,15 @@ describe('GetCodeManagementMemberListUseCase', () => {
             expect(mockCodeManagementService.getListMembers).not.toHaveBeenCalled();
         });
 
+        it('should return cached empty array on cache hit', async () => {
+            mockCacheService.getFromCache.mockResolvedValue([]);
+
+            const result = await useCase.execute();
+
+            expect(result).toEqual([]);
+            expect(mockCodeManagementService.getListMembers).not.toHaveBeenCalled();
+        });
+
         it('should fetch from code integration on cache miss', async () => {
             mockCacheService.getFromCache.mockResolvedValue(null);
             mockCodeManagementService.getListMembers.mockResolvedValue(mockMembers);
@@ -136,7 +145,7 @@ describe('GetCodeManagementMemberListUseCase', () => {
             expect(result).toEqual(mockMembers);
         });
 
-        it('should not cache empty results from code integration', async () => {
+        it('should cache empty results from fallback source', async () => {
             mockCacheService.getFromCache.mockResolvedValue(null);
             mockCodeManagementService.getListMembers.mockResolvedValue([]);
             mockPullRequestHandlerService.getPullRequestAuthorsWithCache.mockResolvedValue(
@@ -145,7 +154,11 @@ describe('GetCodeManagementMemberListUseCase', () => {
 
             await useCase.execute();
 
-            expect(mockCacheService.addToCache).not.toHaveBeenCalled();
+            expect(mockCacheService.addToCache).toHaveBeenCalledWith(
+                'org_members_org-uuid-123',
+                [],
+                10 * 60 * 1000,
+            );
         });
     });
 
