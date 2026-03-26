@@ -3,35 +3,18 @@
 # Step 2: Extract from MongoDB + Judge with Sonnet
 #
 # Usage:
-#   ./benchmark-evaluate.sh [TOTAL_PRS] [--name <run-name>] [--extract-only]
-#
-# Examples:
-#   ./benchmark-evaluate.sh 20 --name kimi-baseline
-#   ./benchmark-evaluate.sh 20 --name sonnet-v1 --extract-only
-#   ./benchmark-evaluate.sh 20                          # saves to results/latest/
+#   ./benchmark-evaluate.sh <name>                    # extract + judge
+#   ./benchmark-evaluate.sh <name> --extract-only     # just extract, skip judge
+#   ./benchmark-evaluate.sh                           # list available runs
 #
 # Requires: ANTHROPIC_API_KEY for judge (or use --extract-only)
 #
 set -euo pipefail
 
-TOTAL_PRS=${1:-20}
-EXTRACT_ONLY=false
-RUN_NAME="latest"
-
-shift || true
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --extract-only) EXTRACT_ONLY=true; shift ;;
-    --name) RUN_NAME="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RUNS_DIR="$SCRIPT_DIR/runs"
 OWNER="ai-code-review-benchmark"
-RESULTS_DIR="$REPO_DIR/scripts/benchmark/results/$RUN_NAME"
-mkdir -p "$RESULTS_DIR"
 
 cd "$REPO_DIR"
 
@@ -43,29 +26,57 @@ if [ -f ".env" ]; then
   fi
 fi
 
+# No args → list runs
+if [ -z "${1:-}" ]; then
+  echo "Usage: ./benchmark-evaluate.sh <name> [--extract-only]"
+  echo ""
+  if [ -d "$RUNS_DIR" ] && [ "$(ls -A "$RUNS_DIR" 2>/dev/null)" ]; then
+    echo "Available runs:"
+    for f in "$RUNS_DIR"/*.json; do
+      NAME=$(basename "$f" .json)
+      INFO=$(node -e "const d=JSON.parse(require('fs').readFileSync('$f','utf8')); const mapped=d.prs.filter(p=>p.prNumber).length; console.log(mapped + '/' + d.prs.length + ' PRs, created ' + d.created.substring(0,16))" 2>/dev/null || echo "?")
+      echo "  $NAME — $INFO"
+    done
+  else
+    echo "No runs found. Create one first:"
+    echo "  ./benchmark-create.sh <name> [TOTAL_PRS]"
+  fi
+  exit 0
+fi
+
+RUN_NAME="$1"
+EXTRACT_ONLY=false
+if [[ "${2:-}" == "--extract-only" ]]; then
+  EXTRACT_ONLY=true
+fi
+
+MANIFEST="$RUNS_DIR/$RUN_NAME.json"
+if [ ! -f "$MANIFEST" ]; then
+  echo "Run '$RUN_NAME' not found at $MANIFEST"
+  echo ""
+  echo "Available runs:"
+  for f in "$RUNS_DIR"/*.json 2>/dev/null; do
+    echo "  $(basename "$f" .json)"
+  done
+  exit 1
+fi
+
+RESULTS_DIR="$SCRIPT_DIR/results/$RUN_NAME"
+mkdir -p "$RESULTS_DIR"
+
 echo "============================================================"
-echo "Benchmark — Evaluate"
+echo "Benchmark — Evaluate: $RUN_NAME"
 echo "============================================================"
 echo ""
 
-# ── Extract from MongoDB ─────────────────────────────────────────
+# ── Extract from MongoDB using manifest PR numbers ───────────────
 echo "▸ Extracting suggestions from MongoDB..."
 
 node -e "
 const { execSync } = require('child_process');
 const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync('$MANIFEST', 'utf8'));
 const benchmark = JSON.parse(fs.readFileSync('scripts/benchmark/prs-benchmark.json', 'utf8'));
-const owner = '$OWNER';
-const totalPrs = $TOTAL_PRS;
-const repos = ['sentry', 'grafana-codex', 'discourse-cursor', 'cal.com', 'keycloak'];
-const perRepo = Math.ceil(totalPrs / repos.length);
-
-const byRepo = {};
-for (const pr of benchmark.prs) {
-  const repo = pr.repo.split('/').pop();
-  if (!byRepo[repo]) byRepo[repo] = [];
-  byRepo[repo].push(pr);
-}
 
 const mongoCmd = (query) => {
   return execSync(
@@ -74,64 +85,82 @@ const mongoCmd = (query) => {
   ).trim();
 };
 
+// Build golden lookup by head branch
+const goldenByHead = {};
+for (const pr of benchmark.prs) {
+  goldenByHead[pr.head] = pr;
+}
+
 const results = { issueCritical: [], withWarning: [] };
 const golden = [];
 const skippedPrs = [];
 
-for (const repo of repos) {
-  const benchPrs = (byRepo[repo] || []).slice(0, perRepo);
+for (const entry of manifest.prs) {
+  const bpr = goldenByHead[entry.head];
+  if (!bpr) { console.log(entry.repo.padEnd(18) + ' ⚠ No golden for branch ' + entry.head); continue; }
 
-  for (const bpr of benchPrs) {
-    let prData;
+  let prData = null;
+
+  if (entry.prNumber) {
+    // Use exact PR number from manifest
     try {
-      const query = 'JSON.stringify(db.pullRequests.find({headBranchRef: \"' + bpr.head + '\"}, {number: 1, files: 1, createdAt: 1, updatedAt: 1}).sort({updatedAt: -1}).limit(1).toArray()[0])';
+      const query = 'JSON.stringify(db.pullRequests.findOne({number: ' + entry.prNumber + '}, {number: 1, files: 1}))';
       const raw = mongoCmd(query);
       prData = JSON.parse(raw);
-    } catch { prData = null; }
-
-    // Check if PR was actually processed (has any suggestions in any file)
-    let totalSugg = 0;
-    if (prData && prData.files) {
-      for (const file of prData.files) {
-        if (file.suggestions) totalSugg += file.suggestions.length;
-      }
-    }
-
-    const prNum = prData ? prData.number : '?';
-
-    if (!prData || totalSugg === 0) {
-      skippedPrs.push({ repo, title: bpr.title.substring(0, 50), head: bpr.head, prNum });
-      console.log(repo.padEnd(18) + ' PR#' + String(prNum).padEnd(5) + ' ⚠ NOT PROCESSED (skipped)');
-      continue;
-    }
-
-    golden.push(bpr);
-
-    const suggestions = { issueCritical: [], withWarning: [] };
-
-    for (const file of prData.files) {
-      if (!file.suggestions) continue;
-      for (const s of file.suggestions) {
-        if (!s.suggestionContent || s.suggestionContent.length < 20) continue;
-        const entry = {
-          comment: (s.suggestionContent || '').substring(0, 500),
-          location: (s.relevantFile || file.filename) + ':' + (s.relevantLinesStart || 'general'),
-          level: s.level || 'unknown',
-          severity: s.severity || 'unknown',
-          label: s.label || 'unknown',
-          deliveryStatus: s.deliveryStatus || 'unknown',
-        };
-        if (s.level === 'issue' || s.level === 'critical') suggestions.issueCritical.push(entry);
-        if (s.level === 'issue' || s.level === 'critical' || s.level === 'warning') suggestions.withWarning.push(entry);
-      }
-    }
-
-    const prInfo = { pr_title: bpr.title, head: bpr.head, repo: repo, tool: 'kodus' };
-    results.issueCritical.push({ ...prInfo, issues: suggestions.issueCritical });
-    results.withWarning.push({ ...prInfo, issues: suggestions.withWarning });
-
-    console.log(repo.padEnd(18) + ' PR#' + String(prNum).padEnd(5) + ' issue+critical=' + String(suggestions.issueCritical.length).padStart(2) + '  +warning=' + String(suggestions.withWarning.length).padStart(2));
+    } catch {}
   }
+
+  if (!prData) {
+    // Fallback: find by branch (most recent with suggestions)
+    try {
+      const query = 'var pr = db.pullRequests.find({headBranchRef: \"' + entry.head + '\", \"files.suggestions.0\": {\"\$exists\": true}}).sort({updatedAt: -1}).limit(1).toArray()[0]; pr = pr || db.pullRequests.find({headBranchRef: \"' + entry.head + '\"}).sort({updatedAt: -1}).limit(1).toArray()[0]; JSON.stringify(pr)';
+      const raw = mongoCmd(query);
+      prData = JSON.parse(raw);
+    } catch {}
+  }
+
+  // Count suggestions
+  let totalSugg = 0;
+  if (prData && prData.files) {
+    for (const file of prData.files) {
+      if (file.suggestions) totalSugg += file.suggestions.length;
+    }
+  }
+
+  const prNum = prData ? prData.number : (entry.prNumber || '?');
+
+  if (!prData || totalSugg === 0) {
+    skippedPrs.push({ repo: entry.repo, title: bpr.title.substring(0, 50), head: entry.head, prNum });
+    console.log(entry.repo.padEnd(18) + ' PR#' + String(prNum).padEnd(5) + ' ⚠ NOT PROCESSED (skipped)');
+    continue;
+  }
+
+  golden.push(bpr);
+
+  const suggestions = { issueCritical: [], withWarning: [] };
+
+  for (const file of prData.files) {
+    if (!file.suggestions) continue;
+    for (const s of file.suggestions) {
+      if (!s.suggestionContent || s.suggestionContent.length < 20) continue;
+      const entry2 = {
+        comment: (s.suggestionContent || '').substring(0, 500),
+        location: (s.relevantFile || file.filename) + ':' + (s.relevantLinesStart || 'general'),
+        level: s.level || 'unknown',
+        severity: s.severity || 'unknown',
+        label: s.label || 'unknown',
+        deliveryStatus: s.deliveryStatus || 'unknown',
+      };
+      if (s.level === 'issue' || s.level === 'critical') suggestions.issueCritical.push(entry2);
+      if (s.level === 'issue' || s.level === 'critical' || s.level === 'warning') suggestions.withWarning.push(entry2);
+    }
+  }
+
+  const prInfo = { pr_title: bpr.title, head: entry.head, repo: entry.repo, tool: 'kodus' };
+  results.issueCritical.push({ ...prInfo, issues: suggestions.issueCritical });
+  results.withWarning.push({ ...prInfo, issues: suggestions.withWarning });
+
+  console.log(entry.repo.padEnd(18) + ' PR#' + String(prNum).padEnd(5) + ' issue+critical=' + String(suggestions.issueCritical.length).padStart(2) + '  +warning=' + String(suggestions.withWarning.length).padStart(2));
 }
 
 fs.writeFileSync('$RESULTS_DIR/golden.json', JSON.stringify(golden, null, 2));
@@ -156,7 +185,6 @@ echo "  ✓ Extracted to $RESULTS_DIR/"
 if [ "$EXTRACT_ONLY" = true ]; then
   echo ""
   echo "Extract only — skipping judge."
-  echo "Run with ANTHROPIC_API_KEY to judge, or use /benchmark agent mode."
   exit 0
 fi
 
@@ -164,7 +192,7 @@ fi
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo ""
   echo "  ⚠ ANTHROPIC_API_KEY not set — skipping judge"
-  echo "  Set it and re-run, or use /benchmark agent mode"
+  echo "  Set it in .env and re-run"
   exit 0
 fi
 
@@ -184,7 +212,7 @@ done
 # ── Print Results ────────────────────────────────────────────────
 echo ""
 echo "============================================================"
-echo "BENCHMARK RESULTS"
+echo "BENCHMARK RESULTS — $RUN_NAME"
 echo "============================================================"
 
 for LEVEL in "issue-critical" "with-warning"; do
@@ -199,7 +227,6 @@ console.log('── ' + d.level.toUpperCase() + ' ──────────
 console.log('F1=' + d.f1.toFixed(3) + '  Precision=' + d.precision.toFixed(3) + '  Recall=' + d.recall.toFixed(3) + '  TP=' + d.tp + '  FP=' + d.fp + '  FN=' + d.fn);
 console.log('');
 
-// Per-repo
 console.log('  ' + 'Repo'.padEnd(18) + ' PRs  Golden  Cand   TP  FP  FN  Recall');
 console.log('  ' + '-'.repeat(65));
 for (const [repo, s] of Object.entries(d.repoStats)) {
@@ -208,17 +235,16 @@ for (const [repo, s] of Object.entries(d.repoStats)) {
 }
 console.log('');
 
-// Per-PR
 for (const pr of d.prResults) {
   const icon = pr.tp > 0 ? '✓' : '·';
   console.log('  ' + icon + ' ' + pr.repo.padEnd(18) + pr.title.padEnd(52) + ' TP=' + pr.tp + ' FP=' + pr.fp + ' FN=' + pr.fn + ' (' + pr.tp + '/' + pr.golden + ')');
   for (const f of pr.found) console.log('      ✓ [' + f.severity + '] ' + f.comment);
   for (const m of pr.missed) console.log('      ✗ [' + m.severity + '] ' + m.comment);
-  for (const n of pr.noise) console.log('      ~ ' + n);
+  if (pr.noise.length > 0) console.log('      ~ ' + pr.noise.length + ' noise comments');
 }
 "
 done
 
 echo ""
 echo "============================================================"
-echo "Results saved to: $RESULTS_DIR/results-{issue-critical,with-warning}.json"
+echo "Results saved to: $RESULTS_DIR/"
