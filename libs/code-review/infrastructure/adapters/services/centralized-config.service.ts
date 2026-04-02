@@ -905,6 +905,9 @@ export class CentralizedConfigService implements ICentralizedConfigService {
             await this.createOrUpdatePullRequestMessagesUseCase.execute(
                 userInfo,
                 pullRequestMessages,
+                {
+                    skipAuthorization: true,
+                },
             );
 
             const message = 'Custom messages synced successfully';

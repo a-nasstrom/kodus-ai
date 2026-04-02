@@ -46,17 +46,20 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
     async execute(
         userInfo: Partial<IUser>,
         pullRequestMessages: IPullRequestMessages,
+        options?: { skipAuthorization?: boolean },
     ): Promise<void> {
         if (!userInfo?.organization?.uuid) {
             throw new Error('Organization ID is required in user info');
         }
 
-        this.authorizationService.ensure({
-            user: userInfo,
-            action: Action.Create,
-            resource: ResourceType.CodeReviewSettings,
-            repoIds: [pullRequestMessages.repositoryId || 'global'],
-        });
+        if (!options?.skipAuthorization) {
+            this.authorizationService.ensure({
+                user: userInfo,
+                action: Action.Create,
+                resource: ResourceType.CodeReviewSettings,
+                repoIds: [pullRequestMessages.repositoryId || 'global'],
+            });
+        }
 
         pullRequestMessages.organizationId = userInfo?.organization?.uuid;
 
@@ -120,6 +123,8 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         }
 
         if (isUpdate) {
+            // Repository update is id-based and requires the existing entity uuid.
+            pullRequestMessages.uuid = existingPullRequestMessage.uuid;
             await this.pullRequestMessagesService.update(pullRequestMessages);
         } else {
             await this.pullRequestMessagesService.create(pullRequestMessages);
