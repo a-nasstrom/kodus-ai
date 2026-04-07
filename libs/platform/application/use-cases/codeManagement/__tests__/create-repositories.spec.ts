@@ -26,6 +26,8 @@ describe('CreateRepositoriesUseCase', () => {
             codeManagementService as any,
             { execute: jest.fn() } as any,
             { execute: jest.fn().mockResolvedValue(undefined) } as any,
+            { findOrCreate: jest.fn().mockResolvedValue({ uuid: 'r1', astGraphStatus: 'pending', defaultBranch: 'main', fullName: 'kodus/alpha', platform: 'github' }) } as any,
+            { enqueue: jest.fn().mockResolvedValue('job-1') } as any,
             {} as any,
         );
 
@@ -87,6 +89,8 @@ describe('CreateRepositoriesUseCase', () => {
             codeManagementService as any,
             { execute: jest.fn() } as any,
             { execute: jest.fn().mockResolvedValue(undefined) } as any,
+            { findOrCreate: jest.fn() } as any,
+            { enqueue: jest.fn() } as any,
             undefined as any,
         );
 
@@ -120,6 +124,8 @@ describe('CreateRepositoriesUseCase', () => {
             } as any,
             { execute: jest.fn() } as any,
             { execute: jest.fn().mockResolvedValue(undefined) } as any,
+            { findOrCreate: jest.fn() } as any,
+            { enqueue: jest.fn() } as any,
             undefined as any,
         );
 

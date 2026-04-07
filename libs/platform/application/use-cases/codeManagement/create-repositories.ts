@@ -5,10 +5,19 @@ import { Request } from 'express';
 
 import { ActiveCodeManagementTeamAutomationsUseCase } from '@libs/automation/application/use-cases/teamAutomation/active-code-manegement-automations.use-case';
 import { ActiveCodeReviewAutomationUseCase } from '@libs/automation/application/use-cases/teamAutomation/active-code-review-automation.use-case';
+import { RepositoryRepository } from '@libs/code-review/infrastructure/adapters/repositories/repository.repository';
+import { AstGraphStatus } from '@libs/code-review/infrastructure/adapters/repositories/schemas/repository.model';
 import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { STATUS } from '@libs/core/infrastructure/config/types/database/status.type';
+import {
+    IJobQueueService,
+    JOB_QUEUE_SERVICE_TOKEN,
+} from '@libs/core/workflow/domain/contracts/job-queue.service.contract';
+import { HandlerType } from '@libs/core/workflow/domain/enums/handler-type.enum';
+import { JobStatus } from '@libs/core/workflow/domain/enums/job-status.enum';
+import { WorkflowType } from '@libs/core/workflow/domain/enums/workflow-type.enum';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
 import {
     IParametersService,
@@ -34,6 +43,9 @@ export class CreateRepositoriesUseCase implements IUseCase {
         private readonly codeManagementService: CodeManagementService,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly backfillHistoricalPRsUseCase: BackfillHistoricalPRsUseCase,
+        private readonly repositoryRepository: RepositoryRepository,
+        @Inject(JOB_QUEUE_SERVICE_TOKEN)
+        private readonly jobQueueService: IJobQueueService,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -140,6 +152,24 @@ export class CreateRepositoriesUseCase implements IUseCase {
                 });
             }
 
+            // Enqueue AST graph build for each newly saved repo
+            if (selectedRepositories.length > 0) {
+                setImmediate(() => {
+                    this.enqueueAstGraphBuilds(
+                        selectedRepositories,
+                        params.type,
+                        { organizationId, teamId },
+                    ).catch((error) => {
+                        this.logger.error({
+                            message: 'Error enqueuing AST graph builds',
+                            context: CreateRepositoriesUseCase.name,
+                            error: error.message,
+                            metadata: { organizationId, teamId },
+                        });
+                    });
+                });
+            }
+
             return {
                 status: true,
             };
@@ -163,6 +193,74 @@ export class CreateRepositoriesUseCase implements IUseCase {
                 },
                 { organizationId, teamId },
             );
+        }
+    }
+
+    private async enqueueAstGraphBuilds(
+        repositories: Array<{
+            id: string;
+            name: string;
+            fullName?: string;
+            full_name?: string;
+            http_url?: string;
+            organizationName?: string;
+        }>,
+        platformType: string,
+        orgTeam: { organizationId: string; teamId: string },
+    ): Promise<void> {
+        for (const repo of repositories) {
+            try {
+                const fullName =
+                    repo.fullName ||
+                    repo.full_name ||
+                    `${repo.organizationName || ''}/${repo.name}`;
+
+                const repoRecord =
+                    await this.repositoryRepository.findOrCreate({
+                        integrationConfigId: orgTeam.teamId, // use teamId as integration reference
+                        externalId: String(repo.id),
+                        name: repo.name,
+                        fullName,
+                        platform: platformType || 'github',
+                    });
+
+                // Only enqueue if graph not already ready or building
+                if (
+                    repoRecord.astGraphStatus === AstGraphStatus.PENDING ||
+                    repoRecord.astGraphStatus === AstGraphStatus.FAILED
+                ) {
+                    await this.jobQueueService.enqueue({
+                        correlationId: orgTeam.teamId,
+                        workflowType: WorkflowType.AST_GRAPH_BUILD,
+                        handlerType: HandlerType.SIMPLE_FUNCTION,
+                        payload: {
+                            repositoryId: repoRecord.uuid,
+                            cloneUrl: repo.http_url || '',
+                            defaultBranch: repoRecord.defaultBranch,
+                            fullName: repoRecord.fullName,
+                            platform: repoRecord.platform,
+                            organizationAndTeamData: orgTeam,
+                        },
+                        organizationAndTeamData: orgTeam,
+                        status: JobStatus.PENDING,
+                        priority: 0,
+                        retryCount: 0,
+                        maxRetries: 3,
+                    });
+
+                    this.logger.log({
+                        message: `[AST-GRAPH] Enqueued full build for ${fullName}`,
+                        context: CreateRepositoriesUseCase.name,
+                    });
+                }
+            } catch (error) {
+                this.logger.warn({
+                    message: `[AST-GRAPH] Failed to enqueue build for repo ${repo.name}`,
+                    context: CreateRepositoriesUseCase.name,
+                    error: error?.message,
+                });
+                // Continue with other repos — don't let one failure block the rest
+            }
         }
     }
 }
