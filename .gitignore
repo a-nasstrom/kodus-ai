@@ -130,6 +130,8 @@ skills-lock.json
 evals/promptfoo/results/
 evals/promptfoo-safeguard/results/
 scripts/benchmark/results/
+scripts/benchmark/*-trace-metrics.json
+evals/investigation/evals/
 
 # ESLint Cache
 .eslintcache
