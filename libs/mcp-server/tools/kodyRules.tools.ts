@@ -125,7 +125,7 @@ export class KodyRulesTools {
         return {
             name: 'KODUS_GET_KODY_RULES',
             description:
-                'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
+                'Get all Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of rules. Returns rules with ACTIVE and PENDING status.',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
@@ -175,7 +175,8 @@ export class KodyRulesTools {
 
                     const rules: Partial<IKodyRule>[] = allRules.filter(
                         (rule: Partial<IKodyRule>) =>
-                            rule.status === KodyRulesStatus.ACTIVE,
+                            rule.status === KodyRulesStatus.ACTIVE ||
+                            rule.status === KodyRulesStatus.PENDING,
                     );
 
                     return {
@@ -207,7 +208,7 @@ export class KodyRulesTools {
         return {
             name: 'KODUS_GET_KODY_RULES_REPOSITORY',
             description:
-                'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
+                'Get Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules. Returns rules with ACTIVE and PENDING status.',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
@@ -261,7 +262,8 @@ export class KodyRulesTools {
                             (rule: Partial<IKodyRule>) =>
                                 rule.repositoryId &&
                                 rule.repositoryId === params.repositoryId &&
-                                rule.status === KodyRulesStatus.ACTIVE,
+                                (rule.status === KodyRulesStatus.ACTIVE ||
+                                    rule.status === KodyRulesStatus.PENDING),
                         );
 
                     return {
