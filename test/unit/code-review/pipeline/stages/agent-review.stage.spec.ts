@@ -3,6 +3,8 @@ import { AgentReviewStage } from '@/code-review/pipeline/stages/agent-review.sta
 import { ReviewOrchestratorService } from '@/code-review/infrastructure/agents/review-orchestrator.service';
 import { ObservabilityService } from '@/core/log/observability.service';
 import { AUTOMATION_EXECUTION_SERVICE_TOKEN } from '@/automation/domain/automationExecution/contracts/automation-execution.service';
+import { KodusGraphService } from '@/code-review/infrastructure/adapters/services/kodusGraph.service';
+import { RepositoryRepository } from '@/code-review/infrastructure/adapters/repositories/repository.repository';
 import { CodeReviewPipelineContext } from '@/code-review/pipeline/context/code-review-pipeline.context';
 import { PlatformType } from '@/core/domain/enums';
 import { CodeReviewVersion } from '@/core/domain/enums/code-review.enum';
@@ -132,6 +134,21 @@ describe('AgentReviewStage', () => {
                         updateCodeReview: jest.fn(),
                         findLatestStageLog: jest.fn(),
                         updateStageLog: jest.fn(),
+                    },
+                },
+                {
+                    provide: KodusGraphService,
+                    useValue: {
+                        generateContext: jest.fn().mockResolvedValue(''),
+                        generateContextLegacy: jest.fn().mockResolvedValue(''),
+                    },
+                },
+                {
+                    provide: RepositoryRepository,
+                    useValue: {
+                        findOrCreate: jest.fn(),
+                        findByExternalId: jest.fn(),
+                        updateStatus: jest.fn(),
                     },
                 },
             ],

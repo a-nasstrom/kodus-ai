@@ -13,14 +13,34 @@ const KODUS_GRAPH_VERSION = 'latest';
 
 const TIMEOUTS = {
     INSTALL_MS: 120_000,
-    PARSE_ALL_MS: 300_000,
+    PARSE_ALL_MS: 600_000,
     PARSE_FILES_MS: 120_000,
+    READ_FILE_MS: 600_000,
 };
 
 const DEFAULT_EXCLUDES = [
-    '**/tests/**', '**/test/**', '**/__tests__/**', '**/test_*',
-    '**/*.test.*', '**/*.spec.*', '**/fixtures/**', '**/static/**', '**/__mocks__/**',
+    '**/tests/**',
+    '**/test/**',
+    '**/__tests__/**',
+    '**/test_*',
+    '**/*.test.*',
+    '**/*.spec.*',
+    '**/fixtures/**',
+    '**/static/**',
+    '**/__mocks__/**',
+    '**/.yarn/**',
+    '**/node_modules/**',
+    '**/vendor/**',
+    '**/dist/**',
+    '**/build/**',
+    '**/*.min.js',
+    '**/*.min.css',
+    '**/*.bundle.js',
+    '**/*.chunk.js',
 ];
+
+/** Repos above this threshold get a warning log before persist */
+const LARGE_REPO_NODE_THRESHOLD = 50_000;
 
 @Injectable()
 export class AstGraphBuildService {
@@ -49,7 +69,10 @@ export class AstGraphBuildService {
             metadata: { repositoryId, headSha },
         });
 
-        await this.repositoryRepo.updateGraphStatus(repositoryId, AstGraphStatus.BUILDING);
+        await this.repositoryRepo.updateGraphStatus(
+            repositoryId,
+            AstGraphStatus.BUILDING,
+        );
 
         try {
             // 1. Install kodus-graph
@@ -63,7 +86,9 @@ export class AstGraphBuildService {
 
             // 2. Parse full repo
             const parseStart = Date.now();
-            const excludeFlags = DEFAULT_EXCLUDES.map((p) => `--exclude "${p}"`).join(' ');
+            const excludeFlags = DEFAULT_EXCLUDES.map(
+                (p) => `--exclude "${p}"`,
+            ).join(' ');
             const parseResult = await sandbox.commands.run(
                 [
                     `export PATH="$HOME/.bun/bin:$PATH"`,
@@ -83,59 +108,82 @@ export class AstGraphBuildService {
             this.logger.log({
                 message: `[AST-GRAPH] Parse completed (${Date.now() - parseStart}ms)`,
                 context: AstGraphBuildService.name,
-                metadata: { repositoryId, parseStderr: (parseResult.stderr || '').slice(0, 300) },
+                metadata: {
+                    repositoryId,
+                    parseStderr: (parseResult.stderr || '').slice(0, 300),
+                },
             });
 
             // 3. Read graph JSON from sandbox
-            const readStart = Date.now();
-            const catResult = await sandbox.commands.run(
-                `cat ${REPO_DIR}/${GRAPH_PATH}`,
-                { timeoutMs: 30_000 },
+            const { nodes, edges } = await this.readGraphFromSandbox(
+                sandbox,
+                repositoryId,
             );
-            if (!catResult.stdout) {
-                throw new Error('kodus-graph parse produced empty output');
+
+            // 4. Validate — empty graph means excludes filtered everything or parse failed silently
+            if (nodes.length === 0) {
+                this.logger.warn({
+                    message: `[AST-GRAPH] Parse produced 0 nodes for repo ${repositoryId} — marking as FAILED`,
+                    context: AstGraphBuildService.name,
+                    metadata: { repositoryId, headSha },
+                });
+                await this.repositoryRepo.updateGraphStatus(
+                    repositoryId,
+                    AstGraphStatus.FAILED,
+                );
+                return;
             }
 
-            const graphData = JSON.parse(catResult.stdout);
-            const nodes = graphData.nodes || [];
-            const edges = graphData.edges || [];
-
-            this.logger.log({
-                message: `[AST-GRAPH] Graph read from sandbox (${Date.now() - readStart}ms): ${nodes.length} nodes, ${edges.length} edges`,
-                context: AstGraphBuildService.name,
-                metadata: { repositoryId, rawNodes: nodes.length, rawEdges: edges.length },
-            });
-
-            // 4. Persist to DB
+            // 5. Persist to DB
             const persistStart = Date.now();
-            const counts = await this.astGraphRepo.fullRebuild(repositoryId, nodes, edges);
+            const counts = await this.astGraphRepo.fullRebuild(
+                repositoryId,
+                nodes,
+                edges,
+            );
 
             this.logger.log({
                 message: `[AST-GRAPH] DB persist completed (${Date.now() - persistStart}ms)`,
                 context: AstGraphBuildService.name,
-                metadata: { repositoryId, nodeCount: counts.nodeCount, edgeCount: counts.edgeCount },
+                metadata: {
+                    repositoryId,
+                    nodeCount: counts.nodeCount,
+                    edgeCount: counts.edgeCount,
+                },
             });
 
-            // 5. Update repo status
-            await this.repositoryRepo.updateGraphStatus(repositoryId, AstGraphStatus.READY, {
-                sha: headSha,
-                nodeCount: counts.nodeCount,
-                edgeCount: counts.edgeCount,
-            });
+            // 6. Update repo status
+            await this.repositoryRepo.updateGraphStatus(
+                repositoryId,
+                AstGraphStatus.READY,
+                {
+                    sha: headSha,
+                    nodeCount: counts.nodeCount,
+                    edgeCount: counts.edgeCount,
+                },
+            );
 
             const totalMs = Date.now() - buildStart;
             this.logger.log({
                 message: `[AST-GRAPH] Full build COMPLETE for repo ${repositoryId} in ${totalMs}ms — ${counts.nodeCount} nodes, ${counts.edgeCount} edges`,
                 context: AstGraphBuildService.name,
-                metadata: { repositoryId, headSha, nodeCount: counts.nodeCount, edgeCount: counts.edgeCount, durationMs: totalMs },
+                metadata: {
+                    repositoryId,
+                    headSha,
+                    nodeCount: counts.nodeCount,
+                    edgeCount: counts.edgeCount,
+                    durationMs: totalMs,
+                },
             });
         } catch (error) {
             const totalMs = Date.now() - buildStart;
-            await this.repositoryRepo.updateGraphStatus(repositoryId, AstGraphStatus.FAILED);
+            await this.repositoryRepo.updateGraphStatus(
+                repositoryId,
+                AstGraphStatus.FAILED,
+            );
             this.logger.error({
-                message: `[AST-GRAPH] Full build FAILED for repo ${repositoryId} after ${totalMs}ms — ${error.message}`,
+                message: `[AST-GRAPH] Full build FAILED for repo ${repositoryId} after ${totalMs}ms — ${error?.message || String(error)}`,
                 context: AstGraphBuildService.name,
-                error,
                 metadata: { repositoryId, headSha, durationMs: totalMs },
             });
             throw error;
@@ -158,7 +206,12 @@ export class AstGraphBuildService {
         this.logger.log({
             message: `[AST-GRAPH] Starting incremental update: ${changedFiles.length} files for repo ${repositoryId}`,
             context: AstGraphBuildService.name,
-            metadata: { repositoryId, newSha, changedFilesCount: changedFiles.length, changedFiles: changedFiles.slice(0, 20) },
+            metadata: {
+                repositoryId,
+                newSha,
+                changedFilesCount: changedFiles.length,
+                changedFiles: changedFiles.slice(0, 20),
+            },
         });
 
         try {
@@ -173,7 +226,9 @@ export class AstGraphBuildService {
 
             // 2. Parse changed files
             const parseStart = Date.now();
-            const filesArg = changedFiles.map((f) => `'${f.replace(/'/g, "'\\''")}'`).join(' ');
+            const filesArg = changedFiles
+                .map((f) => `'${f.replace(/'/g, "'\\''")}'`)
+                .join(' ');
             const parseResult = await sandbox.commands.run(
                 [
                     `export PATH="$HOME/.bun/bin:$PATH"`,
@@ -193,21 +248,17 @@ export class AstGraphBuildService {
             this.logger.log({
                 message: `[AST-GRAPH] Incremental parse completed (${Date.now() - parseStart}ms)`,
                 context: AstGraphBuildService.name,
-                metadata: { repositoryId, changedFilesCount: changedFiles.length },
+                metadata: {
+                    repositoryId,
+                    changedFilesCount: changedFiles.length,
+                },
             });
 
-            // 3. Read graph JSON
-            const catResult = await sandbox.commands.run(
-                `cat ${REPO_DIR}/${GRAPH_PATH}`,
-                { timeoutMs: 30_000 },
+            // 3. Read graph JSON from sandbox
+            const { nodes, edges } = await this.readGraphFromSandbox(
+                sandbox,
+                repositoryId,
             );
-            if (!catResult.stdout) {
-                throw new Error('kodus-graph parse produced empty output');
-            }
-
-            const graphData = JSON.parse(catResult.stdout);
-            const nodes = graphData.nodes || [];
-            const edges = graphData.edges || [];
 
             // 4. Persist to DB
             const persistStart = Date.now();
@@ -221,32 +272,112 @@ export class AstGraphBuildService {
             this.logger.log({
                 message: `[AST-GRAPH] Incremental DB persist completed (${Date.now() - persistStart}ms)`,
                 context: AstGraphBuildService.name,
-                metadata: { repositoryId, nodeCount: counts.nodeCount, edgeCount: counts.edgeCount },
+                metadata: {
+                    repositoryId,
+                    nodeCount: counts.nodeCount,
+                    edgeCount: counts.edgeCount,
+                },
             });
 
-            await this.repositoryRepo.updateGraphStatus(repositoryId, AstGraphStatus.READY, {
-                sha: newSha,
-                nodeCount: undefined,
-                edgeCount: undefined,
-            });
+            await this.repositoryRepo.updateGraphStatus(
+                repositoryId,
+                AstGraphStatus.READY,
+                {
+                    sha: newSha,
+                    nodeCount: counts.nodeCount,
+                    edgeCount: counts.edgeCount,
+                },
+            );
 
             const totalMs = Date.now() - updateStart;
             this.logger.log({
                 message: `[AST-GRAPH] Incremental update COMPLETE for repo ${repositoryId} in ${totalMs}ms — ${counts.nodeCount} nodes, ${counts.edgeCount} edges from ${changedFiles.length} files`,
                 context: AstGraphBuildService.name,
-                metadata: { repositoryId, newSha, nodeCount: counts.nodeCount, edgeCount: counts.edgeCount, changedFilesCount: changedFiles.length, durationMs: totalMs },
+                metadata: {
+                    repositoryId,
+                    newSha,
+                    nodeCount: counts.nodeCount,
+                    edgeCount: counts.edgeCount,
+                    changedFilesCount: changedFiles.length,
+                    durationMs: totalMs,
+                },
             });
         } catch (error) {
             const totalMs = Date.now() - updateStart;
             this.logger.warn({
-                message: `[AST-GRAPH] Incremental update FAILED for repo ${repositoryId} after ${totalMs}ms — ${error.message}`,
+                message: `[AST-GRAPH] Incremental update FAILED for repo ${repositoryId} after ${totalMs}ms — ${error?.message || String(error)}`,
                 context: AstGraphBuildService.name,
-                error,
-                metadata: { repositoryId, newSha, changedFilesCount: changedFiles.length, durationMs: totalMs },
+                metadata: {
+                    repositoryId,
+                    newSha,
+                    changedFilesCount: changedFiles.length,
+                    durationMs: totalMs,
+                },
             });
             // Don't set status to failed — graph is stale but still usable
             throw error;
         }
+    }
+
+    /**
+     * Read the graph JSON file from the E2B sandbox using the files API,
+     * then split into nodes and edges.
+     *
+     * Uses `sandbox.files.read()` instead of piping via stdout (`cat`),
+     * which avoids the E2B command-runner stdout buffer overhead.
+     */
+    private async readGraphFromSandbox(
+        sandbox: Sandbox,
+        repositoryId: string,
+    ): Promise<{ nodes: any[]; edges: any[] }> {
+        const readStart = Date.now();
+        const filePath = `${REPO_DIR}/${GRAPH_PATH}`;
+
+        let rawJson: string;
+        try {
+            rawJson = await sandbox.files.read(filePath, {
+                requestTimeoutMs: TIMEOUTS.READ_FILE_MS,
+            });
+        } catch (err) {
+            throw new Error(
+                `Failed to read graph file from sandbox (${filePath}): ${err?.message || String(err)}`,
+            );
+        }
+
+        if (!rawJson || rawJson.length === 0) {
+            throw new Error('kodus-graph parse produced empty output file');
+        }
+
+        let graphData = JSON.parse(rawJson);
+        rawJson = null as any; // allow GC of the raw string
+
+        const nodes = graphData.nodes || [];
+        const edges = graphData.edges || [];
+        graphData = null as any; // allow GC of the wrapper object
+
+        this.logger.log({
+            message: `[AST-GRAPH] Graph read from sandbox (${Date.now() - readStart}ms): ${nodes.length} nodes, ${edges.length} edges`,
+            context: AstGraphBuildService.name,
+            metadata: {
+                repositoryId,
+                nodeCount: nodes.length,
+                edgeCount: edges.length,
+            },
+        });
+
+        if (nodes.length > LARGE_REPO_NODE_THRESHOLD) {
+            this.logger.warn({
+                message: `[AST-GRAPH] Large repo detected: ${nodes.length} nodes for ${repositoryId} — persist may be slow`,
+                context: AstGraphBuildService.name,
+                metadata: {
+                    repositoryId,
+                    nodeCount: nodes.length,
+                    edgeCount: edges.length,
+                },
+            });
+        }
+
+        return { nodes, edges };
     }
 
     private async installKodusGraph(sandbox: Sandbox): Promise<void> {

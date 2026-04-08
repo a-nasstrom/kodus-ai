@@ -36,6 +36,8 @@ export class CreateRepositoriesUseCase implements IUseCase {
     constructor(
         @Inject(TEAM_SERVICE_TOKEN)
         private readonly teamService: ITeamService,
+        @Inject(JOB_QUEUE_SERVICE_TOKEN)
+        private readonly jobQueueService: IJobQueueService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly activeCodeManagementTeamAutomationsUseCase: ActiveCodeManagementTeamAutomationsUseCase,
@@ -44,9 +46,6 @@ export class CreateRepositoriesUseCase implements IUseCase {
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly backfillHistoricalPRsUseCase: BackfillHistoricalPRsUseCase,
         private readonly repositoryRepository: RepositoryRepository,
-        @Inject(JOB_QUEUE_SERVICE_TOKEN)
-        private readonly jobQueueService: IJobQueueService,
-
         @Inject(REQUEST)
         private readonly request: Request & {
             user: { organization: { uuid: string } };
@@ -112,13 +111,9 @@ export class CreateRepositoriesUseCase implements IUseCase {
                 this.savePlatformConfig(teamId, organizationId);
             }
 
-            const selectedRepositories =
-                params.repositories?.filter(
-                    (repo: any) =>
-                        repo.selected === true || repo.isSelected === true,
-                ) || [];
+            const repositories = params.repositories || [];
 
-            if (selectedRepositories.length > 0) {
+            if (repositories.length > 0) {
                 setImmediate(() => {
                     this.backfillHistoricalPRsUseCase
                         .execute({
@@ -126,44 +121,32 @@ export class CreateRepositoriesUseCase implements IUseCase {
                                 organizationId,
                                 teamId,
                             },
-                            repositories: selectedRepositories.map(
-                                (r: any) => ({
-                                    id: String(r.id),
-                                    name: r.name,
-                                    fullName:
-                                        r.fullName ||
-                                        r.full_name ||
-                                        `${r.organizationName || ''}/${r.name}`,
-                                    url: r.http_url || '',
-                                }),
-                            ),
+                            repositories: repositories.map((r: any) => ({
+                                id: String(r.id),
+                                name: r.name,
+                                fullName:
+                                    r.fullName ||
+                                    r.full_name ||
+                                    `${r.organizationName || ''}/${r.name}`,
+                                url: r.http_url || '',
+                            })),
                         })
                         .catch((error) => {
                             this.logger.error({
-                                message: 'Error during automatic PR backfill',
+                                message: `Error during automatic PR backfill: ${error?.message || String(error)}`,
                                 context: CreateRepositoriesUseCase.name,
-                                error: error.message,
-                                metadata: {
-                                    organizationId,
-                                    teamId,
-                                },
                             });
                         });
                 });
-            }
 
-            // Enqueue AST graph build for each newly saved repo
-            if (selectedRepositories.length > 0) {
                 setImmediate(() => {
-                    this.enqueueAstGraphBuilds(
-                        selectedRepositories,
-                        { organizationId, teamId },
-                    ).catch((error) => {
+                    this.enqueueAstGraphBuilds(repositories, {
+                        organizationId,
+                        teamId,
+                    }).catch((error) => {
                         this.logger.error({
-                            message: 'Error enqueuing AST graph builds',
+                            message: `Error enqueuing AST graph builds: ${error?.message || String(error)}`,
                             context: CreateRepositoriesUseCase.name,
-                            error: error.message,
-                            metadata: { organizationId, teamId },
                         });
                     });
                 });
@@ -207,7 +190,20 @@ export class CreateRepositoriesUseCase implements IUseCase {
         }>,
         orgTeam: { organizationId: string; teamId: string },
     ): Promise<void> {
-        const platformType = await this.codeManagementService.getTypeIntegration(orgTeam) || 'github';
+        const platformType =
+            (await this.codeManagementService.getTypeIntegration(orgTeam)) ||
+            'github';
+
+        this.logger.log({
+            message: `[AST-GRAPH] Processing ${repositories.length} repos for AST graph build (platform=${platformType})`,
+            context: CreateRepositoriesUseCase.name,
+            metadata: {
+                repos: repositories.map((r: any) => ({
+                    id: r.id,
+                    name: r.name,
+                })),
+            },
+        });
 
         for (const repo of repositories) {
             try {
@@ -216,15 +212,16 @@ export class CreateRepositoriesUseCase implements IUseCase {
                     repo.full_name ||
                     `${repo.organizationName || ''}/${repo.name}`;
 
-                const repoRecord =
-                    await this.repositoryRepository.findOrCreate({
+                const repoRecord = await this.repositoryRepository.findOrCreate(
+                    {
                         integrationConfigId: orgTeam.teamId,
                         externalId: String(repo.id),
                         name: repo.name,
                         fullName,
                         platform: platformType,
                         defaultBranch: repo.default_branch,
-                    });
+                    },
+                );
 
                 // Only enqueue if graph not already ready or building
                 if (
@@ -256,10 +253,9 @@ export class CreateRepositoriesUseCase implements IUseCase {
                     });
                 }
             } catch (error) {
-                this.logger.warn({
-                    message: `[AST-GRAPH] Failed to enqueue build for repo ${repo.name}`,
+                this.logger.error({
+                    message: `[AST-GRAPH] Failed to enqueue build for repo ${repo.name}: ${error?.message || String(error)}`,
                     context: CreateRepositoriesUseCase.name,
-                    error: error?.message,
                 });
                 // Continue with other repos — don't let one failure block the rest
             }

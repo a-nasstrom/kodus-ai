@@ -2,15 +2,6 @@ import { AIEngineModule } from '@libs/ai-engine/modules/ai-engine.module';
 import { CodeAnalysisOrchestrator } from '@libs/ee/codeBase/codeAnalysisOrchestrator.service';
 import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-
-import { RepositoryRepository } from '@libs/code-review/infrastructure/adapters/repositories/repository.repository';
-import { AstGraphRepository } from '@libs/code-review/infrastructure/adapters/repositories/astGraph.repository';
-import { AstGraphBuildService } from '@libs/code-review/infrastructure/adapters/services/astGraphBuild.service';
-import { KodusGraphService } from '@libs/code-review/infrastructure/adapters/services/kodusGraph.service';
-import { RepositoryModel } from '@libs/code-review/infrastructure/adapters/repositories/schemas/repository.model';
-import { AstNodeModel } from '@libs/code-review/infrastructure/adapters/repositories/schemas/astNode.model';
-import { AstEdgeModel } from '@libs/code-review/infrastructure/adapters/repositories/schemas/astEdge.model';
 
 import { CodeReviewFeedbackModule } from '@libs/code-review/modules/codeReviewFeedback.module';
 import { ContextReferenceModule } from '@libs/code-review/modules/contextReference.module';
@@ -83,6 +74,7 @@ import { DryRunModule } from '@libs/dryRun/dry-run.module';
 import { CodeAstAnalysisService } from '@libs/ee/kodyAST/codeASTAnalysis.service';
 import { AST_ANALYSIS_SERVICE_TOKEN } from '../domain/contracts/ASTAnalysisService.contract';
 import { SafeguardPipelineService } from '../infrastructure/adapters/services/safeguardPipeline.service';
+import { AstGraphModule } from './ast-graph.module';
 import { DocumentationContextModule } from './documentation-context.module';
 
 @Module({
@@ -110,7 +102,7 @@ import { DocumentationContextModule } from './documentation-context.module';
         forwardRef(() => KodyASTModule),
         forwardRef(() => DryRunModule),
         forwardRef(() => DocumentationContextModule),
-        TypeOrmModule.forFeature([RepositoryModel, AstNodeModel, AstEdgeModel]),
+        AstGraphModule,
         GlobalCacheModule,
     ],
     providers: [
@@ -186,10 +178,6 @@ import { DocumentationContextModule } from './documentation-context.module';
             useClass: CodeAstAnalysisService,
         },
         SafeguardPipelineService,
-        RepositoryRepository,
-        AstGraphRepository,
-        AstGraphBuildService,
-        KodusGraphService,
     ],
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,
@@ -210,10 +198,7 @@ import { DocumentationContextModule } from './documentation-context.module';
         pipelineProvider,
         AST_ANALYSIS_SERVICE_TOKEN,
         SafeguardPipelineService,
-        RepositoryRepository,
-        AstGraphRepository,
-        AstGraphBuildService,
-        KodusGraphService,
+        AstGraphModule,
     ],
 })
 export class CodebaseModule {}

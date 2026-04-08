@@ -12,7 +12,7 @@ export class GetIssuesByFiltersDto {
     title?: string;
 
     @IsOptional()
-    @ApiPropertyOptional({ enum: SeverityLevel, enumName: 'SeverityLevel' })
+    @ApiPropertyOptional({ type: String, enum: SeverityLevel, enumName: 'SeverityLevel' })
     severity?: SeverityLevel;
 
     @IsOptional()

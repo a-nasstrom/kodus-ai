@@ -49,6 +49,7 @@ import { GithubModule } from '@libs/platform/modules/github.module';
 import { PlatformModule } from '@libs/platform/modules/platform.module';
 import { ASTContentFormatterService } from '../infrastructure/adapters/services/astContentFormatter.service';
 import { CodeReviewPipelineObserver } from '../infrastructure/observers/code-review-pipeline.observer';
+import { AstGraphModule } from '../modules/ast-graph.module';
 import { CodebaseModule } from '../modules/codebase.module';
 import { DocumentationContextModule } from '../modules/documentation-context.module';
 import { PullRequestsModule } from '../modules/pull-requests.module';
@@ -89,6 +90,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         forwardRef(() => GithubModule),
         forwardRef(() => PermissionValidationModule),
         forwardRef(() => LicenseModule),
+        AstGraphModule,
         WorkflowCoreModule,
         DryRunCoreModule,
     ],

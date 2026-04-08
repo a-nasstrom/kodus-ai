@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { Sandbox } from 'e2b';
 import type { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { AstGraphRepository } from '../repositories/astGraph.repository';
+import { RepositoryRepository } from '../repositories/repository.repository';
 
 const REPO_DIR = '/home/user/repo';
 const GRAPH_DIR = '.kodus-graph';
@@ -36,6 +37,7 @@ export class KodusGraphService {
 
     constructor(
         private readonly astGraphRepo: AstGraphRepository,
+        private readonly repositoryRepo: RepositoryRepository,
     ) {}
 
     /**
@@ -63,7 +65,8 @@ export class KodusGraphService {
             await this.parseChangedFiles(sandbox, filePaths);
 
             // Step 3: Export base graph from DB and write to sandbox
-            await this.writeBaseGraphToSandbox(sandbox, repoId);
+            const repo = await this.repositoryRepo.findById(repoId);
+            await this.writeBaseGraphToSandbox(sandbox, repoId, repo?.astGraphSha ?? undefined);
 
             // Step 4: Generate context with real diff
             const prompt = await this.generatePromptContext(
@@ -235,9 +238,9 @@ export class KodusGraphService {
         }
     }
 
-    private async writeBaseGraphToSandbox(sandbox: Sandbox, repoId: string): Promise<void> {
+    private async writeBaseGraphToSandbox(sandbox: Sandbox, repoId: string, sha?: string): Promise<void> {
         // JSON built entirely in PostgreSQL — zero intermediate JS objects.
-        const jsonStr = await this.astGraphRepo.exportAsGraphJsonString(repoId);
+        const jsonStr = await this.astGraphRepo.exportAsGraphJsonString(repoId, sha);
         const baseGraphPath = `${REPO_DIR}/${GRAPH_DIR}/base-graph.json`;
 
         await sandbox.files.write(baseGraphPath, jsonStr);
