@@ -80,7 +80,8 @@ import {
 
 const logger = createLogger('AgentLoop');
 
-const MAX_STEPS = 20;
+const MAX_STEPS_NORMAL = 15;
+const MAX_STEPS_DEEP = 100;
 const AGENT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes max per agent
 
 /** Schema for structured output */
@@ -261,12 +262,12 @@ export async function runAgentLoop(
                 input.telemetryMetadata,
             ),
             tools,
-            stopWhen: stepCountIs(input.maxSteps || MAX_STEPS),
+            stopWhen: stepCountIs(input.maxSteps || (input.reviewMode === 'deep' ? MAX_STEPS_DEEP : MAX_STEPS_NORMAL)),
             // Last 2 steps: remove tools entirely to force text response.
             // toolChoice: 'none' doesn't work with all providers (e.g., Gemini ignores it).
             // Removing tools entirely guarantees the model can only respond with text.
             prepareStep: ({ stepNumber }: any) => {
-                const maxSteps = input.maxSteps || MAX_STEPS;
+                const maxSteps = input.maxSteps || (input.reviewMode === 'deep' ? MAX_STEPS_DEEP : MAX_STEPS_NORMAL);
                 const forceTextAfter = maxSteps - 2;
                 const coverageDebt = formatCoverageDebt(coverageTargets);
 

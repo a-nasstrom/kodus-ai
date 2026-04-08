@@ -732,10 +732,11 @@ ${coverageTargets ? `${coverageTargets}\n` : ''}
     - If the system prompt includes client-specific severity criteria, use those criteria when choosing critical/high/medium/low. Treat those criteria as authoritative over your default intuition.
     ${mixedLabelRules}
     ${mixedLabelLensRules}
-    - Assign a confidence score (1-10) to each finding:
-      8-10: You traced the call chain, read the definition, and confirmed the bug with concrete evidence from the code.
-      5-7: The code looks wrong but you could not fully confirm — e.g. you found the callsite but not the callee definition.
-      1-4: Suspicious pattern but speculative — you did not find confirming evidence.
+    - Assign a confidence score (1-10) to each finding. Be honest — overconfidence wastes verification budget:
+      9-10: You read BOTH the callsite AND the callee definition, confirmed the types/signatures mismatch or the wrong return value, and can name the exact failing input. Reserve 10 for bugs where you verified the fix would work.
+      7-8: You read the relevant code and traced the failure path, but did not verify the callee definition or could not confirm the exact input that triggers it.
+      5-6: The code pattern looks wrong based on the diff, but you only read one side (caller OR callee, not both). The bug is plausible but not fully confirmed.
+      1-4: Suspicious pattern, speculative concern, or you are reporting based on experience rather than evidence from this codebase.
     - Return only the JSON object inside markdown fences, no extra text.
   </Rules>
 

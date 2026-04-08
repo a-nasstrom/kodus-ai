@@ -38,13 +38,13 @@ export interface OrchestratorOutput {
 export class ReviewOrchestratorService {
     private readonly logger = createLogger(ReviewOrchestratorService.name);
     private static readonly NORMAL_MODE_MAX_STEPS: Record<string, number> = {
-        generalist: 24,
-        bug: 20,
+        generalist: 18,
+        bug: 18,
         security: 12,
         performance: 12,
-        'kody-rules': 20,
+        'kody-rules': 18,
     };
-    private static readonly DEEP_MODE_MAX_STEPS = 50;
+    private static readonly DEEP_MODE_MAX_STEPS = 100;
 
     constructor(
         private readonly bugAgent: BugAgentProvider,
