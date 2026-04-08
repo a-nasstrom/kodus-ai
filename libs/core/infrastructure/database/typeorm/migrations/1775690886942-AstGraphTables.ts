@@ -1,14 +1,17 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddNewSchemaQueue1775583280561 implements MigrationInterface {
-    name = 'AddNewSchemaQueue1775583280561'
+export class AstGraphTables1775690886942 implements MigrationInterface {
+    name = 'AstGraphTables1775690886942'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
-            CREATE TYPE "public"."repositories_ast_graph_status_enum" AS ENUM('pending', 'building', 'ready', 'failed')
+            DO $$ BEGIN
+                CREATE TYPE "public"."repositories_ast_graph_status_enum" AS ENUM('pending', 'building', 'ready', 'failed');
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
         `);
         await queryRunner.query(`
-            CREATE TABLE "repositories" (
+            CREATE TABLE IF NOT EXISTS "repositories" (
                 "uuid" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "createdAt" TIMESTAMP NOT NULL DEFAULT ('now'::text)::timestamp(6) with time zone,
                 "updatedAt" TIMESTAMP NOT NULL DEFAULT ('now'::text)::timestamp(6) with time zone,
@@ -28,7 +31,7 @@ export class AddNewSchemaQueue1775583280561 implements MigrationInterface {
             )
         `);
         await queryRunner.query(`
-            CREATE TABLE "ast_nodes" (
+            CREATE TABLE IF NOT EXISTS "ast_nodes" (
                 "id" BIGSERIAL NOT NULL,
                 "repo_id" uuid NOT NULL,
                 "kind" text NOT NULL,
@@ -49,16 +52,16 @@ export class AddNewSchemaQueue1775583280561 implements MigrationInterface {
             )
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_nodes_repo_qual" ON "ast_nodes" ("repo_id", "qualified_name")
+            CREATE INDEX IF NOT EXISTS "idx_ast_nodes_repo_qual" ON "ast_nodes" ("repo_id", "qualified_name")
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_nodes_repo_kind" ON "ast_nodes" ("repo_id", "kind")
+            CREATE INDEX IF NOT EXISTS "idx_ast_nodes_repo_kind" ON "ast_nodes" ("repo_id", "kind")
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_nodes_repo_file" ON "ast_nodes" ("repo_id", "file_path")
+            CREATE INDEX IF NOT EXISTS "idx_ast_nodes_repo_file" ON "ast_nodes" ("repo_id", "file_path")
         `);
         await queryRunner.query(`
-            CREATE TABLE "ast_edges" (
+            CREATE TABLE IF NOT EXISTS "ast_edges" (
                 "id" BIGSERIAL NOT NULL,
                 "repo_id" uuid NOT NULL,
                 "kind" text NOT NULL,
@@ -77,16 +80,16 @@ export class AddNewSchemaQueue1775583280561 implements MigrationInterface {
             )
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_edges_repo_file" ON "ast_edges" ("repo_id", "file_path")
+            CREATE INDEX IF NOT EXISTS "idx_ast_edges_repo_file" ON "ast_edges" ("repo_id", "file_path")
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_edges_repo_kind" ON "ast_edges" ("repo_id", "kind")
+            CREATE INDEX IF NOT EXISTS "idx_ast_edges_repo_kind" ON "ast_edges" ("repo_id", "kind")
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_edges_repo_target" ON "ast_edges" ("repo_id", "target_qualified")
+            CREATE INDEX IF NOT EXISTS "idx_ast_edges_repo_target" ON "ast_edges" ("repo_id", "target_qualified")
         `);
         await queryRunner.query(`
-            CREATE INDEX "idx_ast_edges_repo_source" ON "ast_edges" ("repo_id", "source_qualified")
+            CREATE INDEX IF NOT EXISTS "idx_ast_edges_repo_source" ON "ast_edges" ("repo_id", "source_qualified")
         `);
         await queryRunner.query(`
             ALTER TYPE "kodus_workflow"."workflow_jobs_workflowtype_enum"
@@ -112,12 +115,18 @@ export class AddNewSchemaQueue1775583280561 implements MigrationInterface {
             DROP TYPE "kodus_workflow"."workflow_jobs_workflowtype_enum_old"
         `);
         await queryRunner.query(`
-            ALTER TABLE "ast_nodes"
-            ADD CONSTRAINT "FK_3646ba9180736a6764f10a98f02" FOREIGN KEY ("repo_id") REFERENCES "repositories"("uuid") ON DELETE CASCADE ON UPDATE NO ACTION
+            DO $$ BEGIN
+                ALTER TABLE "ast_nodes"
+                ADD CONSTRAINT "FK_3646ba9180736a6764f10a98f02" FOREIGN KEY ("repo_id") REFERENCES "repositories"("uuid") ON DELETE CASCADE ON UPDATE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
         `);
         await queryRunner.query(`
-            ALTER TABLE "ast_edges"
-            ADD CONSTRAINT "FK_7faf9409db66f438da015eb7976" FOREIGN KEY ("repo_id") REFERENCES "repositories"("uuid") ON DELETE CASCADE ON UPDATE NO ACTION
+            DO $$ BEGIN
+                ALTER TABLE "ast_edges"
+                ADD CONSTRAINT "FK_7faf9409db66f438da015eb7976" FOREIGN KEY ("repo_id") REFERENCES "repositories"("uuid") ON DELETE CASCADE ON UPDATE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
         `);
     }
 
