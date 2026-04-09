@@ -81,6 +81,7 @@ import {
 } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { useMCPMentions } from "src/core/hooks/use-mcp-mentions";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { cn } from "src/core/utils/components";
 
 import type { FormattedDirectoryCodeReviewConfig } from "../_types";
@@ -435,6 +436,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
     canEdit: boolean;
 }) => {
     const { toast } = useToast();
+    const { teamId } = useSelectedTeamId();
 
     const initialScope = rule?.scope ?? "file";
 
@@ -539,6 +541,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                     origin: config.origin ?? KodyRulesOrigin.USER,
                     status: config.status ?? KodyRulesStatus.ACTIVE,
                     type: config.type ?? ruleType,
+                    centralizedConfig: rule?.centralizedConfig,
                     inheritance: {
                         ...(rule?.inheritance ?? {
                             inheritable: true,
@@ -550,6 +553,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                 },
                 repositoryId,
                 directory?.id,
+                teamId,
             );
 
             if (isCentralizedPrResponse(mutationResult)) {
@@ -615,6 +619,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                     origin: rule?.origin ?? KodyRulesOrigin.USER,
                     status: rule?.status ?? KodyRulesStatus.ACTIVE,
                     type: rule?.type ?? ruleType,
+                    centralizedConfig: rule?.centralizedConfig,
                     inheritance: {
                         ...(rule?.inheritance ?? {
                             inheritable: true,
@@ -626,6 +631,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
                 } as KodyRule,
                 rule?.repositoryId,
                 rule?.directoryId,
+                teamId,
             );
 
             if (isCentralizedPrResponse(mutationResult)) {

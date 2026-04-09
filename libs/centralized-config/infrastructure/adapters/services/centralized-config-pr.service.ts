@@ -217,6 +217,29 @@ export class CentralizedConfigPrService {
             };
         }
 
+        const discoveredReusedPullRequest =
+            await this.tryDiscoverAndReuseTrackedPullRequest({
+                organizationAndTeamData: params.organizationAndTeamData,
+                repository: centralizedRepository,
+                files: resolvedFiles,
+                commitMessage: resolvedCommitMessage,
+                targetBranch,
+                author: params.author,
+            });
+
+        if (discoveredReusedPullRequest) {
+            return {
+                mode: 'centralized-pr',
+                prUrl: discoveredReusedPullRequest.prUrl,
+                prNumber: discoveredReusedPullRequest.prNumber,
+                reused: true,
+                pending: true,
+                message:
+                    params.centralizedModeMessage ||
+                    'Centralized config is enabled. Change queued into the active centralized pull request.',
+            };
+        }
+
         const sourceBranch = this.resolveValue(params.sourceBranch, context);
 
         const pr = await this.createPullRequestInCentralizedRepo({
@@ -297,9 +320,10 @@ export class CentralizedConfigPrService {
         }
 
         if (
-            params.repository?.id &&
-            trackedPullRequest.repository?.id &&
-            params.repository.id !== trackedPullRequest.repository.id
+            this.normalizeRepositoryId(params.repository?.id) &&
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) &&
+            this.normalizeRepositoryId(params.repository?.id) !==
+                this.normalizeRepositoryId(trackedPullRequest.repository?.id)
         ) {
             return false;
         }
@@ -522,8 +546,9 @@ export class CentralizedConfigPrService {
         }
 
         if (
-            trackedPullRequest.repository?.id &&
-            trackedPullRequest.repository.id !== params.repository.id
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) &&
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) !==
+                this.normalizeRepositoryId(params.repository.id)
         ) {
             await this.clearActivePullRequestMetadata(
                 params.organizationAndTeamData,
@@ -614,6 +639,120 @@ export class CentralizedConfigPrService {
         };
     }
 
+    private async tryDiscoverAndReuseTrackedPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        files: PullRequestFileChange[];
+        commitMessage: string;
+        targetBranch: string;
+        author?: { name: string; email?: string };
+    }): Promise<{ prUrl: string; prNumber?: number } | null> {
+        const discoveredTrackedPullRequest =
+            await this.discoverSingleOpenCentralizedPullRequest({
+                organizationAndTeamData: params.organizationAndTeamData,
+                repository: params.repository,
+                targetBranch: params.targetBranch,
+            });
+
+        if (!discoveredTrackedPullRequest) {
+            return null;
+        }
+
+        const reusedPullRequest = await this.tryReuseTrackedPullRequest({
+            organizationAndTeamData: params.organizationAndTeamData,
+            repository: params.repository,
+            trackedPullRequest: discoveredTrackedPullRequest,
+            files: params.files,
+            commitMessage: params.commitMessage,
+            targetBranch: params.targetBranch,
+            author: params.author,
+        });
+
+        if (!reusedPullRequest) {
+            return null;
+        }
+
+        return reusedPullRequest;
+    }
+
+    private async discoverSingleOpenCentralizedPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        targetBranch: string;
+    }): Promise<CentralizedConfigActivePullRequest | null> {
+        try {
+            const openPullRequests =
+                await this.codeManagementService.getPullRequests({
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repository: params.repository,
+                    filters: {
+                        state: PullRequestState.OPENED,
+                    },
+                });
+
+            const centralizedOpenPullRequests = (openPullRequests || []).filter(
+                (pullRequest) => {
+                    const sourceBranch = pullRequest?.head?.ref;
+                    const baseBranch = pullRequest?.base?.ref;
+
+                    return (
+                        typeof sourceBranch === 'string' &&
+                        sourceBranch.startsWith('kodus-centralized-') &&
+                        typeof baseBranch === 'string' &&
+                        baseBranch === params.targetBranch
+                    );
+                },
+            );
+
+            if (centralizedOpenPullRequests.length !== 1) {
+                return null;
+            }
+
+            const discoveredPullRequest = centralizedOpenPullRequests[0];
+
+            if (
+                !discoveredPullRequest?.prURL ||
+                !discoveredPullRequest?.head?.ref
+            ) {
+                return null;
+            }
+
+            const now = new Date().toISOString();
+            const discoveredTrackedPullRequest: CentralizedConfigActivePullRequest =
+                {
+                    prUrl: discoveredPullRequest.prURL,
+                    prNumber: discoveredPullRequest.number,
+                    sourceBranch: discoveredPullRequest.head.ref,
+                    targetBranch:
+                        discoveredPullRequest.base?.ref || params.targetBranch,
+                    repository: params.repository,
+                    createdAt: discoveredPullRequest.created_at || now,
+                    updatedAt: now,
+                };
+
+            await this.persistActivePullRequestMetadata(
+                params.organizationAndTeamData,
+                discoveredTrackedPullRequest,
+            );
+
+            return discoveredTrackedPullRequest;
+        } catch (error) {
+            this.logger.warn({
+                message:
+                    'Failed to discover open centralized pull requests for reuse',
+                context: CentralizedConfigPrService.name,
+                error: this.normalizeError(error),
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repository: params.repository,
+                    targetBranch: params.targetBranch,
+                },
+            });
+
+            return null;
+        }
+    }
+
     private extractPullRequestNumber(url?: string): number | undefined {
         if (!url) {
             return undefined;
@@ -655,8 +794,9 @@ export class CentralizedConfigPrService {
         }
 
         if (
-            trackedPullRequest.repository?.id &&
-            trackedPullRequest.repository.id !== params.repository.id
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) &&
+            this.normalizeRepositoryId(trackedPullRequest.repository?.id) !==
+                this.normalizeRepositoryId(params.repository.id)
         ) {
             await this.clearActivePullRequestMetadata(
                 params.organizationAndTeamData,
@@ -757,5 +897,15 @@ export class CentralizedConfigPrService {
 
         const normalized = path.replace(/^\/+/, '').replace(/\/+$/, '');
         return normalized || undefined;
+    }
+
+    private normalizeRepositoryId(
+        repositoryId?: string | number | null,
+    ): string | undefined {
+        if (repositoryId === undefined || repositoryId === null) {
+            return undefined;
+        }
+
+        return String(repositoryId);
     }
 }

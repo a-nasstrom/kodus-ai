@@ -243,8 +243,10 @@ describe('GenerateKodyRulesUseCase', () => {
             })
             .mockResolvedValueOnce({
                 uuid: 'rule-uuid-1',
-                centralizedSourcePath:
-                    'repo-one/.kody-rules/review/avoid-console-log.yml',
+                centralizedConfig: {
+                    path: 'repo-one/.kody-rules/review/avoid-console-log.yml',
+                    status: 'pending_add',
+                },
             });
 
         centralizedConfigPrServiceMock.getCentralizedRepositoryIfEnabled.mockResolvedValue(
@@ -283,8 +285,10 @@ describe('GenerateKodyRulesUseCase', () => {
             expect.objectContaining({
                 uuid: 'rule-uuid-1',
                 status: KodyRulesStatus.PENDING,
-                centralizedSourcePath:
-                    'repo-one/.kody-rules/review/avoid-console-log.yml',
+                centralizedConfig: {
+                    path: 'repo-one/.kody-rules/review/avoid-console-log.yml',
+                    status: 'pending_add',
+                },
             }),
             'org-1',
             expect.objectContaining({ userId: 'kody-system-rules-generator' }),

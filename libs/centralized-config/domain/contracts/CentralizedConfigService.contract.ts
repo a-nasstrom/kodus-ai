@@ -21,7 +21,7 @@ export interface IKodyRuleFileMeta {
     directoryPath?: string; // Target directory path or undefined for repo-level
     ruleType: KodyRulesType; // MEMORY or STANDARD based on subdirectory
     ruleFilePath: string; // Full path in centralized repo, e.g., "org-a/.kody-rules/memories/logging.yml"
-    centralizedSourcePath: string; // Canonical centralized source path for DB tracking, e.g., "org-a/.kody-rules/memories/logging.yml"
+    path: string; // Canonical centralized source path for DB tracking, e.g., "org-a/.kody-rules/memories/logging.yml"
 }
 
 export interface ICentralizedConfigService {

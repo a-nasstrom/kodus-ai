@@ -10,9 +10,13 @@ import {
     KODY_RULES_SERVICE_TOKEN,
     IKodyRulesService,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
-import { buildKodyRuleCentralizedMutationRequest } from '@libs/mcp-server/tools/kody-rules-centralized-pr.builder';
+import { buildKodyRuleCentralizedMutationRequest } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
-import { KodyRulesType } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
+import {
+    KodyRuleCentralizedStatus,
+    KodyRulesStatus,
+    KodyRulesType,
+} from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 
 @Injectable()
 export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
@@ -44,7 +48,8 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
             const requestUser = this.request?.user as any;
             const organizationId =
                 actor?.organizationId || requestUser.organization.uuid;
-            const teamId = actor?.teamId || requestUser?.team?.uuid;
+            const teamId =
+                actor?.teamId || requestUser?.team?.uuid || requestUser?.teamId;
 
             const existingRule = await this.kodyRulesService.findById(ruleId);
 
@@ -68,6 +73,52 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                     );
 
                 if (pr.mode === 'centralized-pr') {
+                    const repositoryFolder =
+                        await this.centralizedConfigPrService.resolveRepositoryFolderName(
+                            {
+                                organizationId,
+                                teamId,
+                            },
+                            existingRule.repositoryId,
+                        );
+
+                    const rulesDirectory =
+                        ((existingRule.type as KodyRulesType) ||
+                            KodyRulesType.STANDARD) === KodyRulesType.MEMORY
+                            ? 'memories'
+                            : 'review';
+
+                    const centralizedPath =
+                        existingRule.centralizedConfig?.path ||
+                        this.centralizedConfigPrService.buildCentralizedPath({
+                            repositoryFolder,
+                            relativePath: `.kody-rules/${rulesDirectory}/${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`,
+                        });
+
+                    await this.kodyRulesService.createOrUpdate(
+                        {
+                            organizationId,
+                            teamId,
+                        },
+                        {
+                            ...existingRule,
+                            uuid: existingRule.uuid,
+                            type:
+                                (existingRule.type as KodyRulesType) ||
+                                KodyRulesType.STANDARD,
+                            status:
+                                existingRule.status || KodyRulesStatus.ACTIVE,
+                            centralizedConfig: {
+                                path: centralizedPath,
+                                status: KodyRuleCentralizedStatus.PENDING_DELETE,
+                            },
+                        } as any,
+                        {
+                            userId: actor?.userId || requestUser.uuid,
+                            userEmail: actor?.userEmail || requestUser.email,
+                        },
+                    );
+
                     return pr;
                 }
             }

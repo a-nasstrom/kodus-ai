@@ -29,6 +29,8 @@ import {
     type KodyRule,
     type LibraryRule,
 } from "@services/kodyRules/types";
+import { isCentralizedPrResponse } from "@services/parameters/types";
+import { getCentralizedPrToastPayload } from "src/app/(app)/settings/code-review/_utils/centralized-pr-feedback";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import {
@@ -46,6 +48,7 @@ import { cn } from "src/core/utils/components";
 import { hasPermission } from "src/core/utils/permission-map";
 import { revalidateServerSidePath } from "src/core/utils/revalidate-server-side";
 import { addSearchParamsToUrl } from "src/core/utils/url";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
 import { SelectRepositoriesDropdown } from "./dropdown";
 import { ExampleSection } from "./examples";
@@ -62,6 +65,7 @@ export const KodyRuleLibraryItemModal = ({
     repositories: Array<CodeReviewRepositoryConfig>;
 }) => {
     const router = useRouter();
+    const { teamId } = useSelectedTeamId();
     const { organizationId } = useAuth();
     const queryClient = useQueryClient();
     const [positiveCount, setPositiveCount] = useState(rule.positiveCount ?? 0);
@@ -128,7 +132,19 @@ export const KodyRuleLibraryItemModal = ({
                 rule: newRule,
                 repositoriesIds: selectedRepositoriesIds,
                 directoriesIds: selectedDirectoriesIds,
+                teamId,
             });
+
+            if (isCentralizedPrResponse(addedKodyRules)) {
+                toast(
+                    getCentralizedPrToastPayload(
+                        addedKodyRules,
+                        `Rule "${rule.title}" change proposed through centralized pull request.`,
+                    ),
+                );
+
+                return;
+            }
 
             await queryClient.resetQueries({
                 predicate: (query) =>

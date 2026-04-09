@@ -18,6 +18,7 @@ import {
     useSuspenseKodyRulesByRepositoryId,
 } from "@services/kodyRules/hooks";
 import {
+    KodyRuleCentralizedStatus,
     KodyRuleRequestType,
     KodyRulesStatus,
     KodyRulesType,
@@ -51,13 +52,24 @@ import { KodyRulesList } from "./list";
 import { KodyRulesToolbar, type VisibleScopes } from "./toolbar";
 
 type KodyRulesTab = "review-rules" | "memories" | "configuration";
-type RulesStatusFilter = "all" | "pending-merge";
+type RulesStatusFilter = "all" | "pending-centralized";
 
 const TAB_QUERY_PARAM = "tab";
 const DEFAULT_TAB: KodyRulesTab = "review-rules";
 
 const getRuleType = (rule: Pick<KodyRule, "type">) =>
     rule.type ?? KodyRulesType.STANDARD;
+
+const isRulePendingCentralizedChange = (rule: KodyRule) => {
+    return (
+        rule.centralizedConfig?.status ===
+            KodyRuleCentralizedStatus.PENDING_ADD ||
+        rule.centralizedConfig?.status ===
+            KodyRuleCentralizedStatus.PENDING_EDIT ||
+        rule.centralizedConfig?.status ===
+            KodyRuleCentralizedStatus.PENDING_DELETE
+    );
+};
 
 const KodyRulesPageContent = () => {
     const platformConfig = usePlatformConfig();
@@ -99,7 +111,6 @@ const KodyRulesPageContent = () => {
         (result, rule) => {
             switch (rule.status) {
                 case KodyRulesStatus.ACTIVE:
-                case KodyRulesStatus.PENDING_MERGE:
                     result.activeRules.push(rule);
                     break;
                 case KodyRulesStatus.PENDING:
@@ -197,14 +208,14 @@ const KodyRulesPageContent = () => {
         }
         const uniqueRules = Array.from(uniqueRulesMap.values());
 
-        const pendingMergeCount = activeRulesByType.filter(
-            (rule) => rule.status === KodyRulesStatus.PENDING_MERGE,
+        const pendingCentralizedCount = activeRulesByType.filter((rule) =>
+            isRulePendingCentralizedChange(rule),
         ).length;
 
         const statusFilteredRules =
-            statusFilter === "pending-merge"
-                ? uniqueRules.filter(
-                      (rule) => rule.status === KodyRulesStatus.PENDING_MERGE,
+            statusFilter === "pending-centralized"
+                ? uniqueRules.filter((rule) =>
+                      isRulePendingCentralizedChange(rule as KodyRule),
                   )
                 : uniqueRules;
 
@@ -225,7 +236,7 @@ const KodyRulesPageContent = () => {
             inheritedRepoRulesByType.length > 0 ||
             inheritedDirectoryRulesByType.length > 0;
 
-        return { rulesToDisplay, hasAnyRulesInSystem, pendingMergeCount };
+        return { rulesToDisplay, hasAnyRulesInSystem, pendingCentralizedCount };
     };
 
     const reviewRulesState = useMemo(
@@ -262,8 +273,8 @@ const KodyRulesPageContent = () => {
         ],
     );
 
-    const renderPendingMergeFilter = (pendingMergeCount: number) => {
-        if (pendingMergeCount === 0 && statusFilter === "all") {
+    const renderPendingMergeFilter = (pendingCentralizedCount: number) => {
+        if (pendingCentralizedCount === 0 && statusFilter === "all") {
             return null;
         }
 
@@ -278,12 +289,12 @@ const KodyRulesPageContent = () => {
                 <Button
                     size="xs"
                     variant={
-                        statusFilter === "pending-merge"
+                        statusFilter === "pending-centralized"
                             ? "primary"
                             : "secondary"
                     }
-                    onClick={() => setStatusFilter("pending-merge")}>
-                    Pending merge ({pendingMergeCount})
+                    onClick={() => setStatusFilter("pending-centralized")}>
+                    Pending centralized ({pendingCentralizedCount})
                 </Button>
             </div>
         );
@@ -547,7 +558,7 @@ const KodyRulesPageContent = () => {
                                 isGlobalView={isGlobalView}
                             />
                             {renderPendingMergeFilter(
-                                reviewRulesState.pendingMergeCount,
+                                reviewRulesState.pendingCentralizedCount,
                             )}
                             {!reviewRulesState.rulesToDisplay.length ? (
                                 <KodyRulesEmptyState
@@ -585,7 +596,7 @@ const KodyRulesPageContent = () => {
                                 isGlobalView={isGlobalView}
                             />
                             {renderPendingMergeFilter(
-                                memoriesState.pendingMergeCount,
+                                memoriesState.pendingCentralizedCount,
                             )}
                             {!memoriesState.rulesToDisplay.length ? (
                                 <KodyRulesEmptyState

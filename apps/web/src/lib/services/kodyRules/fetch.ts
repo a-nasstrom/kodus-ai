@@ -46,41 +46,56 @@ export const createOrUpdateKodyRule = async (
     rule: KodyRule,
     repositoryId?: string,
     directoryId?: string,
+    teamId?: string,
 ): Promise<KodyRuleMutationResponse> => {
     const response = await axiosAuthorized.post<any>(
         KODY_RULES_PATHS.CREATE_OR_UPDATE,
-        { ...rule, repositoryId, directoryId },
+        { ...rule, repositoryId, directoryId, teamId },
     );
 
-    return response.data as KodyRuleMutationResponse;
+    if (response && typeof response === "object" && "data" in response) {
+        return (response as { data?: KodyRuleMutationResponse })
+            .data as KodyRuleMutationResponse;
+    }
+
+    return response as KodyRuleMutationResponse;
 };
 
 export const addKodyRuleToRepositories = async (props: {
     repositoriesIds: string[];
     directoriesIds: Array<{ directoryId: string; repositoryId: string }>;
     rule: KodyRule;
-}) => {
+    teamId?: string;
+}): Promise<KodyRule[] | CentralizedPrResponse> => {
     const response = await axiosAuthorized.post<any>(
         KODY_RULES_PATHS.ADD_LIBRARY_KODY_RULES,
         {
             ...props.rule,
             repositoriesIds: props.repositoriesIds,
             directoriesInfo: props.directoriesIds,
+            teamId: props.teamId,
         },
     );
 
-    return response.data as KodyRule[];
+    return response.data as KodyRule[] | CentralizedPrResponse;
 };
 
 export const deleteKodyRule = async (
     ruleId: string,
+    teamId?: string,
 ): Promise<boolean | CentralizedPrResponse> => {
     const response = await axiosAuthorized.deleted<any>(
         KODY_RULES_PATHS.DELETE_BY_ORGANIZATION_ID_AND_ROLE_UUID,
-        { params: { ruleId } },
+        { params: { ruleId, teamId } },
     );
 
-    return response.data as boolean | CentralizedPrResponse;
+    if (response && typeof response === "object" && "data" in response) {
+        return (response as { data?: boolean | CentralizedPrResponse }).data as
+            | boolean
+            | CentralizedPrResponse;
+    }
+
+    return response as boolean | CentralizedPrResponse;
 };
 
 export const getLibraryKodyRulesWithFeedback = async (params?: {

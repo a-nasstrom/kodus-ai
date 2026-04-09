@@ -20,6 +20,7 @@ import { deleteKodyRule } from "@services/kodyRules/fetch";
 import type { KodyRule } from "@services/kodyRules/types";
 import { isCentralizedPrResponse } from "@services/parameters/types";
 import { TrashIcon } from "lucide-react";
+import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
 import { getCentralizedPrToastPayload } from "../_utils/centralized-pr-feedback";
 
@@ -32,6 +33,7 @@ export const DeleteKodyRuleConfirmationModal = ({
     rule,
     onSuccess,
 }: DeleteKodyRuleModalProps) => {
+    const { teamId } = useSelectedTeamId();
     const [enabled, setEnabled] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -46,7 +48,7 @@ export const DeleteKodyRuleConfirmationModal = ({
         magicModal.lock();
 
         try {
-            const mutationResult = await deleteKodyRule(rule.uuid);
+            const mutationResult = await deleteKodyRule(rule.uuid, teamId);
 
             magicModal.hide(true);
             onSuccess?.();

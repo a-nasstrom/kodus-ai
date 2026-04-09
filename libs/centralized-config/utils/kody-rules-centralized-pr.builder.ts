@@ -70,12 +70,12 @@ export function buildKodyRuleCentralizedFilePath(params: {
     rulesDirectory: string;
     ruleContent: Partial<IKodyRule>;
 }): string {
-    const normalizedSourcePath = normalizeCentralizedSourcePath(
-        params.ruleContent.centralizedSourcePath,
+    const normalizedPath = normalizeCentralizedPath(
+        params.ruleContent.centralizedConfig?.path,
     );
 
-    if (normalizedSourcePath) {
-        return normalizedSourcePath;
+    if (normalizedPath) {
+        return normalizedPath;
     }
 
     const fileName = `${params.centralizedConfigPrService.sanitizeFileName(params.ruleContent.title, 'rule')}.yml`;
@@ -86,7 +86,7 @@ export function buildKodyRuleCentralizedFilePath(params: {
     });
 }
 
-function normalizeCentralizedSourcePath(path?: string): string | null {
+function normalizeCentralizedPath(path?: string): string | null {
     const normalized = path?.trim();
 
     if (

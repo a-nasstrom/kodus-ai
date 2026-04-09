@@ -278,6 +278,7 @@ describe('CentralizedConfigService', () => {
                 },
                 {
                     skipAuthorization: true,
+                    skipCentralizedPr: true,
                 },
             );
 
@@ -380,6 +381,7 @@ describe('CentralizedConfigService', () => {
                 },
                 {
                     skipAuthorization: true,
+                    skipCentralizedPr: true,
                 },
             );
         });
@@ -469,6 +471,7 @@ describe('CentralizedConfigService', () => {
                 },
                 {
                     skipAuthorization: true,
+                    skipCentralizedPr: true,
                 },
             );
 
@@ -782,8 +785,7 @@ describe('CentralizedConfigService', () => {
                         directoryPath: undefined,
                         ruleType: 'memory' as any,
                         ruleFilePath: '.kody-rules/memories/logging.yml',
-                        centralizedSourcePath:
-                            '.kody-rules/memories/logging.yml',
+                        path: '.kody-rules/memories/logging.yml',
                     },
                     {
                         centralizedDirectoryPath: '.kody-rules/review',
@@ -791,8 +793,7 @@ describe('CentralizedConfigService', () => {
                         directoryPath: undefined,
                         ruleType: 'standard' as any,
                         ruleFilePath: '.kody-rules/review/security.yml',
-                        centralizedSourcePath:
-                            '.kody-rules/review/security.yml',
+                        path: '.kody-rules/review/security.yml',
                     },
                     {
                         centralizedDirectoryPath: 'org-a/.kody-rules/memories',
@@ -800,8 +801,7 @@ describe('CentralizedConfigService', () => {
                         directoryPath: undefined,
                         ruleType: 'memory' as any,
                         ruleFilePath: 'org-a/.kody-rules/memories/auth.yml',
-                        centralizedSourcePath:
-                            'org-a/.kody-rules/memories/auth.yml',
+                        path: 'org-a/.kody-rules/memories/auth.yml',
                     },
                     {
                         centralizedDirectoryPath:
@@ -811,8 +811,7 @@ describe('CentralizedConfigService', () => {
                         ruleType: 'standard' as any,
                         ruleFilePath:
                             'org-a/services/api/.kody-rules/review/api.yml',
-                        centralizedSourcePath:
-                            'org-a/services/api/.kody-rules/review/api.yml',
+                        path: 'org-a/services/api/.kody-rules/review/api.yml',
                     },
                 ]),
             );
@@ -863,7 +862,7 @@ describe('CentralizedConfigService', () => {
                     directoryPath: undefined,
                     ruleType: 'memory' as any,
                     ruleFilePath: '.kody-rules/memories/logging.yml',
-                    centralizedSourcePath: '.kody-rules/memories/logging.yml',
+                    path: '.kody-rules/memories/logging.yml',
                 },
             ];
 
@@ -927,7 +926,10 @@ describe('CentralizedConfigService', () => {
                     type: 'memory',
                     status: 'active',
                     repositoryId: 'global',
-                    centralizedSourcePath: '.kody-rules/memories/logging.yml',
+                    centralizedConfig: {
+                        path: '.kody-rules/memories/logging.yml',
+                        status: 'synced',
+                    },
                 }),
                 'org-1',
                 expect.any(Object),
@@ -943,7 +945,7 @@ describe('CentralizedConfigService', () => {
                     directoryPath: undefined,
                     ruleType: 'standard' as any,
                     ruleFilePath: '.kody-rules/review/security.yml',
-                    centralizedSourcePath: '.kody-rules/review/security.yml',
+                    path: '.kody-rules/review/security.yml',
                 },
             ];
 
@@ -983,8 +985,10 @@ describe('CentralizedConfigService', () => {
                     {
                         uuid: 'pending-rule-uuid',
                         status: 'pending',
-                        centralizedSourcePath:
-                            '.kody-rules/review/security.yml',
+                        centralizedConfig: {
+                            path: '.kody-rules/review/security.yml',
+                            status: 'pending_edit',
+                        },
                     },
                 ],
             });
@@ -1004,7 +1008,10 @@ describe('CentralizedConfigService', () => {
             ).toHaveBeenCalledWith(
                 expect.objectContaining({
                     uuid: 'pending-rule-uuid',
-                    centralizedSourcePath: '.kody-rules/review/security.yml',
+                    centralizedConfig: {
+                        path: '.kody-rules/review/security.yml',
+                        status: 'synced',
+                    },
                     status: 'active',
                 }),
                 'org-1',
@@ -1021,7 +1028,7 @@ describe('CentralizedConfigService', () => {
                     directoryPath: undefined,
                     ruleType: 'standard' as any,
                     ruleFilePath: '.kody-rules/review/style.yml',
-                    centralizedSourcePath: '.kody-rules/review/style.yml',
+                    path: '.kody-rules/review/style.yml',
                 },
             ];
 
@@ -1061,7 +1068,10 @@ describe('CentralizedConfigService', () => {
                     {
                         uuid: 'active-rule-uuid',
                         status: 'active',
-                        centralizedSourcePath: '.kody-rules/review/style.yml',
+                        centralizedConfig: {
+                            path: '.kody-rules/review/style.yml',
+                            status: 'synced',
+                        },
                     },
                 ],
             });
@@ -1081,7 +1091,10 @@ describe('CentralizedConfigService', () => {
             ).toHaveBeenCalledWith(
                 expect.objectContaining({
                     uuid: 'active-rule-uuid',
-                    centralizedSourcePath: '.kody-rules/review/style.yml',
+                    centralizedConfig: {
+                        path: '.kody-rules/review/style.yml',
+                        status: 'synced',
+                    },
                     status: 'active',
                 }),
                 'org-1',
@@ -1095,7 +1108,7 @@ describe('CentralizedConfigService', () => {
                 {
                     centralizedDirectoryPath: '.kody-rules/memories',
                     ruleFilePath: '.kody-rules/memories/invalid.yml',
-                    centralizedSourcePath: '.kody-rules/memories/invalid.yml',
+                    path: '.kody-rules/memories/invalid.yml',
                     ruleType: 'memory' as any,
                 },
             ];
@@ -1133,16 +1146,18 @@ describe('CentralizedConfigService', () => {
     });
 
     describe('removeStaleKodyRules', () => {
-        it('should remove stale pending_merge rules not present in centralized files', async () => {
+        it('should remove stale centralized rules not present in centralized files', async () => {
             mockKodyRulesService.findByOrganizationId.mockResolvedValue({
                 toJson: () => ({
                     rules: [
                         {
                             uuid: 'pending-merge-rule-1',
                             title: 'Pending merge rule',
-                            status: 'pending_merge',
-                            centralizedSourcePath:
-                                '.kody-rules/review/pending.yml',
+                            status: 'active',
+                            centralizedConfig: {
+                                path: '.kody-rules/review/pending.yml',
+                                status: 'pending_delete',
+                            },
                         },
                     ],
                 }),

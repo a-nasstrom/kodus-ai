@@ -899,6 +899,8 @@ export class GithubService
                     if (operation === 'delete') {
                         return {
                             path: file.path,
+                            mode: '100644' as const,
+                            type: 'blob' as const,
                             sha: null,
                         };
                     }

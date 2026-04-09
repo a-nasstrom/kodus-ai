@@ -30,10 +30,16 @@ describe('CentralizedConfigPrService', () => {
 
     const buildService = (overrides?: {
         pullRequestState?: PullRequestState;
+        centralizedConfigOverride?: any;
+        openPullRequests?: any[];
+        uploadFilesResult?: boolean;
     }) => {
+        const resolvedCentralizedConfig =
+            overrides?.centralizedConfigOverride || centralizedConfig;
+
         const parametersService = {
             findByKey: jest.fn().mockResolvedValue({
-                configValue: centralizedConfig,
+                configValue: resolvedCentralizedConfig,
             }),
             createOrUpdateConfig: jest.fn().mockResolvedValue(undefined),
         };
@@ -47,6 +53,13 @@ describe('CentralizedConfigPrService', () => {
             getPullRequest: jest.fn().mockResolvedValue({
                 state: overrides?.pullRequestState,
             }),
+            getPullRequests: jest
+                .fn()
+                .mockResolvedValue(overrides?.openPullRequests || []),
+            uploadFiles: jest
+                .fn()
+                .mockResolvedValue(overrides?.uploadFilesResult ?? true),
+            createPullRequestWithFiles: jest.fn(),
             getRepositoryContentFile: jest.fn().mockResolvedValue({
                 data: {
                     content: Buffer.from('ignorePaths: []').toString('base64'),
@@ -132,5 +145,100 @@ describe('CentralizedConfigPrService', () => {
         );
 
         expect(parametersService.createOrUpdateConfig).not.toHaveBeenCalled();
+    });
+
+    it('reuses a discovered open centralized pull request when active metadata is missing', async () => {
+        const discoveredSourceBranch =
+            'kodus-centralized-standard-delete-1775678312159';
+
+        const { service, codeManagementService } = buildService({
+            pullRequestState: PullRequestState.OPENED,
+            centralizedConfigOverride: {
+                enabled: true,
+                repository: centralizedRepository,
+                activePullRequest: null,
+            },
+            openPullRequests: [
+                {
+                    number: 321,
+                    prURL: 'https://example.test/pull/321',
+                    head: { ref: discoveredSourceBranch },
+                    base: { ref: 'main' },
+                    created_at: '2026-01-01T00:00:00.000Z',
+                },
+            ],
+            uploadFilesResult: true,
+        });
+
+        const result = await service.createMutationPullRequestIfEnabled({
+            organizationAndTeamData,
+            repositoryId: 'global',
+            files: [
+                {
+                    path: '.kody-rules/review/sample.yml',
+                    operation: 'delete',
+                },
+            ],
+            title: 'Remove Kody Rule from global',
+            description: 'Delete centralized rule file',
+            commitMessage: 'remove rule via centralized config',
+            sourceBranch: 'kodus-centralized-standard-delete-new',
+        });
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                mode: 'centralized-pr',
+                reused: true,
+                prUrl: 'https://example.test/pull/321',
+                prNumber: 321,
+            }),
+        );
+
+        expect(codeManagementService.uploadFiles).toHaveBeenCalledWith(
+            expect.objectContaining({
+                branchName: discoveredSourceBranch,
+                baseBranch: 'main',
+            }),
+        );
+
+        expect(
+            codeManagementService.createPullRequestWithFiles,
+        ).not.toHaveBeenCalled();
+    });
+
+    it('matches repository IDs by normalized value when clearing tracked metadata', async () => {
+        const { service, parametersService } = buildService({
+            centralizedConfigOverride: {
+                enabled: true,
+                repository: centralizedRepository,
+                activePullRequest: {
+                    ...activePullRequest,
+                    repository: {
+                        ...activePullRequest.repository,
+                        id: 123,
+                    },
+                },
+            },
+        });
+
+        const wasCleared = await service.clearActivePullRequestMetadataIfMatching(
+            {
+                organizationAndTeamData,
+                repository: {
+                    id: '123',
+                    name: 'centralized-repo',
+                },
+                pullRequestNumber: 123,
+            },
+        );
+
+        expect(wasCleared).toBe(true);
+        expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
+            'centralized_config',
+            expect.objectContaining({
+                activePullRequest: null,
+            }),
+            organizationAndTeamData,
+        );
     });
 });

@@ -1,6 +1,8 @@
 import {
+    IKodyRuleCentralizedConfig,
     IKodyRuleExternalReference,
     IKodyRuleReferenceSyncError,
+    KodyRuleCentralizedStatus,
     IKodyRulesExample,
     KodyRuleProcessingStatus,
     KodyRuleRequestType,
@@ -79,6 +81,20 @@ export class KodyRuleExternalReferenceDto implements IKodyRuleExternalReference 
     repositoryName?: string;
 }
 
+export class KodyRuleCentralizedConfigDto implements IKodyRuleCentralizedConfig {
+    @IsString()
+    @ApiProperty({ example: 'repo-a/.kody-rules/review/no-debug.yml' })
+    path: string;
+
+    @IsEnum(KodyRuleCentralizedStatus)
+    @ApiProperty({
+        enum: KodyRuleCentralizedStatus,
+        enumName: 'KodyRuleCentralizedStatus',
+        example: KodyRuleCentralizedStatus.PENDING_EDIT,
+    })
+    status: KodyRuleCentralizedStatus;
+}
+
 export class CreateKodyRuleDto {
     @IsOptional()
     @IsString()
@@ -130,9 +146,10 @@ export class CreateKodyRuleDto {
     sourcePath?: string;
 
     @IsOptional()
-    @IsString()
-    @ApiPropertyOptional({ example: 'repo-a/.kody-rules/review/no-debug.yml' })
-    centralizedSourcePath?: string;
+    @ValidateNested()
+    @Type(() => KodyRuleCentralizedConfigDto)
+    @ApiPropertyOptional({ type: KodyRuleCentralizedConfigDto })
+    centralizedConfig?: KodyRuleCentralizedConfigDto;
 
     @IsOptional()
     @IsString()
@@ -143,6 +160,15 @@ export class CreateKodyRuleDto {
     @IsEnum(KodyRuleSeverity)
     @ApiProperty({ enum: KodyRuleSeverity, enumName: 'KodyRuleSeverity' })
     severity: KodyRuleSeverity;
+
+    @IsOptional()
+    @IsString()
+    @ApiPropertyOptional({
+        description:
+            'Team identifier used to resolve team-scoped centralized configuration for global Kody Rules.',
+        example: '2e4f7a61-3c8c-4af5-bf25-2d0cbb19c4d1',
+    })
+    teamId?: string;
 
     @IsOptional()
     @IsString()

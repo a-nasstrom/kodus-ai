@@ -24,7 +24,7 @@ import {
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
-import { buildKodyRuleCentralizedMutationRequest } from './kody-rules-centralized-pr.builder';
+import { buildKodyRuleCentralizedMutationRequest } from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
 
@@ -38,7 +38,7 @@ type KodyRuleInput = Required<
         | 'extendedContext'
         | 'reason'
         | 'severity'
-        | 'centralizedSourcePath'
+        | 'centralizedConfig'
         | 'sourcePath'
         | 'sourceAnchor'
         | 'contextReferenceId'
@@ -66,7 +66,7 @@ type KodyRuleMemoryInput = Required<
         | 'extendedContext'
         | 'reason'
         | 'severity'
-        | 'centralizedSourcePath'
+        | 'centralizedConfig'
         | 'sourcePath'
         | 'sourceAnchor'
         | 'contextReferenceId'

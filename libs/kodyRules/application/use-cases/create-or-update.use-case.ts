@@ -18,7 +18,7 @@ import { CreateKodyRuleDto } from '@libs/ee/kodyRules/dtos/create-kody-rule.dto'
 import {
     buildKodyRuleCentralizedFilePath,
     buildKodyRuleCentralizedMutationRequest,
-} from '@libs/mcp-server/tools/kody-rules-centralized-pr.builder';
+} from '@libs/centralized-config/utils/kody-rules-centralized-pr.builder';
 import {
     CONTEXT_RESOLUTION_SERVICE_TOKEN,
     IContextResolutionService,
@@ -35,6 +35,7 @@ import {
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
 import {
     IKodyRule,
+    KodyRuleCentralizedStatus,
     KodyRulesOrigin,
     KodyRulesStatus,
     KodyRulesType,
@@ -69,6 +70,7 @@ export class CreateOrUpdateKodyRulesUseCase {
         organizationId: string,
         userInfo?: { userId: string; userEmail: string },
         skipAuthorization?: boolean,
+        teamIdOverride?: string,
     ): Promise<Partial<any> | CentralizedPrMetadata> {
         try {
             const req: any = this.request as any;
@@ -76,7 +78,8 @@ export class CreateOrUpdateKodyRulesUseCase {
 
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
-                teamId: reqUser?.team?.uuid || reqUser?.teamId,
+                teamId:
+                    teamIdOverride || reqUser?.team?.uuid || reqUser?.teamId,
             };
 
             const userInfoData =
@@ -113,6 +116,18 @@ export class CreateOrUpdateKodyRulesUseCase {
 
                 if (centralizedPr) {
                     return centralizedPr;
+                }
+
+                const centralizedEnabledForScope =
+                    await this.isCentralizedEnabledForRuleMutation(
+                        organizationAndTeamData,
+                        kodyRule.repositoryId,
+                    );
+
+                if (centralizedEnabledForScope) {
+                    throw new Error(
+                        'Centralized config is enabled, but rule mutation was not routed through centralized PR flow',
+                    );
                 }
             }
 
@@ -203,6 +218,10 @@ export class CreateOrUpdateKodyRulesUseCase {
             kodyRule.uuid &&
             (await this.kodyRulesService.findById(kodyRule.uuid));
 
+        if (kodyRule.uuid && !existingRule) {
+            throw new NotFoundException('Rule not found');
+        }
+
         const effectiveRule = {
             ...existingRule,
             ...kodyRule,
@@ -220,6 +239,32 @@ export class CreateOrUpdateKodyRulesUseCase {
         const ruleType =
             (effectiveRule.type as KodyRulesType) || KodyRulesType.STANDARD;
 
+        if (
+            !effectiveRule.centralizedConfig?.path &&
+            existingRule?.title &&
+            effectiveRule.repositoryId
+        ) {
+            const repositoryFolder =
+                await this.centralizedConfigPrService.resolveRepositoryFolderName(
+                    resolvedOrgAndTeamData,
+                    effectiveRule.repositoryId,
+                );
+
+            const rulesDirectory =
+                ruleType === KodyRulesType.MEMORY ? 'memories' : 'review';
+
+            const centralizedPath =
+                this.centralizedConfigPrService.buildCentralizedPath({
+                    repositoryFolder,
+                    relativePath: `.kody-rules/${rulesDirectory}/${this.centralizedConfigPrService.sanitizeFileName(existingRule.title, 'rule')}.yml`,
+                });
+
+            effectiveRule.centralizedConfig = {
+                path: centralizedPath,
+                status: KodyRuleCentralizedStatus.SYNCED,
+            };
+        }
+
         const pr =
             await this.centralizedConfigPrService.createMutationPullRequestIfEnabled(
                 buildKodyRuleCentralizedMutationRequest({
@@ -236,23 +281,36 @@ export class CreateOrUpdateKodyRulesUseCase {
             return null;
         }
 
-        await this.persistRuleAsPendingMerge(
+        await this.persistRuleWithCentralizedPendingStatus(
             resolvedOrgAndTeamData,
             effectiveRule,
             ruleType,
+            kodyRule.uuid ? 'update' : 'create',
             userInfo,
+            existingRule || undefined,
         );
 
         return pr;
     }
 
-    private async persistRuleAsPendingMerge(
+    private async persistRuleWithCentralizedPendingStatus(
         organizationAndTeamData: OrganizationAndTeamData,
         effectiveRule: Partial<IKodyRule>,
         ruleType: KodyRulesType,
+        operation: 'create' | 'update',
         userInfo: { userId: string; userEmail: string },
+        existingRule?: Partial<IKodyRule> | null,
     ): Promise<void> {
         if (!effectiveRule.title || !effectiveRule.repositoryId) {
+            return;
+        }
+
+        // For centralized creates we avoid DB writes entirely; the rule is created on next sync.
+        if (operation === 'create') {
+            return;
+        }
+
+        if (!existingRule?.uuid) {
             return;
         }
 
@@ -263,7 +321,7 @@ export class CreateOrUpdateKodyRulesUseCase {
                     effectiveRule.repositoryId,
                 );
 
-            const centralizedSourcePath = buildKodyRuleCentralizedFilePath({
+            const centralizedPath = buildKodyRuleCentralizedFilePath({
                 centralizedConfigPrService: this.centralizedConfigPrService,
                 repositoryFolder,
                 rulesDirectory:
@@ -274,19 +332,23 @@ export class CreateOrUpdateKodyRulesUseCase {
             await this.kodyRulesService.createOrUpdate(
                 organizationAndTeamData,
                 {
-                    ...(effectiveRule as CreateKodyRuleDto),
+                    ...(existingRule as CreateKodyRuleDto),
+                    uuid: existingRule.uuid,
                     type: ruleType,
-                    repositoryId: effectiveRule.repositoryId,
-                    origin: effectiveRule.origin || KodyRulesOrigin.USER,
-                    status: KodyRulesStatus.PENDING_MERGE,
-                    centralizedSourcePath,
+                    repositoryId: existingRule.repositoryId,
+                    origin: existingRule.origin || KodyRulesOrigin.USER,
+                    status: existingRule.status || KodyRulesStatus.ACTIVE,
+                    centralizedConfig: {
+                        path: centralizedPath,
+                        status: KodyRuleCentralizedStatus.PENDING_EDIT,
+                    },
                 },
                 userInfo,
             );
         } catch (error) {
             this.logger.warn({
                 message:
-                    'Centralized PR was created, but failed to persist pending_merge rule snapshot',
+                    'Centralized PR was created, but failed to persist centralized pending snapshot',
                 context: CreateOrUpdateKodyRulesUseCase.name,
                 error: this.normalizeError(error),
                 metadata: {
@@ -339,6 +401,23 @@ export class CreateOrUpdateKodyRulesUseCase {
 
             return organizationAndTeamData;
         }
+    }
+
+    private async isCentralizedEnabledForRuleMutation(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId?: string,
+    ): Promise<boolean> {
+        const resolvedOrgAndTeamData = await this.resolveTeamContextIfMissing(
+            organizationAndTeamData,
+            repositoryId,
+        );
+
+        const centralizedRepository =
+            await this.centralizedConfigPrService.getCentralizedRepositoryIfEnabled(
+                resolvedOrgAndTeamData,
+            );
+
+        return Boolean(centralizedRepository);
     }
 
     private async detectAndSaveReferencesAsync(

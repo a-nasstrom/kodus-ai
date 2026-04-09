@@ -18,6 +18,10 @@ export type KodyRule = {
     repositoryId?: string;
     directoryId?: string;
     sourcePath?: string;
+    centralizedConfig?: {
+        path: string;
+        status: KodyRuleCentralizedStatus;
+    };
     origin: KodyRulesOrigin;
     requestType?: KodyRuleRequestType;
     targetRuleUuid?: string;
@@ -131,11 +135,17 @@ export enum KodyRulesOrigin {
 
 export enum KodyRulesStatus {
     ACTIVE = "active",
-    PENDING_MERGE = "pending_merge",
     REJECTED = "rejected",
     PENDING = "pending",
     APPLIED = "applied",
     DELETED = "deleted",
+}
+
+export enum KodyRuleCentralizedStatus {
+    SYNCED = "synced",
+    PENDING_ADD = "pending_add",
+    PENDING_EDIT = "pending_edit",
+    PENDING_DELETE = "pending_delete",
 }
 
 export enum KodyRulesType {

@@ -21,8 +21,9 @@ import { KodusConfigFile } from '@libs/core/infrastructure/config/types/general/
 import { ConfigLevel } from '@libs/core/infrastructure/config/types/general/pullRequestMessages.type';
 import {
     IKodyRule,
-    KodyRulesType,
+    KodyRuleCentralizedStatus,
     KodyRulesStatus,
+    KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import * as path from 'path';
 
@@ -360,7 +361,7 @@ export class CentralizedConfigDownloadUseCase {
                     metadata: {
                         teamId,
                         ruleId: rule.uuid,
-                        centralizedSourcePath: rule.centralizedSourcePath,
+                        centralizedPath: rule.centralizedConfig?.path,
                         repositoryId: rule.repositoryId,
                         directoryId: rule.directoryId,
                     },
@@ -408,9 +409,14 @@ export class CentralizedConfigDownloadUseCase {
         user: Partial<IUser>,
         skipAuthorization?: boolean,
     ): Promise<void> {
+        const currentPath = rule.centralizedConfig?.path;
+        const pendingStatus = currentPath
+            ? KodyRuleCentralizedStatus.PENDING_EDIT
+            : KodyRuleCentralizedStatus.PENDING_ADD;
+
         const shouldUpdateRule =
-            rule.status !== KodyRulesStatus.PENDING_MERGE ||
-            rule.centralizedSourcePath !== sourcePath;
+            rule.centralizedConfig?.status !== pendingStatus ||
+            currentPath !== sourcePath;
 
         if (!shouldUpdateRule || !rule.uuid) {
             return;
@@ -420,8 +426,10 @@ export class CentralizedConfigDownloadUseCase {
             {
                 ...rule,
                 uuid: rule.uuid,
-                status: KodyRulesStatus.PENDING_MERGE,
-                centralizedSourcePath: sourcePath,
+                centralizedConfig: {
+                    path: sourcePath,
+                    status: pendingStatus,
+                },
             } as any,
             organizationId,
             {

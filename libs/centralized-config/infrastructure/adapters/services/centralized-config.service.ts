@@ -45,6 +45,7 @@ import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
 import {
     IKodyRule,
+    KodyRuleCentralizedStatus,
     kodyRuleSchema,
     kodyRulesExampleSchema,
     kodyRulesInheritanceSchema,
@@ -1381,7 +1382,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     directoryPath,
                     ruleType,
                     ruleFilePath: item.path,
-                    centralizedSourcePath: item.path,
+                    path: item.path,
                 };
             },
         );
@@ -1542,7 +1543,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
 
             for (const existingRule of existingRulesEntity?.rules || []) {
                 const sourcePathKey = getSourcePathLookupKey(
-                    existingRule.centralizedSourcePath,
+                    existingRule.centralizedConfig?.path,
                 );
 
                 if (!sourcePathKey || !existingRule.uuid) {
@@ -1684,16 +1685,16 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     const ruleDto = {
                         ...compliantRule,
                         uuid: existingRuleBySourcePath.get(
-                            getSourcePathLookupKey(
-                                ruleFileMeta.centralizedSourcePath,
-                            ),
+                            getSourcePathLookupKey(ruleFileMeta.path),
                         )?.uuid,
                         type: ruleFileMeta.ruleType,
                         status: KodyRulesStatus.ACTIVE,
                         repositoryId: ruleFileMeta.repositoryId || 'global',
                         directoryId,
-                        centralizedSourcePath:
-                            ruleFileMeta.centralizedSourcePath,
+                        centralizedConfig: {
+                            path: ruleFileMeta.path,
+                            status: KodyRuleCentralizedStatus.SYNCED,
+                        },
                         origin: KodyRulesOrigin.USER,
                     };
 
@@ -1843,7 +1844,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
             }
 
             const currentSourcePaths = new Set(
-                ruleFiles.map((meta) => meta.centralizedSourcePath),
+                ruleFiles.map((meta) => meta.path),
             );
 
             let removedCount = 0;
@@ -1851,23 +1852,9 @@ export class CentralizedConfigService implements ICentralizedConfigService {
             const existingRules = existingEntity?.toJson?.()?.rules || [];
 
             for (const rule of existingRules) {
-                if (
-                    rule.status !== KodyRulesStatus.ACTIVE &&
-                    rule.status !== KodyRulesStatus.PENDING_MERGE
-                ) {
-                    continue; // Skip rules that are outside centralized active/pending_merge lifecycle.
-                }
+                const sourcePath = rule.centralizedConfig?.path;
 
-                const sourcePath = rule.centralizedSourcePath;
-
-                if (
-                    !sourcePath ||
-                    !(
-                        sourcePath.startsWith('.kody-rules/') ||
-                        sourcePath.includes('/.kody-rules/')
-                    ) ||
-                    !currentSourcePaths.has(sourcePath)
-                ) {
+                if (!currentSourcePaths.has(sourcePath)) {
                     try {
                         await this.deleteRuleInOrganizationByIdKodyRulesUseCase.execute(
                             rule.uuid,

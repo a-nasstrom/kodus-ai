@@ -23,6 +23,7 @@ import {
 } from '@libs/integrations/domain/integrations/contracts/integration.service.contracts';
 import {
     IKodyRule,
+    KodyRuleCentralizedStatus,
     KodyRulesStatus,
     KodyRulesType,
 } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
@@ -288,7 +289,7 @@ export class GenerateKodyRulesUseCase {
                     );
 
                     if (shouldCreateCentralizedRulesPr && createdRule?.uuid) {
-                        const centralizedSourcePath = this.getUniquePath(
+                        const centralizedPath = this.getUniquePath(
                             this.getCentralizedRuleEntryPath(
                                 repositoryFolderName ||
                                     repository.name ||
@@ -302,7 +303,10 @@ export class GenerateKodyRulesUseCase {
                             {
                                 ...dto,
                                 uuid: createdRule.uuid,
-                                centralizedSourcePath,
+                                centralizedConfig: {
+                                    path: centralizedPath,
+                                    status: KodyRuleCentralizedStatus.PENDING_ADD,
+                                },
                                 status: KodyRulesStatus.PENDING,
                             },
                             organizationId,
@@ -310,7 +314,7 @@ export class GenerateKodyRulesUseCase {
                         );
 
                         centralizedRuleFiles.push({
-                            path: centralizedSourcePath,
+                            path: centralizedPath,
                             content: this.formatRuleToYaml({
                                 ...rule,
                                 status: KodyRulesStatus.PENDING,

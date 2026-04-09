@@ -17,6 +17,7 @@ import {
     KODY_RULES_SERVICE_TOKEN,
 } from '@libs/kodyRules/domain/contracts/kodyRules.service.contract';
 import {
+    KodyRuleCentralizedStatus,
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
@@ -32,11 +33,12 @@ jest.mock('@kodus/flow', () => ({
     }),
 }));
 
-describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
+describe('CreateOrUpdateKodyRulesUseCase (centralized pending states)', () => {
     let useCase: CreateOrUpdateKodyRulesUseCase;
     let kodyRulesServiceMock: jest.Mocked<IKodyRulesService>;
     let centralizedConfigPrServiceMock: {
         createMutationPullRequestIfEnabled: jest.Mock;
+        getCentralizedRepositoryIfEnabled: jest.Mock;
         resolveRepositoryFolderName: jest.Mock;
         buildCentralizedPath: jest.Mock;
         sanitizeFileName: jest.Mock;
@@ -51,10 +53,15 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
 
         centralizedConfigPrServiceMock = {
             createMutationPullRequestIfEnabled: jest.fn(),
+            getCentralizedRepositoryIfEnabled: jest.fn(),
             resolveRepositoryFolderName: jest.fn(),
             buildCentralizedPath: jest.fn(),
             sanitizeFileName: jest.fn(),
         };
+
+        centralizedConfigPrServiceMock.getCentralizedRepositoryIfEnabled.mockResolvedValue(
+            null,
+        );
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -103,7 +110,7 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
         useCase = module.get(CreateOrUpdateKodyRulesUseCase);
     });
 
-    it('persists create flow as pending_merge when centralized PR mode is active', async () => {
+    it('does not persist create flow in DB when centralized PR mode is active', async () => {
         centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
             {
                 mode: 'centralized-pr',
@@ -122,10 +129,6 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
         );
 
         kodyRulesServiceMock.findById.mockResolvedValue(null);
-        kodyRulesServiceMock.createOrUpdate.mockResolvedValue({
-            uuid: 'rule-1',
-        } as any);
-
         const result = await useCase.execute(
             {
                 type: KodyRulesType.STANDARD,
@@ -144,25 +147,10 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
         expect(result).toEqual(
             expect.objectContaining({ mode: 'centralized-pr' }),
         );
-
-        expect(kodyRulesServiceMock.createOrUpdate).toHaveBeenCalledWith(
-            {
-                organizationId: 'org-1',
-                teamId: 'team-1',
-            },
-            expect.objectContaining({
-                status: KodyRulesStatus.PENDING_MERGE,
-                centralizedSourcePath:
-                    'repo-one/.kody-rules/review/avoid-debug.yml',
-            }),
-            {
-                userId: 'user-1',
-                userEmail: 'dev@kodus.io',
-            },
-        );
+        expect(kodyRulesServiceMock.createOrUpdate).not.toHaveBeenCalled();
     });
 
-    it('keeps existing centralizedSourcePath when updating a pending_merge rule', async () => {
+    it('keeps existing centralized source path when updating a centralized-pending rule', async () => {
         centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
             {
                 mode: 'centralized-pr',
@@ -183,8 +171,11 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
             path: '**/*',
             origin: KodyRulesOrigin.USER,
             repositoryId: 'repo-1',
-            status: KodyRulesStatus.PENDING_MERGE,
-            centralizedSourcePath: 'repo-one/.kody-rules/review/existing.yml',
+            status: KodyRulesStatus.ACTIVE,
+            centralizedConfig: {
+                path: 'repo-one/.kody-rules/review/existing.yml',
+                status: KodyRuleCentralizedStatus.PENDING_EDIT,
+            },
         } as any);
         kodyRulesServiceMock.createOrUpdate.mockResolvedValue({
             uuid: 'rule-1',
@@ -210,9 +201,146 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
             expect.anything(),
             expect.objectContaining({
                 uuid: 'rule-1',
-                status: KodyRulesStatus.PENDING_MERGE,
-                centralizedSourcePath:
-                    'repo-one/.kody-rules/review/existing.yml',
+                status: KodyRulesStatus.ACTIVE,
+                centralizedConfig: {
+                    path: 'repo-one/.kody-rules/review/existing.yml',
+                    status: KodyRuleCentralizedStatus.PENDING_EDIT,
+                },
+            }),
+            expect.anything(),
+        );
+    });
+
+    it('uses explicit teamId for global rule centralized mutation and does not write DB for create', async () => {
+        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
+            {
+                mode: 'centralized-pr',
+                prUrl: 'https://example.com/pr/11',
+            } as CentralizedPrMetadata,
+        );
+        centralizedConfigPrServiceMock.resolveRepositoryFolderName.mockResolvedValue(
+            'global',
+        );
+        centralizedConfigPrServiceMock.sanitizeFileName.mockReturnValue(
+            'no-hardcoded-secrets',
+        );
+        centralizedConfigPrServiceMock.buildCentralizedPath.mockImplementation(
+            ({ repositoryFolder, relativePath }) =>
+                `${repositoryFolder}/${relativePath}`,
+        );
+
+        (useCase as any).request = {
+            user: {
+                organization: { uuid: 'org-1' },
+                uuid: 'user-1',
+                email: 'dev@kodus.io',
+            },
+        };
+
+        kodyRulesServiceMock.findById.mockResolvedValue(null);
+
+        await useCase.execute(
+            {
+                type: KodyRulesType.STANDARD,
+                title: 'No hardcoded secrets',
+                rule: 'Avoid hardcoded credentials in source code',
+                severity: 'high' as any,
+                scope: KodyRulesScope.FILE,
+                path: '**/*',
+                origin: KodyRulesOrigin.USER,
+                repositoryId: 'global',
+                examples: [],
+            },
+            'org-1',
+            undefined,
+            undefined,
+            'team-explicit',
+        );
+
+        expect(
+            centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                organizationAndTeamData: {
+                    organizationId: 'org-1',
+                    teamId: 'team-explicit',
+                },
+                repositoryId: 'global',
+            }),
+        );
+
+        expect(kodyRulesServiceMock.createOrUpdate).not.toHaveBeenCalled();
+    });
+
+    it('updates existing file path when legacy rule has no centralizedConfig path', async () => {
+        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
+            {
+                mode: 'centralized-pr',
+                prUrl: 'https://example.com/pr/12',
+            } as CentralizedPrMetadata,
+        );
+        centralizedConfigPrServiceMock.resolveRepositoryFolderName.mockResolvedValue(
+            'repo-one',
+        );
+        centralizedConfigPrServiceMock.sanitizeFileName
+            .mockReturnValueOnce('legacy-title')
+            .mockReturnValueOnce('legacy-title');
+        centralizedConfigPrServiceMock.buildCentralizedPath.mockImplementation(
+            ({ repositoryFolder, relativePath }) =>
+                `${repositoryFolder}/${relativePath}`,
+        );
+
+        kodyRulesServiceMock.findById.mockResolvedValue({
+            uuid: 'rule-legacy-1',
+            type: KodyRulesType.STANDARD,
+            title: 'Legacy Title',
+            rule: 'Original rule content',
+            severity: 'medium',
+            scope: KodyRulesScope.FILE,
+            path: '**/*',
+            origin: KodyRulesOrigin.USER,
+            repositoryId: 'repo-1',
+            status: KodyRulesStatus.ACTIVE,
+            centralizedConfig: undefined,
+        } as any);
+        kodyRulesServiceMock.createOrUpdate.mockResolvedValue({
+            uuid: 'rule-legacy-1',
+        } as any);
+
+        await useCase.execute(
+            {
+                uuid: 'rule-legacy-1',
+                type: KodyRulesType.STANDARD,
+                title: 'New Title',
+                rule: 'Updated rule content',
+                severity: 'medium' as any,
+                scope: KodyRulesScope.FILE,
+                path: '**/*',
+                origin: KodyRulesOrigin.USER,
+                repositoryId: 'repo-1',
+                examples: [],
+            },
+            'org-1',
+        );
+
+        expect(
+            centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                repositoryId: 'repo-1',
+                files: expect.any(Function),
+            }),
+        );
+
+        expect(kodyRulesServiceMock.createOrUpdate).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({
+                uuid: 'rule-legacy-1',
+                status: KodyRulesStatus.ACTIVE,
+                centralizedConfig: {
+                    path: 'repo-one/.kody-rules/review/legacy-title.yml',
+                    status: KodyRuleCentralizedStatus.PENDING_EDIT,
+                },
             }),
             expect.anything(),
         );
@@ -250,5 +378,42 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending merge)', () => {
         expect(result).toEqual(
             expect.objectContaining({ uuid: 'synced-rule-1' }),
         );
+    });
+
+    it('throws and avoids direct DB write when centralized is enabled but PR routing returns direct', async () => {
+        centralizedConfigPrServiceMock.createMutationPullRequestIfEnabled.mockResolvedValue(
+            {
+                mode: 'direct',
+            },
+        );
+        centralizedConfigPrServiceMock.getCentralizedRepositoryIfEnabled.mockResolvedValue(
+            {
+                id: 'central-repo-id',
+                name: 'central-repo',
+            },
+        );
+
+        kodyRulesServiceMock.findById.mockResolvedValue(null);
+
+        await expect(
+            useCase.execute(
+                {
+                    type: KodyRulesType.STANDARD,
+                    title: 'Avoid debug logs',
+                    rule: 'Do not commit debug logs',
+                    severity: 'medium' as any,
+                    scope: KodyRulesScope.FILE,
+                    path: '**/*',
+                    origin: KodyRulesOrigin.USER,
+                    repositoryId: 'repo-1',
+                    examples: [],
+                },
+                'org-1',
+            ),
+        ).rejects.toThrow(
+            'Centralized config is enabled, but rule mutation was not routed through centralized PR flow',
+        );
+
+        expect(kodyRulesServiceMock.createOrUpdate).not.toHaveBeenCalled();
     });
 });
