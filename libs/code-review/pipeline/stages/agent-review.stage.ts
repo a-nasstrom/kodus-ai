@@ -19,7 +19,7 @@ import {
 } from '@libs/automation/domain/automationExecution/contracts/automation-execution.service';
 import { AutomationStatus } from '@libs/automation/domain/automation/enum/automation-status';
 import { AgentProgressEvent } from '@libs/code-review/infrastructure/agents/base-code-review-agent.provider';
-import { generateCallGraph, generateCallGraphFromJSON } from '@libs/code-review/infrastructure/agents/call-graph.helper';
+
 import { KodusGraphService } from '@libs/code-review/infrastructure/adapters/services/kodusGraph.service';
 import { RepositoryRepository } from '@libs/code-review/infrastructure/adapters/repositories/repository.repository';
 import { AstGraphStatus } from '@libs/code-review/infrastructure/adapters/repositories/schemas/repository.model';
@@ -158,7 +158,6 @@ function snapLinesToDiff(
     };
 }
 
-
 /**
  * Pipeline stage that runs the agent-based code review.
  *
@@ -292,7 +291,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 repositoryId,
             );
 
-            // Generate call graph context using kodus-graph in E2B sandbox
+            // Generate call graph context from AST graph in DB (via kodus-graph in E2B sandbox)
             let callGraph = '';
             try {
                 const sandboxType = context.sandboxHandle?.type ?? 'unknown';
@@ -300,34 +299,43 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 this.logger.log({
                     message: `[AGENT] sandboxHandle check: type=${sandboxType}, hasSandboxHandle=${hasSandboxObj}, platform=${context.platformType}, repoId=${context.repository?.id}`,
                     context: this.stageName,
-                    metadata: { sandboxType, hasSandboxObj, platform: context.platformType, repoExternalId: context.repository?.id },
+                    metadata: {
+                        sandboxType,
+                        hasSandboxObj,
+                        platform: context.platformType,
+                        repoExternalId: context.repository?.id,
+                    },
                 });
 
                 if (context.sandboxHandle?.sandboxHandle) {
-                    // Try DB-backed flow first (real diff against main branch)
-                    const repo = await this.repositoryRepository.findByExternalId(
-                        context.platformType,
-                        String(context.repository?.id || ''),
-                    );
+                    const repo =
+                        await this.repositoryRepository.findByExternalId(
+                            context.platformType,
+                            String(context.repository?.id || ''),
+                        );
 
                     this.logger.log({
                         message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
                         context: this.stageName,
-                        metadata: { repoExternalId: context.repository?.id, repoUuid: repo?.uuid, astGraphStatus: repo?.astGraphStatus },
+                        metadata: {
+                            repoExternalId: context.repository?.id,
+                            repoUuid: repo?.uuid,
+                            astGraphStatus: repo?.astGraphStatus,
+                        },
                     });
 
                     if (repo?.astGraphStatus === AstGraphStatus.READY) {
-                        callGraph = await this.kodusGraphService.generateContext(
-                            context.sandboxHandle.sandboxHandle,
-                            changedFiles,
-                            repo.uuid,
-                        );
+                        callGraph =
+                            await this.kodusGraphService.generateContext(
+                                context.sandboxHandle.sandboxHandle,
+                                changedFiles,
+                                repo.uuid,
+                            );
                     } else {
-                        // Fallback: legacy flow (parse --all in sandbox)
-                        callGraph = await this.kodusGraphService.generateContextLegacy(
-                            context.sandboxHandle.sandboxHandle,
-                            changedFiles,
-                        );
+                        this.logger.log({
+                            message: `[AGENT] No AST graph available for PR#${prNumber} (status=${repo?.astGraphStatus || 'not found'}), proceeding without call graph`,
+                            context: this.stageName,
+                        });
                     }
                 } else {
                     this.logger.warn({
@@ -346,35 +354,16 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             callGraphPreview: callGraph.substring(0, 320),
                         },
                     });
-                } else {
-                    this.logger.warn({
-                        message: `[AGENT] kodus-graph returned empty for PR#${prNumber}, trying JSON fallback`,
-                        context: this.stageName,
-                        metadata: { sandboxType, hasSandboxObj },
-                    });
-                    // Fallback to pre-computed JSON if kodus-graph didn't produce output
-                    const repoFullName = context.repository?.fullName ||
-                        context.pullRequest?.base?.repo?.fullName || '';
-                    callGraph = generateCallGraphFromJSON(changedFiles, repoFullName);
-                    if (callGraph) {
-                        this.logger.log({
-                            message: `[AGENT] Fallback to JSON call graph: ${callGraph.length} chars for PR#${prNumber}`,
-                            context: this.stageName,
-                            metadata: { prNumber, callGraphChars: callGraph.length },
-                        });
-                    } else {
-                        this.logger.warn({
-                            message: `[AGENT] No call graph available for PR#${prNumber} (kodus-graph empty + JSON fallback empty)`,
-                            context: this.stageName,
-                        });
-                    }
                 }
             } catch (err) {
                 this.logger.warn({
                     message: `[AGENT] Call graph failed for PR#${prNumber}, proceeding without it`,
                     context: this.stageName,
                     error: err,
-                    metadata: { sandboxType: context.sandboxHandle?.type, hasSandboxObj: !!context.sandboxHandle?.sandboxHandle },
+                    metadata: {
+                        sandboxType: context.sandboxHandle?.type,
+                        hasSandboxObj: !!context.sandboxHandle?.sandboxHandle,
+                    },
                 });
             }
 
@@ -407,7 +396,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     context.repository?.defaultBranch,
                 callGraph,
                 reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
-                severityLevelFilter: context.codeReviewConfig?.suggestionControl?.severityLevelFilter,
+                severityLevelFilter:
+                    context.codeReviewConfig?.suggestionControl
+                        ?.severityLevelFilter,
             });
 
             const durationMs = Date.now() - startTime;
@@ -436,12 +427,20 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             for (const agentResult of result.agentResults) {
                 if (agentResult.discardedBySeverity?.length) {
                     for (const s of agentResult.discardedBySeverity) {
-                        allDiscarded.push({ ...s, priorityStatus: PriorityStatus.DISCARDED_BY_SEVERITY });
+                        allDiscarded.push({
+                            ...s,
+                            priorityStatus:
+                                PriorityStatus.DISCARDED_BY_SEVERITY,
+                        });
                     }
                 }
                 if (agentResult.discardedByVerify?.length) {
                     for (const s of agentResult.discardedByVerify) {
-                        allDiscarded.push({ ...s, priorityStatus: PriorityStatus.DISCARDED_BY_SAFEGUARD });
+                        allDiscarded.push({
+                            ...s,
+                            priorityStatus:
+                                PriorityStatus.DISCARDED_BY_SAFEGUARD,
+                        });
                     }
                 }
             }
@@ -610,7 +609,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // applies the definitive criteria (default or client-custom) without
             // biasing the agent's bug-finding behavior.
             try {
-                const { classifySeverity } = require('@libs/code-review/infrastructure/agents/llm/classify-severity');
+                const {
+                    classifySeverity,
+                } = require('@libs/code-review/infrastructure/agents/llm/classify-severity');
                 const severityMap = await classifySeverity(
                     deduped.map((s) => ({
                         relevantFile: s.relevantFile || '',
@@ -638,7 +639,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Clean up suggestion text: remove WHAT/WHY/HOW labels, merge into natural prose
             try {
-                const { formatSuggestionContent } = require('@libs/code-review/infrastructure/agents/llm/format-suggestion-content');
+                const {
+                    formatSuggestionContent,
+                } = require('@libs/code-review/infrastructure/agents/llm/format-suggestion-content');
                 const formatted = await formatSuggestionContent(
                     deduped.map((s) => ({
                         suggestionContent: s.suggestionContent || '',
@@ -649,7 +652,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     })),
                     {
                         customWritingGuidelines:
-                            context.codeReviewConfig?.v2PromptOverrides?.generation?.main,
+                            context.codeReviewConfig?.v2PromptOverrides
+                                ?.generation?.main,
                         byokConfig: context.codeReviewConfig?.byokConfig,
                         languageResultPrompt:
                             context.codeReviewConfig?.languageResultPrompt,
@@ -702,12 +706,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const bIsRule = b.label === 'kody_rules' ? 0 : 1;
                 if (aIsRule !== bIsRule) return aIsRule - bIsRule;
                 // Then by severity
-                const aSeverity = severityOrder[
-                    this.normalizeSeverity(a.severity)
-                ];
-                const bSeverity = severityOrder[
-                    this.normalizeSeverity(b.severity)
-                ];
+                const aSeverity =
+                    severityOrder[this.normalizeSeverity(a.severity)];
+                const bSeverity =
+                    severityOrder[this.normalizeSeverity(b.severity)];
                 return aSeverity - bSeverity;
             });
 
@@ -1159,11 +1161,11 @@ ${summaries}`,
                   ? 'Security'
                   : name === 'generalist'
                     ? 'Generalist'
-                  : name === 'rules'
-                    ? 'Rules'
-                    : name === 'kody_rules'
+                    : name === 'rules'
                       ? 'Rules'
-                      : 'Performance';
+                      : name === 'kody_rules'
+                        ? 'Rules'
+                        : 'Performance';
         const replicaSuffix =
             event.agentReplicaTotal &&
             event.agentReplicaTotal > 1 &&
