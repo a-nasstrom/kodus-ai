@@ -7,7 +7,10 @@ import {
     formatRepositorySetupPreview,
 } from '../../formatters/repo-config.js';
 import { repoConfigService } from '../../services/repo-config.service.js';
-import { repositorySettingsService } from '../../services/repo-settings.service.js';
+import {
+    repositorySettingsService,
+    type RepositorySettingsMutationResult,
+} from '../../services/repo-settings.service.js';
 import { repositorySettingsWizardService } from '../../services/repo-settings-wizard.service.js';
 import { exitWithCode } from '../../utils/cli-exit.js';
 import { cliError, cliInfo } from '../../utils/logger.js';
@@ -63,13 +66,29 @@ function shouldOfferSetupPrompt(options: ConfigRepoAddOptions = {}): boolean {
 }
 
 function printRepositoryMutationResult(
-    result: Awaited<
-        ReturnType<typeof repositorySettingsService.updateRepositorySettings>
-    >,
+    result: RepositorySettingsMutationResult,
     options: ConfigRepoMutationOptions = {},
 ): void {
     if (options.json) {
         cliInfo(JSON.stringify(result, null, 2));
+        return;
+    }
+
+    if ('centralized' in result) {
+        cliInfo(
+            chalk.green(
+                `Repository settings change proposed for ${result.repositoryFullName}`,
+            ),
+        );
+        cliInfo(
+            result.centralized.message ||
+                'Centralized config is enabled. Change queued in a pull request.',
+        );
+
+        if (result.centralized.prUrl) {
+            cliInfo(`Pull request: ${result.centralized.prUrl}`);
+        }
+
         return;
     }
 
@@ -207,13 +226,14 @@ export async function configRepoSetupAction(
     try {
         const current =
             await repositorySettingsService.getRepositorySettings(repository);
-        let nextSettings = await repositorySettingsWizardService.collectSettings(
-            current.settings,
-            {
-                yes: options.yes,
-                writeLine: options.json ? undefined : cliInfo,
-            },
-        );
+        let nextSettings =
+            await repositorySettingsWizardService.collectSettings(
+                current.settings,
+                {
+                    yes: options.yes,
+                    writeLine: options.json ? undefined : cliInfo,
+                },
+            );
 
         while (true) {
             if (!options.json) {
@@ -301,7 +321,9 @@ export async function configRepoSetupAction(
                         currentSettings: current.settings,
                         nextSettings,
                         applied: true,
-                        settings: updated.settings,
+                        ...('settings' in updated
+                            ? { settings: updated.settings }
+                            : { centralized: updated.centralized }),
                     },
                     null,
                     2,
@@ -310,11 +332,7 @@ export async function configRepoSetupAction(
             return;
         }
 
-        cliInfo(
-            chalk.green(
-                `Repository settings updated for ${updated.repositoryFullName}`,
-            ),
-        );
+        printRepositoryMutationResult(updated, options);
     } catch (error) {
         if (error instanceof Error && error.message.includes('force closed')) {
             cliInfo(chalk.yellow('Operation cancelled'));

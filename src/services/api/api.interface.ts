@@ -1,6 +1,7 @@
 import type { AuthResponse, UserInfo } from '../../types/auth.js';
 import type {
     CentralizedConfigActionResponse,
+    CentralizedPrMetadata,
     CentralizedConfigStatus,
     CodeReviewParameter,
     ConfigAddRepositoriesResponse,
@@ -124,7 +125,7 @@ export interface IConfigApi {
         accessToken: string,
         repositoryId: string,
         settings: RepositorySettings,
-    ): Promise<RepositorySettings>;
+    ): Promise<RepositorySettings | CentralizedPrMetadata>;
     getCentralizedConfigStatus(
         accessToken: string,
     ): Promise<CentralizedConfigStatus>;

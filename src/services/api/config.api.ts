@@ -1,5 +1,6 @@
 import type {
     CentralizedConfigActionResponse,
+    CentralizedPrMetadata,
     CentralizedConfigStatus,
     CodeReviewParameter,
     ConfigAddRepositoriesResponse,
@@ -140,8 +141,8 @@ export class RealConfigApi implements IConfigApi {
         accessToken: string,
         repositoryId: string,
         settings: RepositorySettings,
-    ): Promise<RepositorySettings> {
-        return this.requester<RepositorySettings>(
+    ): Promise<RepositorySettings | CentralizedPrMetadata> {
+        return this.requester<RepositorySettings | CentralizedPrMetadata>(
             `/cli/config/repositories/${encodeURIComponent(repositoryId)}/settings`,
             {
                 method: 'PATCH',
