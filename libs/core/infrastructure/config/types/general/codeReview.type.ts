@@ -304,7 +304,7 @@ export type ImplementedSuggestionsToAnalyze = {
 
 export type CodeReviewConfig = {
     ignorePaths: string[];
-    reviewMode?: 'normal' | 'deep';
+    reviewMode?: 'fast' | 'normal' | 'deep';
     reviewOptions: ReviewOptions;
     ignoredTitleKeywords: string[];
     baseBranches: string[];

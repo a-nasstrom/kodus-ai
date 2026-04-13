@@ -233,16 +233,22 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             return context;
         }
 
-        if (!context.sandboxHandle?.remoteCommands) {
-            this.logger.warn({
-                message: `[AGENT] Skipping agent review: no sandbox available for PR#${prNumber}. Agent review requires a sandbox for code investigation.`,
+        // When no sandbox is available (e.g. trial mode, or sandbox provider
+        // unavailable), run the agent in "self-contained" mode: no tools,
+        // single-shot analysis on the diff content inlined in the user
+        // prompt. The orchestrator/agent-loop detect the empty tools case
+        // and switch to a self-contained system/user prompt variant.
+        const hasSandbox = !!context.sandboxHandle?.remoteCommands;
+        if (!hasSandbox) {
+            this.logger.log({
+                message: `[AGENT] Running self-contained agent review for PR#${prNumber} (no sandbox available)`,
                 context: this.stageName,
                 metadata: {
                     prNumber,
                     organizationAndTeamData: context.organizationAndTeamData,
+                    reason: 'no_sandbox',
                 },
             });
-            return context;
         }
 
         const reviewOptions = context.codeReviewConfig?.reviewOptions || {
@@ -373,7 +379,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             const result = await this.reviewOrchestrator.execute({
                 organizationAndTeamData: context.organizationAndTeamData,
                 changedFiles,
-                remoteCommands: context.sandboxHandle.remoteCommands,
+                // remoteCommands is undefined when no sandbox is available
+                // (e.g. trial mode). The agent loop detects the empty tools
+                // case and switches to a self-contained analysis variant.
+                remoteCommands: context.sandboxHandle?.remoteCommands as any,
                 prNumber,
                 repositoryId,
                 repositoryFullName:
@@ -626,7 +635,11 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 );
                 for (let i = 0; i < deduped.length; i++) {
                     const classified = severityMap.get(i);
-                    if (classified) deduped[i].severity = classified;
+                    if (!classified) continue;
+                    const hasKodyRuleSeverity =
+                        deduped[i].brokenKodyRulesIds?.length > 0;
+                    if (hasKodyRuleSeverity) continue;
+                    deduped[i].severity = classified;
                 }
                 this.logger.log({
                     message: `[AGENT] Reclassified severity for ${deduped.length} suggestions`,

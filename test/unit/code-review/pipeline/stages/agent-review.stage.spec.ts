@@ -171,15 +171,21 @@ describe('AgentReviewStage', () => {
             expect(result.fileAnalysisResults).toBeUndefined();
         });
 
-        it('should skip when no sandbox handle', async () => {
+        it('should run self-contained (no tools) when no sandbox handle', async () => {
+            // Previously this stage short-circuited when the sandbox was
+            // missing. It now falls back to self-contained mode so trial
+            // reviews and accounts without a GitHub integration still get
+            // a (reduced-context) review instead of being silently skipped.
             const context = createBaseContext({
                 changedFiles: [{ filename: 'src/index.ts' } as any],
                 sandboxHandle: undefined,
             });
 
-            const _result = await (stage as any).executeStage(context);
+            await (stage as any).executeStage(context);
 
-            expect(mockOrchestrator.execute).not.toHaveBeenCalled();
+            expect(mockOrchestrator.execute).toHaveBeenCalledTimes(1);
+            const call = mockOrchestrator.execute.mock.calls[0][0];
+            expect(call.remoteCommands).toBeUndefined();
         });
     });
 
@@ -285,6 +291,71 @@ describe('AgentReviewStage', () => {
             for (const fileResult of result.fileAnalysisResults) {
                 expect(fileResult.discardedSuggestionsBySafeGuard).toEqual([]);
             }
+        });
+    });
+
+    describe('kody rules severity', () => {
+        it('should use severity from the Kody Rule, not from the LLM or classifier', async () => {
+            // Orchestrator returns a finding with ruleUuid and a LOW severity
+            // (whatever the LLM decided). The stage should override it with
+            // the severity from the matched Kody Rule (HIGH).
+            mockOrchestrator.execute.mockResolvedValue({
+                suggestions: [
+                    {
+                        relevantFile: 'src/auth.ts',
+                        suggestionContent: 'Violates rule: must use strict null checks',
+                        label: 'kody_rules',
+                        severity: 'low', // LLM's opinion — should be ignored
+                        ruleUuid: 'rule-uuid-123',
+                        brokenKodyRulesIds: ['rule-uuid-123'],
+                        relevantLinesStart: 10,
+                        relevantLinesEnd: 15,
+                    },
+                ],
+                agentResults: [
+                    {
+                        agentName: 'kody-rules-agent',
+                        suggestions: [{}],
+                        turnsUsed: 3,
+                        durationMs: 1000,
+                    },
+                ],
+                totalDurationMs: 1000,
+            });
+
+            const context = createBaseContext({
+                changedFiles: [{ filename: 'src/auth.ts' } as any],
+                sandboxHandle: {
+                    remoteCommands: {
+                        grep: jest.fn(),
+                        read: jest.fn(),
+                        listDir: jest.fn(),
+                    },
+                    cleanup: jest.fn(),
+                    type: 'e2b' as const,
+                },
+                codeReviewConfig: {
+                    codeReviewVersion: CodeReviewVersion.V3_AGENT,
+                    reviewOptions: { bug: true, security: true, performance: true },
+                    kodyRules: [
+                        {
+                            uuid: 'rule-uuid-123',
+                            title: 'Strict null checks',
+                            severityLevel: 'high',
+                            severity: 'high',
+                            status: 'active',
+                            type: 'standard',
+                        },
+                    ],
+                } as any,
+            });
+
+            const result = await (stage as any).executeStage(context);
+
+            const suggestion =
+                result.fileAnalysisResults[0].validSuggestionsToAnalyze[0];
+            expect(suggestion.severity).toBe('high');
+            expect(suggestion.brokenKodyRulesIds).toEqual(['rule-uuid-123']);
         });
     });
 

@@ -358,9 +358,17 @@ export class CodeReviewPipelineObserver implements IPipelineObserver {
             additionalMetadata?: Record<string, any>;
         },
     ): Promise<void> {
+        // Only use correlationId as a fallback executionUuid when it looks
+        // like a real UUID — the CLI generates `corr_xxxx` correlation ids
+        // that would break uuid-typed DB queries if passed through.
+        const UUID_REGEX =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const correlationIdIsUuid =
+            typeof context.correlationId === 'string' &&
+            UUID_REGEX.test(context.correlationId);
         let executionUuid =
             context.pipelineMetadata?.lastExecution?.uuid ||
-            context.correlationId;
+            (correlationIdIsUuid ? context.correlationId : undefined);
         const pullRequestNumber = context.pullRequest?.number;
         const repositoryId = context.repository?.id;
 

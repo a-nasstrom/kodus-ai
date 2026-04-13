@@ -276,42 +276,9 @@ describe('CollectCrossFileContextStage', () => {
     // ─── CLI Mode Guards ────────────────────────────────────────────────────
 
     describe('CLI mode guards', () => {
-        it('should NOT skip when isTrialMode is true (trial gets full analysis)', async () => {
-            mockSandboxProvider.isAvailable.mockReturnValue(true);
-            mockCloneParamsResolver.resolve.mockResolvedValue({
-                url: 'https://github.com/org/test-repo.git',
-                authToken: 'test-token',
-                branch: 'feat/cli-test',
-                platform: PlatformType.GITHUB,
-            });
-            mockSandboxProvider.createSandboxWithRepo.mockResolvedValue({
-                remoteCommands: {
-                    grep: jest.fn(),
-                    read: jest.fn(),
-                    listDir: jest.fn(),
-                },
-                cleanup: jest.fn().mockResolvedValue(undefined),
-            });
-            mockCollectContexts.mockResolvedValue({
-                contexts: [createSampleSnippet()],
-                plannerQueries: [],
-                totalSearches: 1,
-                totalSnippetsBeforeDedup: 1,
-            });
-
+        it('should skip when isTrialMode is true (trial runs agent in self-contained mode)', async () => {
             const context = createCliCrossFileBaseContext({
                 isTrialMode: true,
-            });
-
-            const result = await stage.execute(context);
-
-            expect(mockSandboxProvider.isAvailable).toHaveBeenCalled();
-            expect(result.crossFileContexts).toBeDefined();
-        });
-
-        it('should skip when isFastMode is true', async () => {
-            const context = createCliCrossFileBaseContext({
-                isFastMode: true,
             });
 
             const result = await stage.execute(context);
@@ -334,7 +301,7 @@ describe('CollectCrossFileContextStage', () => {
             ).not.toHaveBeenCalled();
         });
 
-        it('should NOT skip trial/fast guards for PR mode (origin !== cli)', async () => {
+        it('should NOT apply CLI-specific guards for PR mode (origin !== cli)', async () => {
             // PR context with origin=github should NOT be affected by CLI guards
             const context = createCrossFileBaseContext();
             mockSandboxProvider.isAvailable.mockReturnValue(true);

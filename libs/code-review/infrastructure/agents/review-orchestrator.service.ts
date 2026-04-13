@@ -37,6 +37,13 @@ export interface OrchestratorOutput {
 @Injectable()
 export class ReviewOrchestratorService {
     private readonly logger = createLogger(ReviewOrchestratorService.name);
+    private static readonly FAST_MODE_MAX_STEPS: Record<string, number> = {
+        'generalist': 4,
+        'bug': 4,
+        'security': 3,
+        'performance': 3,
+        'kody-rules': 4,
+    };
     private static readonly NORMAL_MODE_MAX_STEPS: Record<string, number> = {
         'generalist': 18,
         'bug': 18,
@@ -224,10 +231,16 @@ export class ReviewOrchestratorService {
 
     private getMaxStepsForAgent(
         agentName: string,
-        reviewMode?: 'normal' | 'deep',
+        reviewMode?: 'fast' | 'normal' | 'deep',
     ): number {
         if (reviewMode === 'deep') {
             return ReviewOrchestratorService.DEEP_MODE_MAX_STEPS;
+        }
+
+        if (reviewMode === 'fast') {
+            return (
+                ReviewOrchestratorService.FAST_MODE_MAX_STEPS[agentName] ?? 4
+            );
         }
 
         return ReviewOrchestratorService.NORMAL_MODE_MAX_STEPS[agentName] ?? 20;

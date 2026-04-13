@@ -89,12 +89,19 @@ function filterDiagnosticsToTarget(
 
 /**
  * Build the tool set for the agent from RemoteCommands.
+ *
+ * When `remoteCommands` is undefined (e.g. trial mode or sandbox
+ * unavailable), returns an empty tool set. The agent loop detects the
+ * empty case and switches to a self-contained analysis variant.
  */
 export function buildAgentTools(
-    remoteCommands: RemoteCommands,
+    remoteCommands: RemoteCommands | undefined,
     gitHubToken?: string,
     repositoryFullName?: string,
 ): Record<string, any> {
+    if (!remoteCommands) {
+        return {};
+    }
     const tools: Record<string, any> = {
         grep: mkTool(
             'DISCOVERY tool: search the repo for a pattern. Returns "file:line:content" with context. ' +

@@ -76,14 +76,32 @@ export class CollectCrossFileContextStage extends BasePipelineStage<CodeReviewPi
             ? `branch ${cliContext?.gitContext?.branch ?? 'unknown'}`
             : `PR#${context?.pullRequest?.number}`;
 
-        // Guard: skip in fast mode (fast = speed over depth)
-        if (cliContext?.isFastMode) {
+        // Guard: skip in fast mode — the agent will rely on its own
+        // readFile/grep tools for any cross-file exploration it needs,
+        // and cross-file context collection can take 15-30s which defeats
+        // the "fast" promise.
+        if (context.codeReviewConfig?.reviewMode === 'fast') {
             this.logger.log({
-                message: `Skipping cross-file context collection: fast mode`,
+                message: `Skipping cross-file context collection: fast review mode for ${label}`,
                 context: this.stageName,
                 metadata: {
                     sandboxDecision: 'skipped',
                     sandboxSkipReason: 'fast_mode',
+                },
+            });
+            return context;
+        }
+
+        // Guard: skip in trial mode — there's no sandbox to explore and
+        // the agent runs in self-contained mode using only the inlined
+        // file contents sent by the CLI.
+        if (cliContext?.isTrialMode) {
+            this.logger.log({
+                message: `Skipping cross-file context collection: trial mode for ${label}`,
+                context: this.stageName,
+                metadata: {
+                    sandboxDecision: 'skipped',
+                    sandboxSkipReason: 'trial_mode',
                 },
             });
             return context;

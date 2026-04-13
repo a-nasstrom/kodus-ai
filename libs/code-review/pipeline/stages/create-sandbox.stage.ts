@@ -54,10 +54,13 @@ export class CreateSandboxStage extends BasePipelineStage<CodeReviewPipelineCont
             ? `branch ${cliContext?.gitContext?.branch ?? 'unknown'}`
             : `PR#${context?.pullRequest?.number}`;
 
-        // Guard: skip in fast mode
-        if (cliContext?.isFastMode) {
+        // Guard: skip in trial mode — trial users are anonymous, have no
+        // stored git credentials, and the review runs in "self-contained"
+        // mode where the agent analyzes the diff + inlined file contents
+        // without any sandbox exploration.
+        if (cliContext?.isTrialMode) {
             this.logger.log({
-                message: `Skipping sandbox creation: fast mode`,
+                message: `Skipping sandbox creation: trial mode for ${label}`,
                 context: this.stageName,
             });
             return context;
