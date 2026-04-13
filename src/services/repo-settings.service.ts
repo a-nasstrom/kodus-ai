@@ -2,6 +2,7 @@ import { api } from './api/index.js';
 import { authService } from './auth.service.js';
 import { gitService } from './git.service.js';
 import type { ConfigRepository } from '../types/config.js';
+import type { CentralizedPrMetadata } from '../types/config.js';
 import type { RepositorySettings } from '../types/repo-config.js';
 import { CommandError } from '../utils/command-errors.js';
 
@@ -10,6 +11,16 @@ export type RepositorySettingsResult = {
     repositoryFullName: string;
     settings: RepositorySettings;
 };
+
+export type RepositorySettingsCentralizedPrResult = {
+    repositoryId: string;
+    repositoryFullName: string;
+    centralized: CentralizedPrMetadata & { mode: 'centralized-pr' };
+};
+
+export type RepositorySettingsMutationResult =
+    | RepositorySettingsResult
+    | RepositorySettingsCentralizedPrResult;
 
 class RepositorySettingsService {
     async getRepositorySettings(
@@ -22,7 +33,7 @@ class RepositorySettingsService {
     async updateRepositorySettings(
         target: string,
         settings: RepositorySettings,
-    ): Promise<RepositorySettingsResult> {
+    ): Promise<RepositorySettingsMutationResult> {
         const teamKey = await this.requireTeamKey();
         return this.updateRepositorySettingsWithTeamKey(
             target,
@@ -38,9 +49,8 @@ class RepositorySettingsService {
         matchedRepository: ConfigRepository;
     }> {
         const repositoryRef = await this.resolveRepositoryReference(target);
-        const repositories = await api.config.getSelectedRepositories(
-            accessToken,
-        );
+        const repositories =
+            await api.config.getSelectedRepositories(accessToken);
         const matchedRepository = this.findRepositoryMatch(
             repositoryRef,
             repositories,
@@ -95,7 +105,7 @@ class RepositorySettingsService {
         target: string,
         teamKey: string,
         settings: RepositorySettings,
-    ): Promise<RepositorySettingsResult> {
+    ): Promise<RepositorySettingsMutationResult> {
         const { matchedRepository } = await this.resolveConfiguredRepository(
             target,
             teamKey,
@@ -105,6 +115,15 @@ class RepositorySettingsService {
             matchedRepository.id,
             settings,
         );
+
+        if (this.isCentralizedPrMetadata(updatedSettings)) {
+            return {
+                repositoryId: matchedRepository.id,
+                repositoryFullName:
+                    this.toRepositoryFullName(matchedRepository),
+                centralized: updatedSettings,
+            };
+        }
 
         return {
             repositoryId: matchedRepository.id,
@@ -168,6 +187,17 @@ class RepositorySettingsService {
         return (
             repository.full_name ||
             `${repository.organizationName}/${repository.name}`
+        );
+    }
+
+    private isCentralizedPrMetadata(
+        value: RepositorySettings | CentralizedPrMetadata,
+    ): value is CentralizedPrMetadata & { mode: 'centralized-pr' } {
+        return (
+            typeof value === 'object' &&
+            value !== null &&
+            'mode' in value &&
+            (value as { mode?: string }).mode === 'centralized-pr'
         );
     }
 }

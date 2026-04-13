@@ -213,18 +213,55 @@ describe('repositorySettingsService.updateRepositorySettings', () => {
         mockAuthService.getValidToken.mockResolvedValue('eyJ.test.token');
 
         await expect(
-            repositorySettingsService.updateRepositorySettings('kodustech/cli', {
-                reviewEnabled: false,
-                autoApproveEnabled: true,
-                requestChangesMinSeverity: 'high',
-                ignoredFilePatterns: ['dist/**'],
-                baseBranchPatterns: ['main', 'release/*'],
-                ignoredTitlePatterns: ['draft*'],
-            }),
+            repositorySettingsService.updateRepositorySettings(
+                'kodustech/cli',
+                {
+                    reviewEnabled: false,
+                    autoApproveEnabled: true,
+                    requestChangesMinSeverity: 'high',
+                    ignoredFilePatterns: ['dist/**'],
+                    baseBranchPatterns: ['main', 'release/*'],
+                    ignoredTitlePatterns: ['draft*'],
+                },
+            ),
         ).rejects.toEqual(
             expect.objectContaining<Partial<CommandError>>({
                 code: 'AUTH_REQUIRED',
             }),
         );
+    });
+
+    it('returns centralized PR metadata when backend routes repository settings update through centralized config PR flow', async () => {
+        mockApiConfig.updateRepositorySettings = vi.fn().mockResolvedValue({
+            mode: 'centralized-pr',
+            pending: true,
+            message:
+                'Centralized config is enabled. Code review settings change proposed through a pull request.',
+            prUrl: 'https://github.com/kodustech/config-repo/pull/123',
+        } as any);
+
+        const result = await repositorySettingsService.updateRepositorySettings(
+            'kodustech/cli',
+            {
+                reviewEnabled: true,
+                autoApproveEnabled: true,
+                requestChangesMinSeverity: 'medium',
+                ignoredFilePatterns: ['dist/**'],
+                baseBranchPatterns: ['main', 'release/*'],
+                ignoredTitlePatterns: ['wip*'],
+            },
+        );
+
+        expect(result).toEqual({
+            repositoryId: 'repo-1',
+            repositoryFullName: 'kodustech/cli',
+            centralized: {
+                mode: 'centralized-pr',
+                pending: true,
+                message:
+                    'Centralized config is enabled. Code review settings change proposed through a pull request.',
+                prUrl: 'https://github.com/kodustech/config-repo/pull/123',
+            },
+        });
     });
 });

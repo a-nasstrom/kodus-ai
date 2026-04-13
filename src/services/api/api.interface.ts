@@ -1,6 +1,7 @@
 import type { AuthResponse, UserInfo } from '../../types/auth.js';
 import type {
     CentralizedConfigActionResponse,
+    CentralizedPrMetadata,
     CentralizedConfigStatus,
     CodeReviewParameter,
     ConfigAddRepositoriesResponse,
@@ -22,6 +23,7 @@ import type {
 import type {
     CreateKodyRuleRequest,
     KodyRule,
+    KodyRuleMutationResult,
     UpdateKodyRuleRequest,
     ViewKodyRulesRequest,
 } from '../../types/rules.js';
@@ -123,7 +125,7 @@ export interface IConfigApi {
         accessToken: string,
         repositoryId: string,
         settings: RepositorySettings,
-    ): Promise<RepositorySettings>;
+    ): Promise<RepositorySettings | CentralizedPrMetadata>;
     getCentralizedConfigStatus(
         accessToken: string,
     ): Promise<CentralizedConfigStatus>;
@@ -151,12 +153,12 @@ export interface IRulesApi {
     createRule(
         accessToken: string,
         payload: CreateKodyRuleRequest,
-    ): Promise<KodyRule>;
+    ): Promise<KodyRuleMutationResult>;
     updateRule(
         accessToken: string,
         ruleId: string,
         payload: UpdateKodyRuleRequest,
-    ): Promise<KodyRule>;
+    ): Promise<KodyRuleMutationResult>;
     viewRules(
         accessToken: string,
         query?: ViewKodyRulesRequest,

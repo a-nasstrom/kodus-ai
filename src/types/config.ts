@@ -64,3 +64,12 @@ export interface CentralizedConfigActionResponse {
     message: string;
     prUrl?: string;
 }
+
+export interface CentralizedPrMetadata {
+    mode: 'direct' | 'centralized-pr';
+    prUrl?: string;
+    prNumber?: number;
+    reused?: boolean;
+    pending?: boolean;
+    message?: string;
+}
