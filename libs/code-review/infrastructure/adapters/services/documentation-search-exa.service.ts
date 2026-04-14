@@ -14,6 +14,7 @@ import {
 } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { BYOKPromptRunnerService } from '@libs/core/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { ObservabilityService } from '@libs/core/log/observability.service';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Exa from 'exa-js';
@@ -66,6 +67,7 @@ export class DocumentationSearchExaService {
         private readonly configService: ConfigService,
         private readonly documentationSearchCacheService: DocumentationSearchCacheService,
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         const apiKey = this.configService.get<string>('API_EXA_KEY');
         this.exaClient = apiKey ? new Exa(apiKey) : null;
@@ -417,6 +419,9 @@ export class DocumentationSearchExaService {
         }
 
         try {
+            const runName = 'documentationSearchExaFormat';
+            const spanName = `${DocumentationSearchExaService.name}::${runName}`;
+
             const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 LLMModelProvider.GEMINI_3_FLASH_PREVIEW,
@@ -424,34 +429,51 @@ export class DocumentationSearchExaService {
                 params.byokConfig,
             );
 
-            const response = await promptRunner
-                .builder()
-                .setParser(ParserType.STRING)
-                .setPayload(params)
-                .addPrompt({
-                    role: PromptRole.SYSTEM,
-                    prompt: prompt_code_review_documentation_formatter_system,
-                })
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: prompt_code_review_documentation_formatter_user,
-                })
-                .addMetadata({
-                    context: DocumentationSearchExaService.name,
-                    runName: 'documentationSearchExaFormat',
-                    metadata: {
-                        provider: CACHE_PROVIDER,
-                        packageName: params.packageName,
-                        query: params.query,
-                        rawSearchContentLength: params.rawSearchContent.length,
-                        hasByokConfig: Boolean(params.byokConfig),
-                        organizationAndTeamData: params.organizationAndTeamData,
+            const { result: response } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    byokConfig: params.byokConfig,
+                    attrs: {
+                        type: promptRunner.executeMode,
+                        organizationId:
+                            params.organizationAndTeamData?.organizationId,
                         prNumber: params.prNumber,
+                        packageName: params.packageName,
                     },
-                })
-                .setTemperature(0)
-                .setRunName('documentationSearchExaFormat')
-                .execute();
+                    exec: (callbacks) =>
+                        promptRunner
+                            .builder()
+                            .setParser(ParserType.STRING)
+                            .setPayload(params)
+                            .addPrompt({
+                                role: PromptRole.SYSTEM,
+                                prompt: prompt_code_review_documentation_formatter_system,
+                            })
+                            .addPrompt({
+                                role: PromptRole.USER,
+                                prompt: prompt_code_review_documentation_formatter_user,
+                            })
+                            .addMetadata({
+                                context: DocumentationSearchExaService.name,
+                                runName,
+                                metadata: {
+                                    provider: CACHE_PROVIDER,
+                                    packageName: params.packageName,
+                                    query: params.query,
+                                    rawSearchContentLength:
+                                        params.rawSearchContent.length,
+                                    hasByokConfig: Boolean(params.byokConfig),
+                                    organizationAndTeamData:
+                                        params.organizationAndTeamData,
+                                    prNumber: params.prNumber,
+                                },
+                            })
+                            .setTemperature(0)
+                            .setRunName(runName)
+                            .addCallbacks(callbacks)
+                            .execute(),
+                });
 
             return this.extractPromptExecutionText(response);
         } catch (error) {
