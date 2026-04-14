@@ -123,7 +123,7 @@ export class LocalSandboxService implements ISandboxProvider {
                         cwd: capturedRepoDir,
                         timeout: opts?.timeoutMs ?? CMD_TIMEOUT_MS,
                         maxBuffer: MAX_BUFFER,
-                        env: { ...process.env, PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}` },
+                        env: process.env as Record<string, string>,
                     });
                     return { stdout: stdout || '', stderr: stderr || '', exitCode: 0 };
                 } catch (error: any) {

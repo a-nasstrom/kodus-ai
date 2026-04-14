@@ -9,10 +9,13 @@ const GRAPH_PATH = `${GRAPH_DIR}/graph.json`;
 const PROMPT_PATH = `${GRAPH_DIR}/prompt.txt`;
 
 const TIMEOUTS = {
-    INSTALL_MS: 120_000, // 2 min — download + install bun + kodus-graph
+    INSTALL_MS: 120_000, // 2 min — bun install kodus-graph
     PARSE_MS: 300_000, // 5 min — parse changed files (generous for large PRs)
     CONTEXT_MS: 60_000, // 1 min — context generation
 };
+
+/** Ensure bun-installed binaries are reachable in E2B sandboxes. Harmless no-op for local. */
+const BUN_PATH_PREFIX = 'export PATH="$HOME/.bun/bin:$PATH" 2>/dev/null || true';
 
 const KODUS_GRAPH_VERSION = 'latest';
 
@@ -378,9 +381,9 @@ export class KodusGraphService {
     }
 
     private async installKodusGraph(sandbox: SandboxInstance): Promise<void> {
-        // Check installed version — always ensure latest is available.
+        // Check if kodus-graph is already available (pre-installed in Docker image for local mode).
         const check = await sandbox.run(
-            'export PATH="$HOME/.bun/bin:$PATH" && kodus-graph --version 2>/dev/null || true',
+            'kodus-graph --version 2>/dev/null || true',
             { timeoutMs: 5_000 },
         );
 
@@ -394,21 +397,35 @@ export class KodusGraphService {
             return;
         }
 
+        // If already installed (any version) and target is "latest", skip — the
+        // baked image version is good enough and avoids a runtime network call.
+        if (installedVersion && KODUS_GRAPH_VERSION === 'latest') {
+            this.logger.log({
+                message: `[KODUS-GRAPH] Found pre-installed version ${installedVersion}, skipping runtime install`,
+                context: KodusGraphService.name,
+            });
+            return;
+        }
+
         this.logger.log({
-            message: `[KODUS-GRAPH] Installing kodus-graph@${KODUS_GRAPH_VERSION} (installed: ${installedVersion || 'none'})`,
+            message: `[KODUS-GRAPH] Installing kodus-graph@${KODUS_GRAPH_VERSION} (installed: ${installedVersion || 'none'}, sandbox: ${sandbox.type})`,
             context: KodusGraphService.name,
         });
 
-        const result = await sandbox.run(
-            [
-                // Install bun if not present
-                'which bun > /dev/null 2>&1 || (curl -fsSL https://bun.sh/install | bash > /dev/null 2>&1)',
-                'export PATH="$HOME/.bun/bin:$PATH"',
-                // Install/update kodus-graph globally
-                `bun install -g @kodus/kodus-graph@${KODUS_GRAPH_VERSION} 2>&1`,
-            ].join(' && '),
-            { timeoutMs: TIMEOUTS.INSTALL_MS },
-        );
+        // Local sandbox: bun is pre-installed in the Docker image.
+        // E2B sandbox: install bun on-the-fly (ephemeral sandbox).
+        const installCmd =
+            sandbox.type === 'local'
+                ? `bun install -g @kodus/kodus-graph@${KODUS_GRAPH_VERSION} 2>&1`
+                : [
+                      'which bun > /dev/null 2>&1 || (curl -fsSL https://bun.sh/install | bash > /dev/null 2>&1)',
+                      'export PATH="$HOME/.bun/bin:$PATH"',
+                      `bun install -g @kodus/kodus-graph@${KODUS_GRAPH_VERSION} 2>&1`,
+                  ].join(' && ');
+
+        const result = await sandbox.run(installCmd, {
+            timeoutMs: TIMEOUTS.INSTALL_MS,
+        });
 
         this.logger.log({
             message: `[KODUS-GRAPH] Install output: exit=${result.exitCode}, stdout=${(result.stdout || '').slice(0, 300)}`,
@@ -436,7 +453,7 @@ export class KodusGraphService {
             .join(' ');
         const result = await sandbox.run(
             [
-                'export PATH="$HOME/.bun/bin:$PATH"',
+                BUN_PATH_PREFIX,
                 `cd ${sandbox.repoDir}`,
                 `mkdir -p ${GRAPH_DIR}`,
                 `kodus-graph parse --files ${filesArg} --repo-dir . --out ${GRAPH_PATH}`,
@@ -574,7 +591,7 @@ export class KodusGraphService {
 
         const result = await sandbox.run(
             [
-                'export PATH="$HOME/.bun/bin:$PATH"',
+                BUN_PATH_PREFIX,
                 `cd ${sandbox.repoDir}`,
                 `mkdir -p ${GRAPH_DIR}`,
                 cmd,
