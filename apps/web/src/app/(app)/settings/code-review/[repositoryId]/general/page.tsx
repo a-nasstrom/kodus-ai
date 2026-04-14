@@ -265,40 +265,6 @@ export default function General() {
             </Page.Header>
 
             <Page.Content>
-                <div data-field-name="automatedReviewActive">
-                    <AutomatedReviewActive />
-                </div>
-                <div data-field-name="kodusConfigFileOverridesWebPreferences">
-                    <KodusConfigFileOverridesWebPreferences />
-                </div>
-                <div data-field-name="pullRequestApprovalActive">
-                    <PullRequestApprovalActive />
-                </div>
-                <AsyncBoundary errorVariant="minimal">
-                    <div data-field-name="isRequestChangesActive">
-                        <IsRequestChangesActive />
-                    </div>
-                </AsyncBoundary>
-                <div data-field-name="runOnDraft">
-                    <RunOnDraft />
-                </div>
-                <div data-field-name="showStatusFeedback">
-                    <ShowStatusFeedback />
-                </div>
-                <AsyncBoundary errorVariant="minimal">
-                    <div data-field-name="enableCommittableSuggestions">
-                        <EnableCommittableSuggestions />
-                    </div>
-                </AsyncBoundary>
-                <div data-field-name="ignorePaths">
-                    <IgnorePaths />
-                </div>
-                <div data-field-name="ignoredTitleKeywords">
-                    <IgnoredTitleKeywords />
-                </div>
-                <div data-field-name="baseBranches">
-                    <BaseBranches />
-                </div>
                 <CentralizedConfigReadOnlyAlert />
 
                 <div data-field-name="automatedReviewActive">
