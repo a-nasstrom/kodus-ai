@@ -411,6 +411,9 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 severityLevelFilter:
                     context.codeReviewConfig?.suggestionControl
                         ?.severityLevelFilter,
+                applyFiltersToKodyRules:
+                    context.codeReviewConfig?.suggestionControl
+                        ?.applyFiltersToKodyRules,
             });
 
             const durationMs = Date.now() - startTime;
@@ -523,23 +526,28 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 ...kodyRulesWithSeverity,
             ];
 
-            // Deduplicate suggestions that describe the same issue.
-            // Kody Rules skip LLM-based dedup (they're user-defined, not
-            // heuristic), but we still dedup them by ruleUuid — the same
-            // rule violation can be found by both the main loop and the
-            // synthesis rescue pass, producing duplicates with different
-            // wording.
+            // Deduplicate Kody Rules deterministically by ruleUuid.
+            // No LLM call needed — the ruleUuid unambiguously identifies
+            // which rule each finding belongs to, so same-rule findings
+            // can be merged without asking a model to decide.
+            //
+            // Merge strategy per rule group:
+            //   - PR-level (no relevantFile): keep 1 finding only. A PR-
+            //     level rule can only be violated once per PR (e.g. "PR
+            //     description required" — either the body is weak or it
+            //     isn't). Drop the rest.
+            //   - File-level: keep the most detailed finding as the
+            //     representative and append "Also found in: <file>:<line>"
+            //     for the other occurrences, same pattern used by the
+            //     LLM-based dedup on non-kody suggestions. One comment
+            //     covers every occurrence of the same rule.
             const allKodyRules = severityNormalized.filter(
                 (s) => s.label === 'kody_rules',
             );
-            const seenRuleUuids = new Set<string>();
-            const kodyRulesForDedup = allKodyRules.filter((s) => {
-                const ruleId =
-                    s.brokenKodyRulesIds?.[0] || s.suggestionContent;
-                if (seenRuleUuids.has(ruleId)) return false;
-                seenRuleUuids.add(ruleId);
-                return true;
-            });
+            const kodyRulesForDedup = this.dedupKodyRulesByRuleUuid(
+                allKodyRules,
+                prNumber,
+            );
             const nonKodyRulesForDedup = severityNormalized.filter(
                 (s) => s.label !== 'kody_rules',
             );
@@ -596,36 +604,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             let deduped = [...dedupedNonRules, ...kodyRulesForDedup];
 
-            // Enrich kody_rules suggestions with links to the rule page
-            const baseUrl = process.env.API_USER_INVITE_BASE_URL || '';
-            for (const s of deduped) {
-                if (s.label !== 'kody_rules' || !s.brokenKodyRulesIds?.[0])
-                    continue;
-                const ruleId = s.brokenKodyRulesIds[0];
-                const rule = kodyRulesById.get(ruleId);
-                if (!rule?.title) continue;
-
-                const repoPath =
-                    rule.repositoryId === 'global'
-                        ? 'global'
-                        : rule.repositoryId;
-                const ruleLink = `${baseUrl}/settings/code-review/${repoPath}/kody-rules/${ruleId}`;
-                const escapedTitle = rule.title.replace(
-                    /([[\]\\`*_{}()#+\-.!])/g,
-                    '\\$1',
-                );
-                const markdownLink = `[${escapedTitle}](${ruleLink})`;
-
-                let content = s.suggestionContent || '';
-                if (content.includes(rule.title)) {
-                    // Replace the first occurrence of the title with the link
-                    content = content.replace(rule.title, markdownLink);
-                } else {
-                    // Append a link line at the end
-                    content += `\n\nKody rule violation: ${markdownLink}`;
-                }
-                s.suggestionContent = content;
-            }
+            // NOTE: Kody Rule link enrichment happens AFTER the content
+            // formatter (see block further below). Doing it before would
+            // let the formatter LLM strip or reword the link when it
+            // collapses WHAT/WHY/HOW into natural prose.
 
             // Reclassify severity using dedicated criteria (Gemini Flash)
             // The agent assigns rough severity during investigation; this step
@@ -670,9 +652,16 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             // Without this second pass, a finding the LLM initially tagged
             // as HIGH would pass the early filter, get reclassified to LOW,
             // and appear on the PR below the user's configured threshold.
+            //
+            // Kody Rules are exempt by default (team-defined rules always
+            // surface regardless of severity). Teams can opt in to filter
+            // them too via suggestionControl.applyFiltersToKodyRules=true.
             const severityFilter =
                 context.codeReviewConfig?.suggestionControl
                     ?.severityLevelFilter;
+            const applyFiltersToKodyRules =
+                context.codeReviewConfig?.suggestionControl
+                    ?.applyFiltersToKodyRules === true;
             if (
                 severityFilter &&
                 severityFilter !== 'low' &&
@@ -687,14 +676,17 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 const accepted =
                     acceptedLevels[severityFilter] || acceptedLevels.low;
                 const before = deduped.length;
-                deduped = deduped.filter((s) =>
-                    accepted.includes(
+                deduped = deduped.filter((s) => {
+                    if (s.label === 'kody_rules' && !applyFiltersToKodyRules) {
+                        return true; // kody rules bypass by default
+                    }
+                    return accepted.includes(
                         (s.severity || 'medium').toLowerCase(),
-                    ),
-                );
+                    );
+                });
                 if (deduped.length < before) {
                     this.logger.log({
-                        message: `[AGENT] Post-classification severity filter: ${before - deduped.length} suggestions below ${severityFilter} threshold removed`,
+                        message: `[AGENT] Post-classification severity filter: ${before - deduped.length} suggestions below ${severityFilter} threshold removed (applyFiltersToKodyRules=${applyFiltersToKodyRules})`,
                         context: this.stageName,
                     });
                 }
@@ -736,6 +728,46 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     message: `[AGENT] Content formatting failed, keeping original text: ${err instanceof Error ? err.message : String(err)}`,
                     context: this.stageName,
                 });
+            }
+
+            // Enrich kody_rules suggestions with markdown links to the rule
+            // page. Runs AFTER the content formatter so the formatter LLM
+            // cannot drop the "Kody rule violation: ..." appendix while
+            // rewriting prose (observed with gemini-3-flash-preview on
+            // short PR-level findings).
+            const baseUrl = process.env.API_USER_INVITE_BASE_URL || '';
+            for (const s of deduped) {
+                if (s.label !== 'kody_rules' || !s.brokenKodyRulesIds?.[0])
+                    continue;
+                const ruleId = s.brokenKodyRulesIds[0];
+                const rule = kodyRulesById.get(ruleId);
+                if (!rule?.title) continue;
+
+                const repoPath =
+                    rule.repositoryId === 'global'
+                        ? 'global'
+                        : rule.repositoryId;
+                const ruleLink = `${baseUrl}/settings/code-review/${repoPath}/kody-rules/${ruleId}`;
+                const escapedTitle = rule.title.replace(
+                    /([[\]\\`*_{}()#+\-.!])/g,
+                    '\\$1',
+                );
+                const markdownLink = `[${escapedTitle}](${ruleLink})`;
+
+                let content = s.suggestionContent || '';
+                // Skip if the link is already embedded (shouldn't happen
+                // now that enrichment runs once post-formatter, but stay
+                // idempotent in case this block runs twice).
+                if (content.includes(ruleLink)) continue;
+
+                if (content.includes(rule.title)) {
+                    // Replace the first occurrence of the title with the link
+                    content = content.replace(rule.title, markdownLink);
+                } else {
+                    // Append a link line at the end
+                    content += `\n\nKody rule violation: ${markdownLink}`;
+                }
+                s.suggestionContent = content;
             }
 
             // Separate PR-level kody rules (no file/lines) from file-level suggestions.
@@ -843,6 +875,104 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 draft.fileAnalysisResults = [];
             });
         }
+    }
+
+    /**
+     * Deduplicate Kody Rules findings by ruleUuid.
+     *
+     * For each rule:
+     *   - If it's PR-level (no relevantFile): keep a single finding — a
+     *     PR-level rule is either violated or not, multiple comments on
+     *     the same PR-level rule are always duplicates.
+     *   - If it's file-level: keep the most detailed finding (longest
+     *     suggestionContent) and append an "Also found in:" list with
+     *     the other `file:lineStart-lineEnd` locations, mirroring the
+     *     merge style used by deduplicateSuggestions for non-kody
+     *     findings. The team sees one comment per rule, but still knows
+     *     every place the rule was violated.
+     *
+     * Findings without a ruleUuid are passed through unchanged (they
+     * should have been filtered earlier by the base agent guard, but we
+     * stay defensive).
+     */
+    private dedupKodyRulesByRuleUuid(
+        suggestions: Partial<CodeSuggestion>[],
+        prNumber: number,
+    ): Partial<CodeSuggestion>[] {
+        if (suggestions.length <= 1) return suggestions;
+
+        const groupsByRuleUuid = new Map<string, Partial<CodeSuggestion>[]>();
+        const passthrough: Partial<CodeSuggestion>[] = [];
+
+        for (const s of suggestions) {
+            const ruleUuid = s.brokenKodyRulesIds?.[0];
+            if (!ruleUuid) {
+                passthrough.push(s);
+                continue;
+            }
+            const group = groupsByRuleUuid.get(ruleUuid) || [];
+            group.push(s);
+            groupsByRuleUuid.set(ruleUuid, group);
+        }
+
+        const result: Partial<CodeSuggestion>[] = [...passthrough];
+
+        for (const [ruleUuid, group] of groupsByRuleUuid) {
+            if (group.length === 1) {
+                result.push(group[0]);
+                continue;
+            }
+
+            const isPrLevel = group.every((s) => !s.relevantFile);
+            if (isPrLevel) {
+                // Keep the most detailed one, drop the rest.
+                const best = [...group].sort(
+                    (a, b) =>
+                        (b.suggestionContent?.length || 0) -
+                        (a.suggestionContent?.length || 0),
+                )[0];
+                result.push(best);
+                this.logger.log({
+                    message: `[KODY-DEDUP] PR#${prNumber} rule=${ruleUuid} (PR-level) collapsed ${group.length} findings → 1`,
+                    context: this.stageName,
+                });
+                continue;
+            }
+
+            // File-level: keep the most detailed, append "Also found in"
+            // list with the other locations.
+            const sorted = [...group].sort(
+                (a, b) =>
+                    (b.suggestionContent?.length || 0) -
+                    (a.suggestionContent?.length || 0),
+            );
+            const keep = { ...sorted[0] };
+            const otherLocations: string[] = [];
+            const keptLocation = `${keep.relevantFile}:${keep.relevantLinesStart ?? '?'}-${keep.relevantLinesEnd ?? '?'}`;
+
+            for (let i = 1; i < sorted.length; i++) {
+                const dup = sorted[i];
+                const loc = `${dup.relevantFile}:${dup.relevantLinesStart ?? '?'}-${dup.relevantLinesEnd ?? '?'}`;
+                if (loc !== keptLocation && !otherLocations.includes(loc)) {
+                    otherLocations.push(loc);
+                }
+            }
+
+            if (otherLocations.length > 0) {
+                const locationsList = otherLocations
+                    .map((loc) => `- \`${loc}\``)
+                    .join('\n');
+                keep.suggestionContent = `${keep.suggestionContent}\n\n**Also found in:**\n${locationsList}`;
+            }
+
+            this.logger.log({
+                message: `[KODY-DEDUP] PR#${prNumber} rule=${ruleUuid} (file-level) collapsed ${group.length} findings → 1 with ${otherLocations.length} extra locations`,
+                context: this.stageName,
+            });
+            result.push(keep);
+        }
+
+        return result;
     }
 
     /**
@@ -1240,11 +1370,23 @@ ${summaries}`,
             ? `in ${Math.round(event.durationMs / 1000)}s`
             : '';
 
+        // Batch suffix appears whenever the parent agent split the PR into
+        // multiple token-budget batches, so the timeline shows e.g.
+        // "Generalist Agent — batch 2/3 · step 5, 3 tool calls".
+        const batchSuffix =
+            event.batchTotal && event.batchTotal > 1 && event.batchIndex
+                ? ` — batch ${event.batchIndex}/${event.batchTotal}`
+                : '';
+
         switch (event.status) {
             case 'started':
                 return `${icon} Agent${replicaSuffix} — investigating...`;
+            case 'batch_started':
+                return `${icon} Agent${replicaSuffix}${batchSuffix} — starting (${event.batchFiles ?? 0} files)`;
+            case 'batch_completed':
+                return `${icon} Agent${replicaSuffix}${batchSuffix} — ${event.findings ?? 0} findings ${duration}`;
             case 'investigating':
-                return `${icon} Agent${replicaSuffix} — step ${event.step}, ${event.toolCalls?.length ?? 0} tool calls`;
+                return `${icon} Agent${replicaSuffix}${batchSuffix} — step ${event.step}, ${event.toolCalls?.length ?? 0} tool calls`;
             case 'completed': {
                 const suffix =
                     event.source === 'second-chance'
@@ -1256,12 +1398,22 @@ ${summaries}`,
             }
             case 'error': {
                 if (event.finishReason === 'timeout') {
-                    return `${icon} Agent${replicaSuffix} — timed out after ${duration} (${event.step ?? 0} steps)`;
+                    return `${icon} Agent${replicaSuffix}${batchSuffix} — timed out after ${duration} (${event.step ?? 0} steps)`;
                 }
                 if (event.finishReason === 'max-steps') {
-                    return `${icon} Agent${replicaSuffix} — hit step limit (${event.step ?? 0} steps, no findings)`;
+                    return `${icon} Agent${replicaSuffix}${batchSuffix} — hit step limit (${event.step ?? 0} steps, no findings)`;
                 }
-                return `${icon} Agent${replicaSuffix} — failed ${duration}`;
+                // Surface the actual error so users can self-diagnose from
+                // the PR logs instead of digging through docker logs.
+                // Truncate to keep the label readable — full message is
+                // also available via the observer's stage metadata.
+                const errSummary = event.errorMessage
+                    ? `: ${event.errorMessage.substring(0, 180)}${event.errorMessage.length > 180 ? '…' : ''}`
+                    : '';
+                const errNameLabel = event.errorName
+                    ? ` (${event.errorName})`
+                    : '';
+                return `${icon} Agent${replicaSuffix}${batchSuffix} — failed ${duration}${errNameLabel}${errSummary}`;
             }
             default:
                 return `${icon} Agent${replicaSuffix}`;
@@ -1315,6 +1467,16 @@ ${summaries}`,
                 coverage: event.coverage,
                 verification: event.verification,
                 anomalies: event.anomalies,
+                // Error details surfaced so the UI (or a copy-paste into a
+                // bug report) has the failure reason without needing docker
+                // logs access.
+                ...(event.status === 'error' && {
+                    error: {
+                        name: event.errorName,
+                        message: event.errorMessage,
+                        finishReason: event.finishReason,
+                    },
+                }),
             };
         }
 

@@ -115,8 +115,8 @@ export class CostEstimateUseCase {
             totals.reasoningTokens += usage.outputReasoning;
         }
 
-        totals.totalTokens =
-            totals.inputTokens + totals.outputTokens + totals.reasoningTokens;
+        // outputTokens already includes reasoningTokens (Vercel AI SDK convention).
+        totals.totalTokens = totals.inputTokens + totals.outputTokens;
         return totals;
     }
 

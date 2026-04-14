@@ -1,4 +1,7 @@
-import { buildAgentTools } from './agent-tools.factory';
+import {
+    buildAgentTools,
+    type DocumentationSearchAdapter,
+} from './agent-tools.factory';
 /**
  * Simple agent loop using Vercel AI SDK with native function calling.
  *
@@ -107,14 +110,14 @@ export function buildLangSmithProviderOptions(
  * Used by all generateText calls in the agent loop to ensure consistent
  * provider options across main loop, recovery, rescue, and verify passes.
  */
-function buildProviderOptions(
+export function buildProviderOptions(
     runName: string,
     meta?: LangSmithTelemetryMetadata,
     input?: {
         reasoningEffort?: ReasoningEffort;
         reasoningConfigOverride?: string;
         byokProvider?: BYOKProvider | string;
-        agentName?: string;
+        modelName?: string;
     },
 ): Record<string, any> {
     const langsmith = buildLangSmithProviderOptions(runName, meta);
@@ -132,17 +135,30 @@ function buildProviderOptions(
     const reasoning = buildReasoningProviderOptions(
         input?.byokProvider,
         input?.reasoningEffort,
-        input?.agentName,
+        input?.modelName,
     );
-    return { ...langsmith, ...reasoning };
+    const merged = { ...langsmith, ...reasoning };
+    logger.log({
+        message: '[thinking] providerOptions resolved',
+        context: 'buildProviderOptions',
+        metadata: {
+            runName,
+            provider: input?.byokProvider,
+            modelName: input?.modelName,
+            reasoningEffort: input?.reasoningEffort,
+            hasOverride: !!input?.reasoningConfigOverride,
+            reasoningPayload: reasoning,
+        },
+    });
+    return merged;
 }
 import { z } from 'zod';
 import { BYOKProvider } from '@kodus/kodus-common/llm';
 import { createLogger } from '@kodus/flow';
 
-type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
-const EFFORT_TO_BUDGET: Record<ReasoningEffort, number> = {
+export const EFFORT_TO_BUDGET: Record<ReasoningEffort, number> = {
     none: 0,
     low: 5_000,
     medium: 15_000,
@@ -169,7 +185,7 @@ const EFFORT_TO_BUDGET: Record<ReasoningEffort, number> = {
  *   Gemini: https://ai.google.dev/gemini-api/docs/thinking
  *   OpenRouter: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
  */
-function buildReasoningProviderOptions(
+export function buildReasoningProviderOptions(
     provider?: BYOKProvider | string,
     effort?: ReasoningEffort,
     modelName?: string,
@@ -287,11 +303,11 @@ const logger = createLogger('AgentLoop');
 
 const MAX_STEPS_NORMAL = 15;
 const MAX_STEPS_DEEP = 100;
-const AGENT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes max per agent
-const LLM_CALL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per individual LLM call
+export const AGENT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes max per agent
+export const LLM_CALL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per individual LLM call
 
 /** Create an AbortSignal that fires after the given ms. */
-function timeoutSignal(ms: number): AbortSignal {
+export function timeoutSignal(ms: number): AbortSignal {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), ms);
     return controller.signal;
@@ -305,7 +321,7 @@ function timeoutSignal(ms: number): AbortSignal {
  * but some providers (OpenAI-compatible proxies like Synthetic, Z.AI) ignore it.
  * This is the safety net.
  */
-function hardTimeout<T>(
+export function hardTimeout<T>(
     promise: Promise<T>,
     ms: number,
     label: string,
@@ -369,6 +385,10 @@ export interface AgentLoopInput {
     reviewMode?: 'fast' | 'normal' | 'deep';
     /** Minimum severity level to keep. Findings below this threshold are discarded before verify. */
     severityLevelFilter?: string;
+    /** When true, the severity filter also applies to Kody Rules findings.
+     *  Default (undefined / false): kody rules are exempt because they are
+     *  explicit team-defined rules that should always surface. */
+    applyFiltersToKodyRules?: boolean;
     /** Model context window in tokens. Used to trigger context compression when the message history grows too large. */
     contextWindowTokens?: number;
     /** When true, skip recovery/rescue/second-chance passes. Used by rule-checking agents that don't benefit from open-ended exploration. */
@@ -398,6 +418,15 @@ export interface AgentLoopSecrets {
     remoteCommands: RemoteCommands | undefined;
     byokConfig?: BYOKConfig;
     gitHubToken?: string;
+    /**
+     * External documentation search adapter (Exa-backed). When provided,
+     * registers the `searchDocs` tool on the agent so it can verify
+     * framework/library behavior against official docs. Required for the
+     * verifier to validate findings about third-party APIs.
+     */
+    documentationSearchService?: DocumentationSearchAdapter;
+    /** Options forwarded to the documentation search adapter on each call. */
+    documentationSearchOptions?: Record<string, unknown>;
 }
 
 export interface AgentLoopOutput {
@@ -492,7 +521,13 @@ export async function runAgentLoop(
     input: AgentLoopInput,
     secrets: AgentLoopSecrets,
 ): Promise<AgentLoopOutput> {
-    const tools = buildAgentTools(secrets.remoteCommands, secrets.gitHubToken);
+    const tools = buildAgentTools(
+        secrets.remoteCommands,
+        secrets.gitHubToken,
+        input.repositoryFullName,
+        secrets.documentationSearchService,
+        secrets.documentationSearchOptions,
+    );
     // Self-contained mode: no sandbox, no tools. The agent analyzes diffs
     // and any inlined fileContent in a single LLM call. Used by CLI trial.
     const isSelfContained = Object.keys(tools).length === 0;
@@ -539,7 +574,13 @@ export async function runAgentLoop(
                     providerOptions: buildProviderOptions(
                         input.agentName ?? 'agent-loop',
                         input.telemetryMetadata,
-                        input,
+                        {
+                            reasoningEffort: input.reasoningEffort,
+                            reasoningConfigOverride:
+                                input.reasoningConfigOverride,
+                            byokProvider: input.byokProvider,
+                            modelName: (input.model as any)?.modelId,
+                        },
                     ),
                     tools,
                     // Self-contained mode has no tools — a single LLM call
@@ -1197,8 +1238,23 @@ Respond with ONLY the JSON:
     // preliminary severity which may be overridden by the SeverityClassifier
     // later. The definitive filter runs in agent-review.stage.ts AFTER
     // reclassification.
+    //
+    // Kody Rules findings are exempt by default because they are explicit
+    // team-defined rules that should always surface. Teams can opt in to
+    // filter them via suggestionControl.applyFiltersToKodyRules=true.
+    // At this point the per-agent `label` has not been assigned yet (the
+    // base provider resolves it after this loop returns), so we use the
+    // presence of `ruleUuid` as the signal: only the KodyRulesAgent emits
+    // ruleUuid in its output schema.
+    const isKodyRuleFinding = (
+        s: (typeof findings.suggestions)[number],
+    ) =>
+        typeof (s as any).ruleUuid === 'string' &&
+        (s as any).ruleUuid.trim().length > 0;
+
     let discardedBySeverity: FindingsOutput['suggestions'] = [];
     const severityLevelFilter = input.severityLevelFilter;
+    const applyFiltersToKodyRules = input.applyFiltersToKodyRules === true;
     if (
         severityLevelFilter &&
         severityLevelFilter !== 'low' &&
@@ -1213,18 +1269,18 @@ Respond with ONLY the JSON:
         const accepted =
             acceptedLevels[severityLevelFilter] || acceptedLevels.low;
         const before = findings.suggestions.length;
-        discardedBySeverity = findings.suggestions.filter(
-            (s) => !accepted.includes((s.severity || 'medium').toLowerCase()),
-        );
+        const keeps = (s: (typeof findings.suggestions)[number]) => {
+            if (isKodyRuleFinding(s) && !applyFiltersToKodyRules) return true;
+            return accepted.includes((s.severity || 'medium').toLowerCase());
+        };
+        discardedBySeverity = findings.suggestions.filter((s) => !keeps(s));
         findings = {
             ...findings,
-            suggestions: findings.suggestions.filter((s) =>
-                accepted.includes((s.severity || 'medium').toLowerCase()),
-            ),
+            suggestions: findings.suggestions.filter(keeps),
         };
         if (discardedBySeverity.length > 0) {
             logger.log({
-                message: `[AGENT-SEVERITY-FILTER] Pre-filtered ${discardedBySeverity.length}/${before} findings below ${severityLevelFilter} threshold (definitive filter runs after reclassification)`,
+                message: `[AGENT-SEVERITY-FILTER] Pre-filtered ${discardedBySeverity.length}/${before} findings below ${severityLevelFilter} threshold (applyFiltersToKodyRules=${applyFiltersToKodyRules}; definitive filter runs after reclassification)`,
                 context: 'AgentLoop',
             });
         }
@@ -1241,26 +1297,61 @@ Respond with ONLY the JSON:
     // positives is worth the 10-30s it costs. It does NOT run in
     // self-contained mode because the verifier needs tools to inspect
     // code around each finding, and we don't have a sandbox there.
+    //
+    // Kody-rule findings bypass verify: they are deterministic user-authored
+    // rules, so if the agent matched a ruleUuid the violation should surface.
+    // The verifier is a false-positive guard for heuristic findings, not for
+    // user-configured rules.
     if (!isSelfContained && findings.suggestions.length > 0) {
-        const verificationResult = await verifyFindingsWithTools({
-            findings,
-            input,
-            secrets,
-            allToolCalls,
-            tools: pickVerificationTools(tools),
-        });
+        const kodyRuleSuggestions = findings.suggestions.filter((s) =>
+            isKodyRuleFinding(s),
+        );
+        const nonKodyRuleSuggestions = findings.suggestions.filter(
+            (s) => !isKodyRuleFinding(s),
+        );
 
-        findings = verificationResult.findings;
-        droppedByVerify = verificationResult.droppedByVerify || [];
-        totalInputTokens += verificationResult.usage.inputTokens;
-        totalOutputTokens += verificationResult.usage.outputTokens;
-        totalReasoningTokens += verificationResult.usage.reasoningTokens;
-        verificationTrace = verificationResult.trace;
-        verificationUsage = {
-            inputTokens: verificationResult.usage.inputTokens,
-            outputTokens: verificationResult.usage.outputTokens,
-            reasoningTokens: verificationResult.usage.reasoningTokens,
-        };
+        if (nonKodyRuleSuggestions.length > 0) {
+            const verificationResult = await verifyFindingsWithTools({
+                findings: {
+                    ...findings,
+                    suggestions: nonKodyRuleSuggestions,
+                },
+                input,
+                secrets,
+                allToolCalls,
+                tools: pickVerificationTools(tools),
+            });
+
+            findings = {
+                ...verificationResult.findings,
+                suggestions: [
+                    ...verificationResult.findings.suggestions,
+                    ...kodyRuleSuggestions,
+                ],
+            };
+            droppedByVerify = verificationResult.droppedByVerify || [];
+            totalInputTokens += verificationResult.usage.inputTokens;
+            totalOutputTokens += verificationResult.usage.outputTokens;
+            totalReasoningTokens += verificationResult.usage.reasoningTokens;
+            verificationTrace = verificationResult.trace;
+            verificationUsage = {
+                inputTokens: verificationResult.usage.inputTokens,
+                outputTokens: verificationResult.usage.outputTokens,
+                reasoningTokens: verificationResult.usage.reasoningTokens,
+            };
+
+            if (kodyRuleSuggestions.length > 0) {
+                logger.log({
+                    message: `[AGENT-VERIFY] Bypassed verify for ${kodyRuleSuggestions.length} kody-rule finding(s); verified ${nonKodyRuleSuggestions.length} non-rule finding(s)`,
+                    context: 'AgentLoop',
+                });
+            }
+        } else if (kodyRuleSuggestions.length > 0) {
+            logger.log({
+                message: `[AGENT-VERIFY] Skipped verify — all ${kodyRuleSuggestions.length} finding(s) are kody rules`,
+                context: 'AgentLoop',
+            });
+        }
     }
 
     // Base usage from the main agent loop
@@ -1376,6 +1467,21 @@ async function runCoverageRecoveryPass(params: {
                 generateText({
                     abortSignal: recoverySignal,
                     model: input.model,
+                    experimental_telemetry: {
+                        isEnabled: true,
+                        functionId: `${input.agentName ?? 'agent-loop'}-coverage-recovery`,
+                    },
+                    providerOptions: buildProviderOptions(
+                        `${input.agentName ?? 'agent-loop'}-coverage-recovery`,
+                        input.telemetryMetadata,
+                        {
+                            reasoningEffort: input.reasoningEffort,
+                            reasoningConfigOverride:
+                                input.reasoningConfigOverride,
+                            byokProvider: input.byokProvider,
+                            modelName: (input.model as any)?.modelId,
+                        },
+                    ),
                     system:
                         input.systemPrompt +
                         '\n\nIMPORTANT: This is a coverage recovery pass. You must inspect the remaining changed files before responding.',
@@ -1733,9 +1839,16 @@ async function runSynthesisRescuePass(params: {
                         isEnabled: true,
                         functionId: `${input.agentName ?? 'agent-loop'}-synthesis-rescue`,
                     },
-                    providerOptions: buildLangSmithProviderOptions(
+                    providerOptions: buildProviderOptions(
                         `${input.agentName ?? 'agent-loop'}-synthesis-rescue`,
                         input.telemetryMetadata,
+                        {
+                            reasoningEffort: input.reasoningEffort,
+                            reasoningConfigOverride:
+                                input.reasoningConfigOverride,
+                            byokProvider: input.byokProvider,
+                            modelName: (input.model as any)?.modelId,
+                        },
                     ),
                     system:
                         input.systemPrompt +
@@ -2281,9 +2394,15 @@ async function verifySingleFindingWithTools(params: {
                     isEnabled: true,
                     functionId: `${input.agentName ?? 'agent-loop'}-verify-finding`,
                 },
-                providerOptions: buildLangSmithProviderOptions(
+                providerOptions: buildProviderOptions(
                     `${input.agentName ?? 'agent-loop'}-verify-finding`,
                     input.telemetryMetadata,
+                    {
+                        reasoningEffort: input.reasoningEffort,
+                        reasoningConfigOverride: input.reasoningConfigOverride,
+                        byokProvider: input.byokProvider,
+                        modelName: (internalModel as any)?.modelId,
+                    },
                 ),
                 system: verificationPrompt.system,
                 prompt: verificationPrompt.prompt,
@@ -2405,9 +2524,16 @@ async function verifySingleFindingWithTools(params: {
                             isEnabled: true,
                             functionId: `${input.agentName ?? 'agent-loop'}-verify-finding-second-chance`,
                         },
-                        providerOptions: buildLangSmithProviderOptions(
+                        providerOptions: buildProviderOptions(
                             `${input.agentName ?? 'agent-loop'}-verify-finding-second-chance`,
                             input.telemetryMetadata,
+                            {
+                                reasoningEffort: input.reasoningEffort,
+                                reasoningConfigOverride:
+                                    input.reasoningConfigOverride,
+                                byokProvider: input.byokProvider,
+                                modelName: (internalModel as any)?.modelId,
+                            },
                         ),
                         system: `You are a surgical code review verifier.
 

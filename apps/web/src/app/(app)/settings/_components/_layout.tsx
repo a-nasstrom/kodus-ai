@@ -66,6 +66,7 @@ const routes = [
     { label: "Review Categories", href: "review-categories" },
     { label: "Custom Prompts", href: "custom-prompts" },
     { label: "PR Summary", href: "pr-summary" },
+    { label: "Suggestion Control", href: "suggestion-control" },
     { label: "Kody Rules", href: "kody-rules" },
     { label: "Custom Messages", href: "custom-messages" },
 ] satisfies Array<{

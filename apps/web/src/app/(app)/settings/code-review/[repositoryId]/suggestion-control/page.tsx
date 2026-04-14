@@ -136,7 +136,12 @@ export default function SuggestionControl(
             <Page.Content className="mt-10 flex-none">
                 {codeReviewVersion === "v3-agent" ? (
                     <div className="mt-10 flex flex-col gap-8">
-                        <MinimumSeverityLevel />
+                        <div data-field-name="suggestionControl.severityLevelFilter">
+                            <MinimumSeverityLevel />
+                        </div>
+                        <div data-field-name="suggestionControl.applyFiltersToKodyRules">
+                            <ApplyFiltersToKodyRules />
+                        </div>
                     </div>
                 ) : (
                     <div className="mt-10 flex flex-col gap-8">

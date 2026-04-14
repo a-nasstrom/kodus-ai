@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PromptRunnerService } from '@kodus/kodus-common/llm';
 import { PermissionValidationService } from '@libs/ee/shared/services/permissionValidation.service';
 import { ObservabilityService } from '@libs/core/log/observability.service';
+import { DocumentationSearchExaService } from '@libs/code-review/infrastructure/adapters/services/documentation-search-exa.service';
 import {
     BaseCodeReviewAgentProvider,
     ReviewAgentIdentity,
@@ -30,11 +31,14 @@ export class KodyRulesAgentProvider extends BaseCodeReviewAgentProvider {
         promptRunnerService: PromptRunnerService,
         permissionValidationService: PermissionValidationService,
         observabilityService: ObservabilityService,
+        @Optional()
+        documentationSearchService?: DocumentationSearchExaService,
     ) {
         super(
             promptRunnerService,
             permissionValidationService,
             observabilityService,
+            documentationSearchService,
         );
     }
 
@@ -168,24 +172,24 @@ There are TWO formats depending on the rule scope:
 **File-level rule violation** (scope: Per-file) — includes file, lines, and code:
 \`\`\`json
 {
-  "ruleUuid": "uuid-of-the-violated-rule",
-  "relevantFile": "path/to/file.ts",
-  "language": "typescript",
-  "suggestionContent": "Violates rule 'Rule Title': description of violation with evidence",
-  "existingCode": "code that violates the rule",
-  "improvedCode": "code that follows the rule",
-  "oneSentenceSummary": "Brief: violates 'Rule Title'",
-  "relevantLinesStart": 10,
-  "relevantLinesEnd": 15
+  "ruleUuid": "1b2e3c4d-5678-90ab-cdef-1234567890ab",
+  "relevantFile": "src/api/paginator.py",
+  "language": "python",
+  "suggestionContent": "Violates rule 'No console.log in production code': the function debugFoo leaves console.log calls that should have been removed before merging.",
+  "existingCode": "console.log('user:', user);",
+  "improvedCode": "logger.debug('user:', user);",
+  "oneSentenceSummary": "Violates 'No console.log in production code'",
+  "relevantLinesStart": 42,
+  "relevantLinesEnd": 44
 }
 \`\`\`
 
 **PR-level rule violation** (scope: Pull request level) — NO file, lines, or code:
 \`\`\`json
 {
-  "ruleUuid": "uuid-of-the-violated-rule",
-  "suggestionContent": "Violates rule 'Rule Title': description of the PR-level violation",
-  "oneSentenceSummary": "Brief: violates 'Rule Title'"
+  "ruleUuid": "9f8e7d6c-5432-10ba-fedc-0987654321ba",
+  "suggestionContent": "Violates rule 'PRs touching the auth module require a test file': changes to src/auth/* landed without a matching src/auth/**.test.ts.",
+  "oneSentenceSummary": "Violates 'PRs touching the auth module require a test file'"
 }
 \`\`\`
 
@@ -197,8 +201,13 @@ Full response structure:
 }
 \`\`\`
 
-IMPORTANT:
-- "ruleUuid" MUST be the exact UUID provided for the violated rule. This is required for tracking.
+CRITICAL — ruleUuid discipline:
+- "ruleUuid" is MANDATORY on every suggestion. Copy it exactly from the "**UUID**: \`...\`" line of the Team Rules section above.
+- You MUST NOT invent a UUID, leave it blank, or put a placeholder like "uuid-of-the-violated-rule".
+- If you notice an issue in the code that is real but does NOT match any of the rules listed above (e.g. an XSS risk when no XSS rule was provided, or a generic bug), **DO NOT REPORT IT**. Discard it. A different agent handles bugs, security, and performance — your job is ONLY team rules compliance. Reporting something without a matching ruleUuid is an error.
+- If no rule is violated, return an empty suggestions array.
+
+Other format rules:
 - For PR-level rules, do NOT include "relevantFile", "relevantLinesStart", "relevantLinesEnd", "existingCode", or "improvedCode".
 - For file-level rules, ALL fields including file and lines are required.
 
@@ -212,6 +221,7 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
     <Rule>If a rule has a Reference file, use readFile to read it and understand the expected pattern before checking.</Rule>
     <Rule>Only report actual violations — not code that follows the rules.</Rule>
     <Rule>Include the rule title in the suggestionContent so the team knows which rule was violated.</Rule>
+    <Rule>If you spot a real issue that does NOT map to any listed rule, DROP IT. Your scope is only team rules. Other agents cover generic bugs, security, performance.</Rule>
   </Rules>
 </ReviewTask>`;
     }
@@ -296,12 +306,14 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
         // Directory prefix (e.g., "src/controllers/")
         if (pattern.endsWith('/') && filePath.startsWith(pattern)) return true;
 
-        // Simple glob: convert * to regex
+        // Simple glob: convert * to regex.
+        // Escape literal dots BEFORE expanding stars — otherwise the `.*` from `**`
+        // gets escaped into `\.*` (zero-or-more literal dots) and stops matching.
         const regexStr = pattern
+            .replace(/\./g, '\\.')
             .replace(/\*\*/g, '<<<DOUBLESTAR>>>')
             .replace(/\*/g, '[^/]*')
-            .replace(/<<<DOUBLESTAR>>>/g, '.*')
-            .replace(/\./g, '\\.');
+            .replace(/<<<DOUBLESTAR>>>/g, '.*');
 
         try {
             return new RegExp(`^${regexStr}$`).test(filePath);

@@ -42,7 +42,6 @@ import {
     useCodeReviewRouteParams,
     useCurrentConfigLevel,
 } from "../../../_hooks";
-import { MinimumSeverityLevel } from "../suggestion-control/_components/minimum-severity-level";
 import { AutomatedReviewActive } from "./_components/automated-review-active";
 import { BaseBranches } from "./_components/base-branches";
 import { CentralizedConfigModal } from "./_components/centralized-config-modal";
@@ -280,9 +279,6 @@ export default function General() {
                         <IsRequestChangesActive />
                     </div>
                 </AsyncBoundary>
-                <div data-field-name="suggestionControl.severityLevelFilter">
-                    <MinimumSeverityLevel />
-                </div>
                 <div data-field-name="runOnDraft">
                     <RunOnDraft />
                 </div>

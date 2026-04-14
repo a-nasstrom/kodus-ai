@@ -82,6 +82,13 @@ export const codeReviewPipelineProvider: Provider = {
                     context: 'CodeReviewPipelineProvider',
                 });
 
+                // Mark which engine will run so downstream stages (e.g.
+                // FetchChangedFilesStage) can apply engine-specific limits.
+                context.pipelineMetadata = {
+                    ...(context.pipelineMetadata || {}),
+                    useAgentEngine: useAgentPipeline,
+                };
+
                 const stages = strategy.configureStages();
                 const executor = new PipelineExecutor();
                 return (await executor.execute(

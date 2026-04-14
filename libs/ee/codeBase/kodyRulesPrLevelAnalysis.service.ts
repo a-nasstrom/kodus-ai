@@ -559,7 +559,7 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
                 }
 
                 const escapeMarkdownSyntax = (text: string): string =>
-                    text.replace(/([[]\\]\\`*_{}()#+-.!])/g, '\\$1');
+                    text.replace(/([\[\]\\`*_{}()#+\-.!])/g, '\\$1');
                 const markdownLink = `[${escapeMarkdownSyntax(rule.title)}](${ruleLink})`;
 
                 // Verificar se o ID está entre crases simples `id`

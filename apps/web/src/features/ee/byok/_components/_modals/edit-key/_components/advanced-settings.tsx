@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@components/ui/button";
 import {
     Collapsible,
     CollapsibleContent,
@@ -12,7 +11,7 @@ import { Input } from "@components/ui/input";
 import { Separator } from "@components/ui/separator";
 import { Textarea } from "@components/ui/textarea";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
-import { BrainCircuitIcon } from "lucide-react";
+import { BrainCircuitIcon, Settings2Icon } from "lucide-react";
 import { Controller, useFormContext } from "react-hook-form";
 
 import type { EditKeyForm } from "../_types";
@@ -85,19 +84,21 @@ export const ByokAdvancedSettings = () => {
     const isCustom = currentEffort === ("custom" as string);
 
     return (
-        <Collapsible>
+        <Collapsible className="border-card-lv2 rounded-lg border">
             <CollapsibleTrigger asChild>
-                <Button
+                <button
                     type="button"
-                    size="sm"
-                    variant="helper"
-                    leftIcon={<CollapsibleIndicator />}>
-                    Advanced settings
-                </Button>
+                    className="text-text-secondary hover:text-text-primary hover:bg-card-lv2/40 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors data-[state=open]:rounded-b-none">
+                    <span className="flex items-center gap-2">
+                        <Settings2Icon className="size-4" />
+                        Advanced settings
+                    </span>
+                    <CollapsibleIndicator />
+                </button>
             </CollapsibleTrigger>
 
             <CollapsibleContent>
-                <div className="flex flex-col gap-5 pt-3">
+                <div className="border-card-lv2 flex flex-col gap-5 border-t px-3 pt-4">
                     {/* ── Thinking / Reasoning ──────────────── */}
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2">
@@ -130,7 +131,7 @@ export const ByokAdvancedSettings = () => {
                                         <ToggleGroup.Item
                                             key={opt.value}
                                             value={opt.value}
-                                            className="text-text-secondary data-[state=on]:bg-primary data-[state=on]:text-text-primary rounded-md px-2 py-1.5 text-xs font-medium transition-colors">
+                                            className="text-text-secondary hover:text-text-primary data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:ring-primary/40 data-[state=on]:shadow-sm rounded-md px-2 py-1.5 text-xs font-medium transition-colors data-[state=on]:ring-1">
                                             {opt.label}
                                         </ToggleGroup.Item>
                                     ))}
