@@ -295,20 +295,21 @@ export class LocalSandboxService implements ISandboxProvider {
                     };
                 }
 
-                // Block path traversal in positional arguments only.
-                // Skip flags (--xxx) and their values (the arg right after a flag).
-                const positionalArgs: string[] = [];
-                for (let i = 0; i < args.length; i++) {
-                    if (args[i].startsWith('-')) {
-                        // Flag — skip its value too (e.g. --pattern '$A..$B')
-                        i++;
-                        continue;
-                    }
-                    positionalArgs.push(args[i]);
-                }
-                // Check for path traversal: ".." as a path segment (not substring).
-                // Matches: "../x", "a/../../b", ".." alone — but NOT "./..." (Go idiom)
-                const hasTraversal = positionalArgs.some(
+                // Block path traversal anywhere in the argument list. The old
+                // implementation tried to skip flags + their values, but it
+                // assumed every flag takes a value — so a valueless flag right
+                // before a malicious path (e.g. `cat -n ../../../etc/passwd`)
+                // would skip the dangerous arg. Validate every argument
+                // instead; flags themselves never contain `..` or `/foo` so
+                // they will pass naturally.
+                //
+                // Allow `..` as part of pattern syntax (e.g. ripgrep
+                // `'$A..$B'`) by only flagging it when it appears as a path
+                // segment, and only treat absolute paths as traversal when
+                // they look like filesystem paths (start with `/`) — flag
+                // shorthands like `-n` or `--include` start with `-`, never
+                // `/`.
+                const hasTraversal = args.some(
                     (a) => a.startsWith('/') || /(^|\/)\.\.($|\/)/.test(a),
                 );
                 if (hasTraversal) {

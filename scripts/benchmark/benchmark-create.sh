@@ -37,7 +37,7 @@ TOTAL_PRS=${2:-20}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNS_DIR="$SCRIPT_DIR/runs"
-BENCHMARK_OWNER="${BENCHMARK_OWNER:-Wellington01}"
+BENCHMARK_OWNER="${BENCHMARK_OWNER:-ai-code-review-benchmark}"
 mkdir -p "$RUNS_DIR"
 WORKER=$(docker ps --format '{{.Names}}' | grep worker | head -1)
 WORKER="${WORKER:-kodus_worker}"

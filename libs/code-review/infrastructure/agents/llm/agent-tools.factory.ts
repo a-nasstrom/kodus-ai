@@ -192,7 +192,8 @@ export function buildAgentTools(
                     try {
                         const safePattern = pattern.replace(/'/g, "'\\''");
                         const safePath = searchPath.replace(/'/g, "'\\''");
-                        const globArg = glob ? ` --glob '${glob}'` : '';
+                        const safeGlob = glob ? glob.replace(/'/g, "'\\''") : '';
+                        const globArg = safeGlob ? ` --glob '${safeGlob}'` : '';
                         const excludeTestsArgs = excludeTests
                             ? ` --glob '!*test*' --glob '!*Test*' --glob '!*spec*' --glob '!*Spec*' --glob '!*__tests__*'`
                             : '';
@@ -404,7 +405,8 @@ export function buildAgentTools(
                 const ext = args.extension || args.ext || '';
                 const safePattern = pattern.replace(/'/g, "'\\''");
                 const safePath = searchPath.replace(/'/g, "'\\''");
-                const extArg = ext ? ` -e '${ext}'` : '';
+                const safeExt = ext ? ext.replace(/'/g, "'\\''") : '';
+                const extArg = safeExt ? ` -e '${safeExt}'` : '';
 
                 try {
                     // Try fd first (fast, .gitignore aware), then find as fallback

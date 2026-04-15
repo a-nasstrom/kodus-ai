@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';

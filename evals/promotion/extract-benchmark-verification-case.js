@@ -198,7 +198,11 @@ function extractPatchWindow(patchWithLinesStr, startLine, endLine, padding = 20)
     const targetIndexes = [];
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
-        const match = line.match(/^(\d+):/);
+        // patchWithLinesStr formats lines as `   123 +foo` (number left-padded
+        // with spaces, then a space, then the original diff line). The old
+        // `:` delimiter never matched, so targetIndexes stayed empty and the
+        // function silently returned the entire patch.
+        const match = line.match(/^\s*(\d+)\s/);
         if (!match) continue;
         const lineNumber = Number(match[1]);
         if (lineNumber >= startLine - padding && lineNumber <= endLine + padding) {

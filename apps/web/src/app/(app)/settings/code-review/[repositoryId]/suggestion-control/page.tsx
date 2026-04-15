@@ -102,11 +102,11 @@ export default function SuggestionControl(
     return (
         <Page.Root>
             <Page.Header>
-                <CodeReviewPagesBreadcrumb pageName="Suggestion control" />
+                <CodeReviewPagesBreadcrumb pageName="Review filters" />
             </Page.Header>
 
             <Page.Header>
-                <Page.Title>Suggestion control</Page.Title>
+                <Page.Title>Review filters</Page.Title>
                 <hr />
 
                 <Page.HeaderActions>
@@ -133,9 +133,9 @@ export default function SuggestionControl(
                 </Page.HeaderActions>
             </Page.Header>
 
-            <Page.Content className="mt-10 flex-none">
+            <Page.Content className="flex-none">
                 {codeReviewVersion === "v3-agent" ? (
-                    <div className="mt-10 flex flex-col gap-8">
+                    <div className="flex flex-col gap-8">
                         <div data-field-name="suggestionControl.severityLevelFilter">
                             <MinimumSeverityLevel />
                         </div>
@@ -144,7 +144,7 @@ export default function SuggestionControl(
                         </div>
                     </div>
                 ) : (
-                    <div className="mt-10 flex flex-col gap-8">
+                    <div className="flex flex-col gap-8">
                         <div>
                             <Heading variant="h2">Suggestion limit</Heading>
                             <span className="text-text-secondary text-sm">

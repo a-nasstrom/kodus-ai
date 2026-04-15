@@ -481,7 +481,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 .andWhere('success.status = :successStatus')
                 .andWhere(`${successRepositoryExpr} IS NOT NULL`)
                 .andWhere(`${successPullRequestExpr} IS NOT NULL`)
-                .andWhere(`NOT EXISTS ${inProgressSubquery}`)
+                .andWhere(`NOT EXISTS (${inProgressSubquery})`)
                 .groupBy(successRepositoryExpr)
                 .addGroupBy(successPullRequestExpr)
                 .setParameters({

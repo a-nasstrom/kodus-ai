@@ -117,7 +117,7 @@ for (const pr of benchmark.prs) {
 const mongoCmd = (query) => {
   const escaped = query.replace(/'/g, \"'\\\\\\\"'\\\\\\\"'\");
   return execSync(
-    'docker exec mongodb mongosh -u kodusdev -p 123456 --authenticationDatabase admin kodus_db --quiet --eval \\'' + query + '\\'',
+    'docker exec mongodb mongosh -u kodusdev -p 123456 --authenticationDatabase admin kodus_db --quiet --eval \\'' + escaped + '\\'',
     { encoding: 'utf8', timeout: 30000 }
   ).trim();
 };
