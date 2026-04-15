@@ -116,21 +116,55 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 });
 
             const result = await Promise.race([agentPromise, timeoutPromise]);
-            const hasGap = this.resultHasGap(result);
+            const classification = this.classifyResult(result);
+
+            if (classification.kind === 'limitation') {
+                // Surface the actual reason the agent gave up (MCP connection
+                // failed, missing task context, etc.) at WARN level with a
+                // preview of the agent's response. Without this the only
+                // signal that the validation did not run is a separate WARN
+                // from BusinessRulesValidationAgentProvider, which is easy
+                // to miss when triaging a pipeline run.
+                this.logger.warn({
+                    message: `[BUSINESS-LOGIC] Skipped — agent could not validate: ${classification.message}`,
+                    context: this.stageName,
+                    metadata: {
+                        organizationId:
+                            context.organizationAndTeamData?.organizationId,
+                        prNumber: context.pullRequest?.number,
+                        outcome: classification.kind,
+                        reason: 'agent_limitation',
+                        agentResponsePreview: this.firstNonEmptyLine(result),
+                        signals,
+                    },
+                });
+
+                return this.updateContext(context, (draft) => {
+                    draft.businessLogicResults = [];
+                    // Do NOT bump businessLogicPrBodyHash: the agent never
+                    // actually validated this description, so the next run
+                    // should still try.
+                    draft.businessLogicOutcome = {
+                        kind: 'skipped',
+                        reason: 'agent_limitation',
+                        message: `Skipped: business logic validation could not run (${classification.message}).`,
+                    };
+                });
+            }
 
             this.logger.log({
-                message: `[BUSINESS-LOGIC] Validation finished (hasGap=${hasGap})`,
+                message: `[BUSINESS-LOGIC] Validation finished (outcome=${classification.kind})`,
                 context: this.stageName,
                 metadata: {
                     organizationId:
                         context.organizationAndTeamData?.organizationId,
                     prNumber: context.pullRequest?.number,
-                    hasGap,
+                    outcome: classification.kind,
                     signals,
                 },
             });
 
-            if (!hasGap) {
+            if (classification.kind === 'no_gap') {
                 return this.updateContext(context, (draft) => {
                     draft.businessLogicResults = [];
                     draft.businessLogicPrBodyHash = prBodyHash;
@@ -279,9 +313,26 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         return crypto.createHash('sha256').update(body).digest('hex');
     }
 
-    private resultHasGap(result: string): boolean {
+    /**
+     * Classify the agent's output into one of three outcomes:
+     *  - 'gap_found'  → a real business-logic gap was detected
+     *  - 'no_gap'     → the PR is aligned with the requirements
+     *  - 'limitation' → the agent could not validate (MCP down, missing
+     *                   task context, etc.). This MUST NOT be reported as
+     *                   success — the UI would claim the review passed
+     *                   when no validation actually ran.
+     */
+    private classifyResult(
+        result: string,
+    ):
+        | { kind: 'gap_found' }
+        | { kind: 'no_gap' }
+        | { kind: 'limitation'; message: string } {
         if (!result || result.trim().length === 0) {
-            return false;
+            return {
+                kind: 'limitation',
+                message: 'Business logic agent returned an empty response.',
+            };
         }
 
         const lower = result.toLowerCase();
@@ -302,10 +353,13 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             'mcp integration required',
             'no compatible mcp integration',
         ];
-        if (
-            limitationIndicators.some((indicator) => lower.includes(indicator))
-        ) {
-            return false;
+        for (const indicator of limitationIndicators) {
+            if (lower.includes(indicator)) {
+                return {
+                    kind: 'limitation',
+                    message: this.firstNonEmptyLine(result),
+                };
+            }
         }
 
         const noGapIndicators = [
@@ -322,7 +376,30 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             'requirements covered',
             '"needsmoreinfo": false',
         ];
-        return !noGapIndicators.some((indicator) => lower.includes(indicator));
+        if (noGapIndicators.some((indicator) => lower.includes(indicator))) {
+            return { kind: 'no_gap' };
+        }
+
+        return { kind: 'gap_found' };
+    }
+
+    private firstNonEmptyLine(text: string): string {
+        for (const line of text.split('\n')) {
+            // Strip markdown heading markers, leading emoji, and trailing
+            // colons so the message reads as a plain sentence when embedded
+            // into logs and UI status messages.
+            const trimmed = line
+                .replace(/^\s*#{1,6}\s*/, '')
+                .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/u, '')
+                .replace(/\s*[:：]\s*$/, '')
+                .trim();
+            if (trimmed) {
+                return trimmed.length > 240
+                    ? trimmed.slice(0, 237) + '…'
+                    : trimmed;
+            }
+        }
+        return text.slice(0, 240);
     }
 
     private createBusinessLogicThread(context: CodeReviewPipelineContext) {
