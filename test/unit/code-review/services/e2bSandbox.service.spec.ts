@@ -213,7 +213,7 @@ describe('E2BSandboxService', () => {
 
             expect(Sandbox.create).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    timeoutMs: 10 * 60 * 1000,
+                    timeoutMs: 20 * 60 * 1000,
                     apiKey: 'my-e2b-key',
                 }),
             );
@@ -283,7 +283,7 @@ describe('E2BSandboxService', () => {
             expect(Sandbox.create).toHaveBeenCalledWith(
                 'kodus-sandbox',
                 expect.objectContaining({
-                    timeoutMs: 10 * 60 * 1000,
+                    timeoutMs: 20 * 60 * 1000,
                     apiKey: 'key',
                 }),
             );
@@ -335,14 +335,14 @@ describe('E2BSandboxService', () => {
                 1,
                 'bad-template',
                 expect.objectContaining({
-                    timeoutMs: 10 * 60 * 1000,
+                    timeoutMs: 20 * 60 * 1000,
                     apiKey: 'key',
                 }),
             );
             expect(Sandbox.create).toHaveBeenNthCalledWith(
                 2,
                 expect.objectContaining({
-                    timeoutMs: 10 * 60 * 1000,
+                    timeoutMs: 20 * 60 * 1000,
                     apiKey: 'key',
                 }),
             );
