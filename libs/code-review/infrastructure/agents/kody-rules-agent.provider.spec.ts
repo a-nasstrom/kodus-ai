@@ -151,7 +151,7 @@ describe('KodyRulesAgentProvider — rule formatting and applicability', () => {
     });
 
     describe('formatKodyRules — external file reference', () => {
-        it('emits a Reference line with the source path and a hint to use readFile', () => {
+        it('hints at readFile for an in-repo path and surfaces readReference as the cross-repo fallback', () => {
             const rules = [
                 {
                     uuid: 'r-ext',
@@ -164,9 +164,29 @@ describe('KodyRulesAgentProvider — rule formatting and applicability', () => {
             ];
             const out = formatRules(rules, [{ filename: 'a.ts' }]);
 
+            expect(out).toContain('**Reference**: `docs/conventions.md`');
+            expect(out).toContain('use readFile');
+            expect(out).toContain('readReference');
+        });
+
+        it('points at readReference when the source path looks like "owner/repo/path"', () => {
+            const rules = [
+                {
+                    uuid: 'r-ext-cross',
+                    title: 'Cross-repo convention',
+                    rule: 'follow the company guide',
+                    type: KodyRulesType.STANDARD,
+                    status: 'active',
+                    sourcePath: 'kodustech/design-system/docs/conventions.md',
+                },
+            ];
+            const out = formatRules(rules, [{ filename: 'a.ts' }]);
+
             expect(out).toContain(
-                '**Reference**: `docs/conventions.md` — use readFile to read this file for the full pattern/convention',
+                '**Reference**: `kodustech/design-system/docs/conventions.md`',
             );
+            expect(out).toContain('use readReference');
+            expect(out).not.toMatch(/use readFile\b/);
         });
 
         it('appends the section anchor to the Reference line when sourceAnchor is set', () => {

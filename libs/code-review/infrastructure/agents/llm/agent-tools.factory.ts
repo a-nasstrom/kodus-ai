@@ -1,6 +1,9 @@
 import { jsonSchema } from 'ai';
 import * as path from 'node:path';
+import { createLogger } from '@kodus/flow';
 import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
+
+const logger = createLogger('AgentTools');
 
 export const MAX_GREP_MATCHES = 50;
 export const MAX_READ_LENGTH = 8_000;
@@ -828,10 +831,14 @@ fi
         );
     }
 
-    // DISABLED: readReference — adds noise to tool list, not needed for code review
-    /* if (gitHubToken) {
+    // readReference — cross-repo file reading via GitHub API. Required for
+    // kody rules that reference files in other repositories (e.g.
+    // `@file:org/design-system/docs/pattern.md`). Sandbox-based `readFile`
+    // only sees the current PR's repo, so without this tool the agent has
+    // no way to fetch externally-referenced files.
+    if (gitHubToken) {
         tools.readReference = mkTool(
-            'Read a file from another repository. Use this to fetch reference files mentioned in rules (e.g., coding standards, patterns from other repos).',
+            'Read a file from another repository. Use this to fetch reference files mentioned in rules (e.g., coding standards, patterns from other repos). Accepts the full "owner/repo" form and an optional branch.',
             {
                 type: 'object',
                 properties: {
@@ -867,9 +874,17 @@ fi
                         },
                     );
                     if (!response.ok) {
+                        logger.warn({
+                            message: `[READ-REFERENCE] ${repo}#${ref} ${path} → ${response.status} ${response.statusText}`,
+                            context: 'agent-tools.readReference',
+                        });
                         return `Error: Could not read ${path} from ${repo} (${response.status} ${response.statusText})`;
                     }
                     const content = await response.text();
+                    logger.log({
+                        message: `[READ-REFERENCE] ${repo}#${ref} ${path} → ok (${content.length} chars)`,
+                        context: 'agent-tools.readReference',
+                    });
                     if (content.length > MAX_READ_LENGTH) {
                         return (
                             content.substring(0, MAX_READ_LENGTH) +
@@ -878,11 +893,15 @@ fi
                     }
                     return content;
                 } catch (err) {
+                    logger.warn({
+                        message: `[READ-REFERENCE] ${repo}#${ref} ${path} → error: ${err instanceof Error ? err.message : String(err)}`,
+                        context: 'agent-tools.readReference',
+                    });
                     return `Error reading ${path} from ${repo}: ${err instanceof Error ? err.message : String(err)}`;
                 }
             },
         );
-    } */
+    }
 
     // ── Call Graph lookup tool (AST-based) ──────────────────────────
     // DISABLED: getCallers tool — call graph is already injected in the prompt as <CallGraph>.
@@ -1025,6 +1044,11 @@ fi
             },
         );
     }
+
+    logger.log({
+        message: `[AGENT-TOOLS] registered=${Object.keys(tools).join(',')} gitHubToken=${gitHubToken ? 'yes' : 'no'}`,
+        context: 'agent-tools.factory',
+    });
 
     return tools;
 }

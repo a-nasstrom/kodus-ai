@@ -273,13 +273,22 @@ If no violations found, respond with \`{"reasoning": "Checked all rules, no viol
                 }
             }
 
-            // External references: tell the agent to use readFile to fetch them
+            // External references: instruct the agent on which tool to use.
+            // - sourcePath shaped as "owner/repo/path" → readReference
+            //   (cross-repo fetch via GitHub API)
+            // - sourcePath shaped as "path/inside/current/repo" → readFile
+            //   (reads from the sandboxed clone of the PR's repo)
             if (rule.sourcePath) {
                 const anchor = rule.sourceAnchor
                     ? ` (section: ${rule.sourceAnchor})`
                     : '';
+                const looksCrossRepo =
+                    /^[^/]+\/[^/]+\/.+/.test(rule.sourcePath);
+                const toolHint = looksCrossRepo
+                    ? 'use readReference with repo="<owner>/<repo>" and path="<path>" to fetch this file from the referenced repository'
+                    : 'use readFile to read this file from the current repository; if the file lives in another repo, use readReference with repo="owner/repo" and path="path"';
                 parts.push(
-                    `**Reference**: \`${rule.sourcePath}\`${anchor} — use readFile to read this file for the full pattern/convention`,
+                    `**Reference**: \`${rule.sourcePath}\`${anchor} — ${toolHint} for the full pattern/convention`,
                 );
             }
 
