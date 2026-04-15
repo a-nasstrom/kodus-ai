@@ -981,6 +981,10 @@ export async function runAgentLoop(
                         abortSignal: secondChanceSignal,
                         model: input.model,
                         system: input.systemPrompt,
+                        experimental_telemetry: {
+                            isEnabled: true,
+                            functionId: `${input.agentName ?? 'agent-loop'}-second-chance`,
+                        },
                         prompt: `You have already investigated this code review task using ${allToolCalls.length} tool calls. Here is a summary of your investigation:
 
 <InvestigationLog>
@@ -1617,6 +1621,10 @@ async function runLowCoverageSecondChance(params: {
                 generateText({
                     abortSignal: lowCoverageSignal,
                     model: input.model,
+                    experimental_telemetry: {
+                        isEnabled: true,
+                        functionId: `${input.agentName ?? 'agent-loop'}-coverage-second-chance`,
+                    },
                     system:
                         input.systemPrompt +
                         '\n\nIMPORTANT: Coverage is still too low. This is a final targeted inspection pass. You must inspect the remaining changed files with readFile or checkTypes before responding.',
@@ -3071,6 +3079,10 @@ async function structureVerificationDecisionWithFallbackModel(
                 generateText({
                     abortSignal: verifierFallbackSignal,
                     model: internalModel as any,
+                    experimental_telemetry: {
+                        isEnabled: true,
+                        functionId: 'verify-structure-fallback',
+                    },
                     output: Output.object({
                         schema: jsonSchema({
                             type: 'object',
@@ -3339,6 +3351,10 @@ async function structureWithFallbackModel(
                 generateText({
                     abortSignal: structureFallbackSignal,
                     model: internalModel as any,
+                    experimental_telemetry: {
+                        isEnabled: true,
+                        functionId: 'review-structure-fallback',
+                    },
                     output: Output.object({
                         schema: jsonSchema({
                             type: 'object',
