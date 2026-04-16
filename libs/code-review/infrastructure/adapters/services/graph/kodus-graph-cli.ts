@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { SandboxInstance } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { shSingleQuote } from '../shell-quote';
 
-export const KODUS_GRAPH_VERSION = 'latest';
+export const KODUS_GRAPH_VERSION = '0.2.19';
 
 export const KODUS_GRAPH_TIMEOUTS = {
     install: 120_000,
