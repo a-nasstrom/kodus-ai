@@ -491,7 +491,9 @@ export interface VerificationTraceSummary {
     beforeCount: number;
     afterCount: number;
     droppedByVerifier: number;
+    /** @deprecated Always 0 — evidence gate now forces verification instead of dropping. Kept for backwards compatibility. */
     droppedByEvidenceFilter: number;
+    sentToEvidenceGate?: number;
     decisions: VerificationDecisionTrace[];
 }
 
@@ -985,6 +987,17 @@ export async function runAgentLoop(
                             isEnabled: true,
                             functionId: `${input.agentName ?? 'agent-loop'}-second-chance`,
                         },
+                        providerOptions: buildProviderOptions(
+                            `${input.agentName ?? 'agent-loop'}-second-chance`,
+                            input.telemetryMetadata,
+                            {
+                                reasoningEffort: input.reasoningEffort,
+                                reasoningConfigOverride:
+                                    input.reasoningConfigOverride,
+                                byokProvider: input.byokProvider,
+                                modelName: (input.model as any)?.modelId,
+                            },
+                        ),
                         prompt: `You have already investigated this code review task using ${allToolCalls.length} tool calls. Here is a summary of your investigation:
 
 <InvestigationLog>
@@ -1679,6 +1692,17 @@ async function runLowCoverageSecondChance(params: {
                         isEnabled: true,
                         functionId: `${input.agentName ?? 'agent-loop'}-coverage-second-chance`,
                     },
+                    providerOptions: buildProviderOptions(
+                        `${input.agentName ?? 'agent-loop'}-coverage-second-chance`,
+                        input.telemetryMetadata,
+                        {
+                            reasoningEffort: input.reasoningEffort,
+                            reasoningConfigOverride:
+                                input.reasoningConfigOverride,
+                            byokProvider: input.byokProvider,
+                            modelName: (input.model as any)?.modelId,
+                        },
+                    ),
                     system:
                         input.systemPrompt +
                         '\n\nIMPORTANT: Coverage is still too low. This is a final targeted inspection pass. You must inspect the remaining changed files with readFile or checkTypes before responding.',
@@ -2163,8 +2187,76 @@ async function verifyFindingsWithTools(params: {
             totalReasoningTokens += vr.usage.reasoningTokens;
         }
 
+        // Evidence gate: findings kept so far but without tool evidence
+        // must go through full verification instead of being silently dropped.
+        const toVerifyForEvidence: Array<{
+            index: number;
+            suggestion: any;
+        }> = [];
+
+        for (let i = 0; i < findings.suggestions.length; i++) {
+            const decision = decisions.get(i);
+            if (!decision || !decision.keep) continue;
+
+            const hasEvidence =
+                hasEvidenceForRelevantFile(
+                    reviewerEvidence,
+                    findings.suggestions[i].relevantFile,
+                ) ||
+                hasEvidenceForRelevantFile(
+                    verifierEvidenceByIndex.get(i),
+                    findings.suggestions[i].relevantFile,
+                );
+
+            if (!hasEvidence) {
+                toVerifyForEvidence.push({
+                    index: i,
+                    suggestion: findings.suggestions[i],
+                });
+            }
+        }
+
+        if (toVerifyForEvidence.length > 0) {
+            logger.log({
+                message: `[EVIDENCE-GATE] ${toVerifyForEvidence.length} finding(s) kept without evidence — sending to full verification`,
+                context: 'AgentLoop',
+                metadata: {
+                    indices: toVerifyForEvidence.map((e) => e.index),
+                    files: toVerifyForEvidence.map(
+                        (e) => e.suggestion.relevantFile,
+                    ),
+                },
+            });
+
+            const evidenceVerifyResults = await Promise.allSettled(
+                toVerifyForEvidence.map(({ index, suggestion }) =>
+                    verifySingleFindingWithTools({
+                        index,
+                        suggestion,
+                        input,
+                        secrets,
+                        allToolCalls,
+                        tools,
+                    }),
+                ),
+            );
+
+            for (let i = 0; i < evidenceVerifyResults.length; i++) {
+                const result = evidenceVerifyResults[i];
+                if (result.status !== 'fulfilled') continue;
+                const vr = result.value;
+                const idx = toVerifyForEvidence[i].index;
+                decisions.set(idx, vr.decision);
+                verifierEvidenceByIndex.set(idx, vr.evidence);
+                verifierParseModeByIndex.set(idx, vr.parseMode);
+                verifierRawTextByIndex.set(idx, vr.rawTextPreview);
+                totalInputTokens += vr.usage.inputTokens;
+                totalOutputTokens += vr.usage.outputTokens;
+                totalReasoningTokens += vr.usage.reasoningTokens;
+            }
+        }
+
         let droppedByVerifier = 0;
-        let droppedByEvidenceFilter = 0;
         const droppedSuggestions: FindingsOutput['suggestions'] = [];
 
         const verifiedSuggestions = findings.suggestions
@@ -2191,51 +2283,6 @@ async function verifyFindingsWithTools(params: {
                     return null;
                 }
 
-                const passesEvidenceFilter = hasEvidenceForRelevantFile(
-                    reviewerEvidence,
-                    suggestion.relevantFile,
-                )
-                    ? true
-                    : hasEvidenceForRelevantFile(
-                          verifierEvidenceByIndex.get(index),
-                          suggestion.relevantFile,
-                      );
-
-                if (!passesEvidenceFilter) {
-                    droppedByEvidenceFilter++;
-                    droppedSuggestions.push(suggestion);
-                    decisionTraces.push({
-                        index,
-                        relevantFile: suggestion.relevantFile,
-                        action: 'drop',
-                        parseMode:
-                            verifierParseModeByIndex.get(index) ||
-                            'default-keep',
-                        rationale: truncateText(
-                            `Dropped by evidence filter. ${decision.rationale || ''}`.trim(),
-                            400,
-                        ),
-                        confidence: decision.confidence,
-                        verifierEvidence:
-                            verifierEvidenceByIndex.get(index) ||
-                            buildToolEvidenceSummary([]),
-                        rawTextPreview: verifierRawTextByIndex.get(index) || '',
-                    });
-                    logger.warn({
-                        message: `[EVIDENCE-FILTER] Dropping finding ${index} for ${suggestion.relevantFile} — neither reviewer nor verifier touched the file`,
-                        context: 'AgentLoop',
-                        metadata: {
-                            index,
-                            relevantFile: suggestion.relevantFile,
-                            reviewerEvidence,
-                            verifierEvidence:
-                                verifierEvidenceByIndex.get(index) || null,
-                            verifierRationale: decision.rationale,
-                        },
-                    });
-                    return null;
-                }
-
                 decisionTraces.push({
                     index,
                     relevantFile: suggestion.relevantFile,
@@ -2254,25 +2301,24 @@ async function verifyFindingsWithTools(params: {
             })
             .filter(Boolean) as FindingsOutput['suggestions'];
 
-        const droppedCount = droppedByVerifier + droppedByEvidenceFilter;
+        const sentToEvidenceGate = toVerifyForEvidence.length;
 
         logger.log({
-            message: `[AGENT-VERIFY] Verified ${findings.suggestions.length} candidate findings, kept ${verifiedSuggestions.length}, dropped ${droppedCount}`,
+            message: `[AGENT-VERIFY] Verified ${findings.suggestions.length} candidate findings, kept ${verifiedSuggestions.length}, dropped ${droppedByVerifier}`,
             context: 'AgentLoop',
             metadata: {
                 suggestionsBefore: findings.suggestions.length,
                 suggestionsAfter: verifiedSuggestions.length,
-                droppedCount,
                 droppedByVerifier,
-                droppedByEvidenceFilter,
+                sentToEvidenceGate,
             },
         });
 
         return {
             findings: {
                 reasoning:
-                    droppedCount > 0
-                        ? `${findings.reasoning}\n\nFinal verifier kept ${verifiedSuggestions.length}/${findings.suggestions.length} candidate findings after tool-based verification and evidence filtering.`
+                    droppedByVerifier > 0
+                        ? `${findings.reasoning}\n\nFinal verifier kept ${verifiedSuggestions.length}/${findings.suggestions.length} candidate findings after tool-based verification.`
                         : findings.reasoning,
                 suggestions: verifiedSuggestions,
             },
@@ -2281,7 +2327,8 @@ async function verifyFindingsWithTools(params: {
                 beforeCount: findings.suggestions.length,
                 afterCount: verifiedSuggestions.length,
                 droppedByVerifier,
-                droppedByEvidenceFilter,
+                droppedByEvidenceFilter: 0,
+                sentToEvidenceGate,
                 decisions: decisionTraces,
             },
             usage: {
@@ -3137,6 +3184,7 @@ async function structureVerificationDecisionWithFallbackModel(
                         isEnabled: true,
                         functionId: 'verify-structure-fallback',
                     },
+                    providerOptions: buildLangSmithProviderOptions('verify-structure-fallback'),
                     output: Output.object({
                         schema: jsonSchema({
                             type: 'object',

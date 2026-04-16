@@ -2,7 +2,7 @@ import { createLogger } from '@kodus/flow';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { getInternalModel } from './byok-to-vercel';
-import { tracedGenerateText as generateText } from './agent-loop';
+import { tracedGenerateText as generateText, buildLangSmithProviderOptions } from './agent-loop';
 
 const logger = createLogger('SuggestionFormatter');
 
@@ -96,6 +96,7 @@ export async function formatSuggestionContent(
                 isEnabled: true,
                 functionId: 'suggestion-formatter',
             },
+            providerOptions: buildLangSmithProviderOptions('suggestion-formatter'),
             prompt: `You are a code review comment editor. Rewrite each suggestion into clean, natural prose.
 
 Rules:
