@@ -200,8 +200,9 @@ export class GraphContentFormatter {
 
             for (const file of parsed) {
                 for (const hunk of file.hunks) {
-                    const start = hunk.oldStart;
-                    const end = start + hunk.oldLines - 1;
+                    const start = hunk.newStart;
+                    const end =
+                        hunk.newLines > 0 ? start + hunk.newLines - 1 : start;
                     if (start > 0 && end >= start) {
                         ranges.push([start, end]);
                     }

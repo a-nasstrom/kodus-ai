@@ -12,7 +12,7 @@ import { createLogger } from '@kodus/flow';
 import type { BYOKConfig } from '@kodus/kodus-common/llm';
 import type { CodeReviewConfig } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { getInternalModel } from './byok-to-vercel';
-import { tracedGenerateText as generateText } from './agent-loop';
+import { tracedGenerateText as generateText, buildLangSmithProviderOptions } from './agent-loop';
 
 const logger = createLogger('SeverityClassifier');
 
@@ -93,6 +93,7 @@ export async function classifySeverity(
                 isEnabled: true,
                 functionId: 'severity-classifier',
             },
+            providerOptions: buildLangSmithProviderOptions('severity-classifier'),
             prompt: `Classify the severity of each code review suggestion based on these criteria:
 
 **CRITICAL**: ${flags.critical || DEFAULT_SEVERITY_FLAGS.critical}
