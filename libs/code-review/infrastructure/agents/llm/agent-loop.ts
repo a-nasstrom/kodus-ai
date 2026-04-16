@@ -10,7 +10,14 @@ import {
  * 3. If JSON parse fails — `generateText` with `Output.object` (cheap model) to structure the text
  */
 import * as aiSdk from 'ai';
-import { stepCountIs, Output, jsonSchema, type LanguageModel } from 'ai';
+import {
+    stepCountIs,
+    hasToolCall,
+    Output,
+    jsonSchema,
+    tool as defineTool,
+    type LanguageModel,
+} from 'ai';
 
 // Wrap AI SDK with LangSmith tracing when LANGCHAIN_TRACING_V2=true
 let generateText = aiSdk.generateText;
@@ -366,6 +373,99 @@ const _findingsSchema = z.object({
 
 export type FindingsOutput = z.infer<typeof _findingsSchema>;
 
+const _verificationSchema = z.object({
+    index: z.number(),
+    keep: z.boolean(),
+    rationale: z.string(),
+    confidence: z.enum(['high', 'medium', 'low']).optional(),
+});
+
+// ─── Done-tool infrastructure ───────────────────────────────────────────────
+// A "done tool" is a tool WITHOUT an `execute` function.  When the model
+// calls it the AI SDK stops the loop immediately and the structured args
+// are available in `result.toolCalls`.  This replaces fragile free-text
+// JSON parsing with schema-validated output.
+
+const DONE_TOOL_NAME = 'submitResult' as const;
+
+/**
+ * Create a done-tool with a given Zod schema.
+ * The tool has no `execute`, so calling it stops the agent loop.
+ */
+function createDoneTool<T extends z.ZodType>(
+    description: string,
+    schema: T,
+) {
+    return defineTool({
+        description,
+        parameters: schema,
+        // strict: true forces Gemini to use VALIDATED mode instead of ANY,
+        // which guarantees the model fills in the schema fields instead of
+        // returning empty args {}.
+        strict: true,
+        // no execute → stops the loop
+    });
+}
+
+/** Pre-built done tools for each agent context. */
+const DONE_TOOLS = {
+    findings: createDoneTool(
+        'Submit your final code review findings. Call this tool when your investigation is complete.',
+        _findingsSchema,
+    ),
+    verification: createDoneTool(
+        'Submit your verification verdict for the candidate finding. Call this tool when you have enough evidence.',
+        _verificationSchema,
+    ),
+} as const;
+
+/**
+ * Extract the done-tool result from a generateText result.
+ * Returns the parsed args if the model called the done tool, or null.
+ */
+function extractDoneToolResult<T>(result: any): T | null {
+    const extract = (tc: any): T | null => {
+        const args = tc?.args ?? tc?.input ?? null;
+        // Safety net: Gemini sometimes calls the tool with empty args {}
+        // even in VALIDATED mode when the schema is very complex.
+        if (
+            !args ||
+            (typeof args === 'object' && Object.keys(args).length === 0)
+        ) {
+            logger.warn({
+                message:
+                    '[DONE-TOOL] Model called submitResult with empty args — falling back to text parsing',
+                context: 'AgentLoop',
+            });
+            return null;
+        }
+        return args as T;
+    };
+
+    // Check result.toolCalls (last step) first
+    const calls: any[] = result?.toolCalls || [];
+    const doneCall = calls.find(
+        (tc: any) => tc.toolName === DONE_TOOL_NAME,
+    );
+    if (doneCall) {
+        return extract(doneCall);
+    }
+
+    // Check all steps in case it was called in an earlier step
+    const steps: any[] = result?.steps || [];
+    for (let i = steps.length - 1; i >= 0; i--) {
+        const stepCalls: any[] = steps[i]?.toolCalls || [];
+        const call = stepCalls.find(
+            (tc: any) => tc.toolName === DONE_TOOL_NAME,
+        );
+        if (call) {
+            return extract(call);
+        }
+    }
+
+    return null;
+}
+
 export interface AgentLoopInput {
     model: LanguageModel;
     systemPrompt: string;
@@ -578,20 +678,23 @@ export async function runAgentLoop(
                             modelName: (input.model as any)?.modelId,
                         },
                     ),
-                    tools,
+                    tools: isSelfContained
+                        ? tools
+                        : { ...tools, [DONE_TOOL_NAME]: DONE_TOOLS.findings },
                     // Self-contained mode has no tools — a single LLM call
                     // is enough to produce the final JSON response.
-                    stopWhen: stepCountIs(
-                        isSelfContained
-                            ? 1
-                            : input.maxSteps ||
-                              (input.reviewMode === 'deep'
-                                  ? MAX_STEPS_DEEP
-                                  : MAX_STEPS_NORMAL),
-                    ),
-                    // Last 2 steps: remove tools entirely to force text response.
-                    // toolChoice: 'none' doesn't work with all providers (e.g., Gemini ignores it).
-                    // Removing tools entirely guarantees the model can only respond with text.
+                    stopWhen: isSelfContained
+                        ? stepCountIs(1)
+                        : [
+                              hasToolCall(DONE_TOOL_NAME),
+                              stepCountIs(
+                                  input.maxSteps ||
+                                      (input.reviewMode === 'deep'
+                                          ? MAX_STEPS_DEEP
+                                          : MAX_STEPS_NORMAL),
+                              ),
+                          ],
+                    // Last 2 steps: force the model to call submitResult.
                     prepareStep: ({ stepNumber, messages }: any) => {
                         // Self-contained mode has no tools and a single
                         // step, so coverage debt / force-text logic does
@@ -696,14 +799,8 @@ export async function runAgentLoop(
                                     input.systemPrompt +
                                     '\n\nIMPORTANT: You have reached the final response step. ' +
                                     'Do NOT call any more tools. ' +
-                                    'Respond ONLY with a JSON object inside a markdown code block:\n' +
-                                    '```json\n' +
-                                    '{\n' +
-                                    '  "reasoning": "what you investigated and found",\n' +
-                                    '  "suggestions": []\n' +
-                                    '}\n' +
-                                    '```\n' +
-                                    'If you found no issues, return an empty suggestions array. No prose, no explanation outside the JSON.',
+                                    'Respond ONLY with a JSON object containing your findings. ' +
+                                    'If you found no issues, return an empty suggestions array.',
                             };
                         }
 
@@ -931,10 +1028,24 @@ export async function runAgentLoop(
     }
     clearTimeout(timeoutHandle);
 
+    // ─── Done-tool extraction ───────────────────────────────────────────
+    // If the model called submitResult, extract findings directly from
+    // the validated tool args — no text parsing needed.
+    const doneToolFindings = isSelfContained
+        ? null
+        : extractDoneToolResult<FindingsOutput>(result);
+
+    if (doneToolFindings) {
+        logger.log({
+            message: `[AGENT-DONE-TOOL] Model called submitResult with ${doneToolFindings.suggestions.length} suggestions`,
+            context: 'AgentLoop',
+        });
+    }
+
     // result.text may be empty if the model's last step was a tool call.
     // Fall back to accumulated step texts (e.g., from forced text steps 33/34).
     let finalText = result.text || '';
-    if (!finalText && allStepTexts.length > 0) {
+    if (!doneToolFindings && !finalText && allStepTexts.length > 0) {
         finalText = allStepTexts[allStepTexts.length - 1]; // Use last text step
         logger.log({
             message: `[AGENT-FALLBACK-TEXT] result.text empty, using last step text (${finalText.length} chars)`,
@@ -942,37 +1053,27 @@ export async function runAgentLoop(
         });
     }
 
-    // Second chance: when the model hit MAX_STEPS without producing text,
-    // make a follow-up call WITHOUT tools using the full conversation history.
-    // The model already investigated — it just needs a chance to respond.
+    // Second chance: when the model hit MAX_STEPS without calling submitResult
+    // and without producing text. Uses full response.messages for complete context.
     if (
+        !doneToolFindings &&
         !finalText &&
-        result.finishReason === 'tool-calls' &&
         allToolCalls.length > 0
     ) {
         logger.log({
-            message: `[AGENT-SECOND-CHANCE] Agent hit MAX_STEPS with ${allToolCalls.length} tool calls but no text. Making follow-up call to extract findings.`,
+            message: `[AGENT-SECOND-CHANCE] Agent finished ${allToolCalls.length} tool calls without submitResult or text. Retrying with full context.`,
             context: 'AgentLoop',
         });
 
         try {
-            // Build a summary of what the agent investigated — include enough result context
-            const investigationSummary = allToolCalls
-                .map((tc) => {
-                    const args =
-                        typeof tc.args === 'string'
-                            ? tc.args
-                            : JSON.stringify(tc.args);
-                    const resultStr =
-                        typeof tc.result === 'string'
-                            ? tc.result?.substring(0, 400)
-                            : '';
-                    return `${tc.toolName}(${args.substring(0, 150)}) → ${resultStr || '(empty)'}`;
-                })
-                .join('\n');
             const secondChanceSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
 
-            const secondChanceResult = await throttledGenerateText({
+            // Use full conversation history from result.response.messages
+            // so the model has complete file contents, grep results, etc.
+            const responseMessages: any[] =
+                result?.response?.messages || [];
+
+            const secondChanceResult: any = await throttledGenerateText({
                 byokConfig: secrets.byokConfig,
                 organizationId: input.telemetryMetadata?.organizationId,
                 role: 'main',
@@ -998,41 +1099,21 @@ export async function runAgentLoop(
                                 modelName: (input.model as any)?.modelId,
                             },
                         ),
-                        prompt: `You have already investigated this code review task using ${allToolCalls.length} tool calls. Here is a summary of your investigation:
-
-<InvestigationLog>
-${investigationSummary.substring(0, 8000)}
-</InvestigationLog>
-
-Based on your investigation above, respond NOW with your findings as a JSON block. Do NOT call any tools.
-
-IMPORTANT: Your investigation log shows what you looked at. Re-read it carefully.
-- If you found ANY suspicious patterns, null risks, type mismatches, race conditions, or missing validations — report them.
-- If a tool call returned evidence of a problem (error output, missing checks, wrong types) — report it even if you're not 100% certain.
-- "I didn't find issues" is only valid if you can explain WHY each changed function is safe.
-
-Respond with ONLY the JSON:
-
-\`\`\`json
-{
-  "reasoning": "For each changed function: what you challenged, what evidence you found, why you reported or dismissed",
-  "suggestions": [
-    {
-      "relevantFile": "path/to/file",
-      "language": "java",
-      "label": "bug|security|performance",
-      "suggestionContent": "Description of the issue with evidence from your investigation",
-      "existingCode": "problematic code (only the lines that need to change, plus 1-2 surrounding lines for context)",
-      "improvedCode": "fixed code (same scope as existingCode — only the changed lines plus 1-2 lines of context, NOT the entire function or block)",
-      "oneSentenceSummary": "Brief summary",
-      "relevantLinesStart": 10,
-      "relevantLinesEnd": 15,
-      "severity": "critical|high|medium|low"
-    }
-  ]
-}
-\`\`\``,
-                        stopWhen: stepCountIs(1), // No tools, just respond
+                        messages: [
+                            // Original user prompt with diffs and PR context
+                            { role: 'user' as const, content: input.userPrompt },
+                            // Full conversation history: all tool calls + complete results
+                            ...responseMessages,
+                            // Instruction to finalize
+                            {
+                                role: 'user' as const,
+                                content:
+                                    'You have finished investigating. Respond NOW with your findings as JSON. ' +
+                                    'Do NOT call any tools. If you found issues, include them. ' +
+                                    'If no issues were found, return an empty suggestions array.',
+                            },
+                        ],
+                        stopWhen: stepCountIs(1),
                     }),
             });
 
@@ -1050,7 +1131,7 @@ Respond with ONLY the JSON:
 
             if (finalText) {
                 logger.log({
-                    message: `[AGENT-SECOND-CHANCE] Got ${finalText.length} chars response, hasJSON=${finalText.includes('"suggestions"')}`,
+                    message: `[AGENT-SECOND-CHANCE] Got ${finalText.length} chars response`,
                     context: 'AgentLoop',
                 });
             }
@@ -1081,9 +1162,17 @@ Respond with ONLY the JSON:
         },
     });
 
-    // Step 1: Try to parse JSON directly from the response
-    let findings = tryParseFindings(finalText);
-    let source: AgentLoopOutput['source'] = 'json-parse';
+    // Step 0: Use done-tool result if available (already schema-validated)
+    let findings: FindingsOutput | null = doneToolFindings;
+    let source: AgentLoopOutput['source'] = doneToolFindings
+        ? 'json-parse'
+        : 'empty';
+
+    // Step 1: Try to parse JSON directly from the response text
+    if (!findings) {
+        findings = tryParseFindings(finalText);
+        if (findings) source = 'json-parse';
+    }
 
     // Step 2: If no JSON, use internal model to structure the text
     if (!findings && finalText.length > 50) {
@@ -1155,11 +1244,29 @@ Respond with ONLY the JSON:
         totalReasoningTokens = coverageRecovery.totalReasoningTokens;
 
         if (coverageRecovery.text) {
-            const extraFindings = tryParseFindings(coverageRecovery.text);
+            let extraFindings = tryParseFindings(coverageRecovery.text);
+
+            if (!extraFindings && coverageRecovery.text.length > 50) {
+                logger.log({
+                    message: `[COVERAGE-RECOVERY] JSON parse failed (${coverageRecovery.text.length} chars), trying fallback model`,
+                    context: 'AgentLoop',
+                });
+                const fallbackResult = await structureWithFallbackModel(
+                    coverageRecovery.text,
+                    secrets.byokConfig,
+                    input.telemetryMetadata?.organizationId,
+                );
+                if (fallbackResult) {
+                    extraFindings = fallbackResult.findings;
+                    totalInputTokens += fallbackResult.usage.inputTokens;
+                    totalOutputTokens += fallbackResult.usage.outputTokens;
+                }
+            }
+
             if (extraFindings) {
                 findings = mergeFindings(findings, extraFindings);
                 if (source === 'empty') {
-                    source = 'json-parse';
+                    source = extraFindings ? 'json-parse' : source;
                 }
             }
         }
@@ -1523,13 +1630,19 @@ ${remainingCoverageDebt}
 </RemainingCoverage>
 
 Investigate the remaining changed files now.
-- Use tools.
+- Use tools to inspect each remaining file.
 - Prefer readFile on each remaining file.
-- After inspecting them, return ONLY JSON with ADDITIONAL findings discovered from this recovery pass.
-- If no new findings appear, return an empty suggestions array.
+- When done, call submitResult with ADDITIONAL findings discovered from this recovery pass.
+- If no new findings appear, call submitResult with an empty suggestions array.
 `,
-                    tools,
-                    stopWhen: stepCountIs(MAX_STEPS_NORMAL),
+                    tools: {
+                        ...tools,
+                        [DONE_TOOL_NAME]: DONE_TOOLS.findings,
+                    },
+                    stopWhen: [
+                        hasToolCall(DONE_TOOL_NAME),
+                        stepCountIs(MAX_STEPS_NORMAL),
+                    ],
                     prepareStep: ({ stepNumber }: any) => {
                         recoveryStep = stepNumber;
                         if (stepNumber >= MAX_STEPS_NORMAL - 1) {
@@ -1580,7 +1693,14 @@ Investigate the remaining changed files now.
                 }),
         });
 
-        recoveryText = recoveryResult.text || recoveryText;
+        // Extract from done tool first, fall back to text
+        const doneResult =
+            extractDoneToolResult<FindingsOutput>(recoveryResult);
+        if (doneResult) {
+            recoveryText = JSON.stringify(doneResult);
+        } else {
+            recoveryText = recoveryResult.text || recoveryText;
+        }
 
         return {
             text: recoveryText,
@@ -1719,10 +1839,16 @@ ${remainingCoverageDebt}
 Instructions:
 - Focus only on the remaining uncovered changed files.
 - Use readFile or checkTypes on those files before responding.
-- Be surgical: inspect remaining files, then return ONLY JSON with ADDITIONAL findings.
-- If the remaining files are safe, return an empty suggestions array.`,
-                    tools,
-                    stopWhen: stepCountIs(MAX_STEPS_NORMAL),
+- Be surgical: inspect remaining files, then call submitResult with ADDITIONAL findings.
+- If the remaining files are safe, call submitResult with an empty suggestions array.`,
+                    tools: {
+                        ...tools,
+                        [DONE_TOOL_NAME]: DONE_TOOLS.findings,
+                    },
+                    stopWhen: [
+                        hasToolCall(DONE_TOOL_NAME),
+                        stepCountIs(MAX_STEPS_NORMAL),
+                    ],
                     prepareStep: ({ stepNumber }: any) => {
                         secondChanceStep = stepNumber;
                         if (stepNumber >= MAX_STEPS_NORMAL - 1) {
@@ -1773,7 +1899,15 @@ Instructions:
                 }),
         });
 
-        secondChanceText = secondChanceResult.text || secondChanceText;
+        // Extract from done tool first, fall back to text
+        const doneResult =
+            extractDoneToolResult<FindingsOutput>(secondChanceResult);
+        if (doneResult) {
+            secondChanceText = JSON.stringify(doneResult);
+        } else {
+            secondChanceText =
+                secondChanceResult.text || secondChanceText;
+        }
 
         return {
             text: secondChanceText,
@@ -1922,16 +2056,17 @@ Return ONLY JSON:
   "reasoning": "why there are or aren't concrete missed bugs",
   "suggestions": [
     {
-      "relevantFile": "path/to/file",
-      "language": "ts",
       "label": "bug|security|performance",
-      "suggestionContent": "describe the missed issue concretely",
+      "relevantFile": "path/to/file.ext",
+      "language": "the file language",
+      "suggestionContent": "WHAT: one sentence naming the exact problem. WHY: one sentence on the real impact. HOW: concrete fix if clear from the code — omit if speculative.",
       "existingCode": "problematic code (only the lines that need to change, plus 1-2 surrounding lines for context)",
       "improvedCode": "fix (same scope as existingCode — only the changed lines plus 1-2 lines of context, NOT the entire function or block)",
-      "oneSentenceSummary": "brief summary",
+      "oneSentenceSummary": "Brief summary",
       "relevantLinesStart": 10,
-      "relevantLinesEnd": 12,
-      "severity": "critical|high|medium|low"
+      "relevantLinesEnd": 15,
+      "severity": "critical|high|medium|low",
+      "confidence": 8
     }
   ]
 }
@@ -2471,8 +2606,14 @@ async function verifySingleFindingWithTools(params: {
                 ),
                 system: verificationPrompt.system,
                 prompt: verificationPrompt.prompt,
-                tools,
-                stopWhen: stepCountIs(params.maxVerifySteps || 5),
+                tools: {
+                    ...tools,
+                    [DONE_TOOL_NAME]: DONE_TOOLS.verification,
+                },
+                stopWhen: [
+                    hasToolCall(DONE_TOOL_NAME),
+                    stepCountIs(params.maxVerifySteps || 5),
+                ],
                 prepareStep: ({ stepNumber }: any) => {
                     const maxSteps = params.maxVerifySteps || 5;
                     verifierSteps = stepNumber;
@@ -2551,30 +2692,50 @@ async function verifySingleFindingWithTools(params: {
             }),
     });
 
+    // ─── Done-tool extraction for verifier ─────────────────────────────
+    const verifyDoneResult = extractDoneToolResult<z.infer<typeof _verificationSchema>>(verificationRun);
+
+    if (verifyDoneResult) {
+        logger.log({
+            message: `[AGENT-VERIFY-DONE-TOOL] finding=${index} verdict=${verifyDoneResult.keep ? 'keep' : 'drop'} via submitResult`,
+            context: 'AgentLoop',
+        });
+
+        return {
+            decision: {
+                index: verifyDoneResult.index ?? index,
+                keep: verifyDoneResult.keep,
+                rationale: verifyDoneResult.rationale || '',
+                confidence: verifyDoneResult.confidence,
+            },
+            evidence: buildToolEvidenceSummary(verifierToolCalls),
+            parseMode: 'direct' as const,
+            rawTextPreview: '',
+            usage: {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                reasoningTokens: totalReasoningTokens,
+                totalTokens: totalInputTokens + totalOutputTokens,
+            },
+        };
+    }
+
     let verificationText =
         verificationRun.text ||
         finalText ||
         verifierStepTexts[verifierStepTexts.length - 1] ||
         verifierStepTexts.join('\n\n');
 
+    // Second chance for verifier: use full response.messages context
     if (!verificationText && verifierToolCalls.length > 0) {
-        const investigationSummary = verifierToolCalls
-            .map((toolCall) => {
-                const args =
-                    typeof toolCall.args === 'string'
-                        ? toolCall.args
-                        : JSON.stringify(toolCall.args);
-                const resultStr =
-                    typeof toolCall.result === 'string'
-                        ? toolCall.result.substring(0, 320)
-                        : '';
-                return `${toolCall.toolName || toolCall.tool}(${args.substring(0, 180)}) => ${resultStr || '(empty)'}`;
-            })
-            .join('\n');
-
         try {
             const verifierSecondChanceSignal =
                 timeoutSignal(LLM_CALL_TIMEOUT_MS);
+
+            // Use full conversation history from the verifier run
+            const verifierResponseMessages: any[] =
+                verificationRun?.response?.messages || [];
+
             const secondChanceResult: any = await throttledGenerateText({
                 byokConfig: secrets.byokConfig,
                 organizationId: input.telemetryMetadata?.organizationId,
@@ -2600,31 +2761,20 @@ async function verifySingleFindingWithTools(params: {
                                 modelName: (internalModel as any)?.modelId,
                             },
                         ),
-                        system: `You are a surgical code review verifier.
-
-You already investigated the candidate finding with tools. Do NOT call any more tools.
-
-Your job now is only to return the final verdict as JSON.`,
-                        prompt: `${evidenceBundle.bundle}
-
-<VerifierInvestigation>
-${investigationSummary}
-</VerifierInvestigation>
-
-Based on the investigation above, return ONLY JSON:
-\`\`\`json
-{
-  "index": ${index},
-  "keep": true,
-  "rationale": "why the evidence supports keep/drop",
-  "confidence": "high|medium|low"
-}
-\`\`\`
-
-Rules:
-- Drop only if you found concrete evidence against the candidate.
-- If you cannot refute it, keep it.
-- No prose outside JSON.`,
+                        system: 'You are a surgical code review verifier.',
+                        messages: [
+                            // Original verification prompt with evidence
+                            { role: 'user' as const, content: verificationPrompt.prompt },
+                            // Full conversation history from verifier (tool calls + results)
+                            ...verifierResponseMessages,
+                            // Instruction to finalize
+                            {
+                                role: 'user' as const,
+                                content:
+                                    'You have finished investigating. Respond NOW with your verdict as JSON. Do NOT call any tools.\n\n' +
+                                    `Return ONLY JSON:\n\`\`\`json\n{"index": ${index}, "keep": true, "rationale": "why", "confidence": "high|medium|low"}\n\`\`\``,
+                            },
+                        ],
                         stopWhen: stepCountIs(1),
                     }),
             });
@@ -2645,7 +2795,7 @@ Rules:
 
             if (verificationText) {
                 logger.log({
-                    message: `[AGENT-VERIFY-SECOND-CHANCE] finding=${index} recovered text response after tool-only verifier run`,
+                    message: `[AGENT-VERIFY-SECOND-CHANCE] finding=${index} recovered text response (full context)`,
                     context: 'AgentLoop',
                 });
             }
