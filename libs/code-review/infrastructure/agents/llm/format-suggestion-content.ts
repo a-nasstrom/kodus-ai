@@ -100,8 +100,9 @@ export async function formatSuggestionContent(
 
 Rules:
 - Remove labels like "WHAT:", "WHY:", "HOW:", "1.", "2.", "3." from the beginning of sentences.
-- Merge the labeled sentences into a single natural paragraph (1-3 sentences).
+- Merge the labeled sentences into a single natural paragraph (1-3 SHORT sentences). Aim for 2 sentences max: one describing the problem, one describing the fix.
 - Keep every technical detail: function names, file names, variable names, error types, line numbers.
+- Be concise: the code block already shows the fix, so the text should explain WHY, not repeat WHAT the code does.
 - Do NOT touch existingCode or improvedCode — return them exactly as provided.
 ${customGuidelines ? `\nThe team has provided custom writing guidelines. Follow them — they take priority over the default rules above.\n${customGuidelines}` : ''}${langInstruction}
 
