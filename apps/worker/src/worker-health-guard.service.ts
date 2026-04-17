@@ -410,7 +410,8 @@ export class WorkerHealthGuardService
             metadata: { instanceId: this.instanceId, exitCode: code },
         });
 
-        // Give shutdown hooks 10s to run, then force exit.
+        // Give shutdown hooks 30s to run, then force exit.
+        // This must be longer than the WorkerDrainService timeout (default 25s).
         const forceExitTimer = setTimeout(() => {
             this.logger.error({
                 message: 'Graceful shutdown timed out. Force exiting.',
@@ -418,7 +419,7 @@ export class WorkerHealthGuardService
                 metadata: { instanceId: this.instanceId },
             });
             process.exit(code);
-        }, 10_000);
+        }, 30_000);
 
         // process.kill(process.pid, 'SIGTERM') triggers NestJS shutdown hooks
         // (enableShutdownHooks is called in main.ts), which runs:
