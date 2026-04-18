@@ -13,6 +13,7 @@ export const FEATURE_FLAGS = {
     sso: 'sso',
     cliKeys: 'cli-keys',
     committableSuggestions: 'committable-suggestions',
+    agentReview: 'agent-review',
 } as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
@@ -30,6 +31,10 @@ class PostHogClient {
         } else {
             this.posthog = null;
         }
+    }
+
+    get isInitialized(): boolean {
+        return this.posthog !== null;
     }
 
     userIdentify(user: IUser): void {
@@ -60,8 +65,6 @@ class PostHogClient {
                 organization: user.organization?.uuid,
             },
         });
-
-        this.posthog.shutdown();
     }
 
     organizationIdentify(organization: IOrganization): void {
@@ -78,7 +81,6 @@ class PostHogClient {
                 id: organization.uuid,
             },
         });
-        this.posthog.shutdown();
     }
 
     teamIdentify(team: ITeam): void {
@@ -101,21 +103,54 @@ class PostHogClient {
             groupKey: team.uuid,
             properties,
         });
+    }
 
-        this.posthog.shutdown();
+    repositoryIdentify(repository: {
+        repositoryId: string;
+        name: string;
+        fullName: string;
+        platform: string;
+        organizationId: string;
+        agentReviewEnabled?: boolean;
+    }): void {
+        if (!this.posthog) {
+            return;
+        }
+
+        this.posthog.groupIdentify({
+            groupType: 'repository',
+            groupKey: repository.repositoryId,
+            properties: {
+                name: repository.name,
+                fullName: repository.fullName,
+                platform: repository.platform,
+                organizationId: repository.organizationId,
+                repositoryId: repository.repositoryId,
+                agentReviewEnabled: repository.agentReviewEnabled ?? false,
+            },
+        });
     }
 
     async isFeatureEnabled(
         featureName: string,
         identifier: string,
         organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId?: string,
     ): Promise<boolean> {
         if (!this.posthog) {
             return Promise.resolve(true);
         }
 
+        const groups: Record<string, string> = {
+            organization: organizationAndTeamData.organizationId,
+        };
+
+        if (repositoryId) {
+            groups.repository = repositoryId;
+        }
+
         return await this.posthog.isFeatureEnabled(featureName, identifier, {
-            groups: { organization: organizationAndTeamData.organizationId },
+            groups,
         });
     }
 }

@@ -8,6 +8,11 @@ const baseFields = {
     maxInputTokens: z.number().int().min(0).nullable().optional(),
     maxConcurrentRequests: z.number().int().min(0).nullable().optional(),
     maxOutputTokens: z.number().int().min(0).nullable().optional(),
+    reasoningEffort: z
+        .enum(["none", "low", "medium", "high", "custom"])
+        .nullable()
+        .optional(),
+    reasoningConfigOverride: z.string().nullable().optional(),
 };
 
 export const createKeySchema = z.object({

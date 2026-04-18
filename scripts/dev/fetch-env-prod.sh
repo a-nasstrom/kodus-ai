@@ -128,8 +128,6 @@ KEYS=(
 
     "/prod/kodus-orchestrator/GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK"
 
-    "/prod/kodus-orchestrator/API_ENABLE_CODE_REVIEW_AST"
-
     "/prod/kodus-orchestrator/CODE_MANAGEMENT_SECRET"
     "/prod/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
 
@@ -137,8 +135,6 @@ KEYS=(
     "/prod/kodus-orchestrator/GLOBAL_KODUS_SERVICE_BILLING"
 
     "/prod/kodus-orchestrator/API_POSTHOG_KEY"
-
-    "/prod/kodus-orchestrator/API_SERVICE_AST_URL"
 
     "/prod/kodus-orchestrator/API_MCP_SERVER_ENABLED"
     "/prod/kodus-orchestrator/API_KODUS_SERVICE_MCP_MANAGER"

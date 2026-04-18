@@ -103,7 +103,7 @@ export const getLibraryKodyRulesWithFeedback = async (params?: {
     limit?: number;
     buckets?: string[];
     name?: string;
-    severity?: "Low" | "Medium" | "High" | "Critical";
+    severity?: string;
     tags?: string[];
     language?: keyof typeof ProgrammingLanguage;
     plug_and_play?: boolean;

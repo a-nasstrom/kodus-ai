@@ -74,13 +74,34 @@ export class RabbitMQWrapperModule {
                     return null;
                 }
 
+                // Wait policy for AMQP connection at bootstrap:
+                //   - worker/webhook: fail-fast (wait: true). They only exist
+                //     to consume from the queue — booting "successfully" while
+                //     the connection is broken just masks failures as runtime
+                //     "channel is not available" errors scattered everywhere.
+                //   - api: optimistic (wait: false). HTTP surface keeps
+                //     serving (healthchecks, reads) even if the broker is
+                //     degraded, and the amqp connection manager reconnects.
+                //   - Override for any component via API_RABBITMQ_WAIT=true|false.
+                const componentType = (
+                    process.env.COMPONENT_TYPE || ''
+                ).toLowerCase();
+                const waitOverride = process.env.API_RABBITMQ_WAIT;
+                const waitForConnection =
+                    waitOverride === 'true'
+                        ? true
+                        : waitOverride === 'false'
+                          ? false
+                          : componentType === 'worker' ||
+                            componentType === 'webhook';
+
                 return {
                     exchanges: RABBITMQ_TOPOLOGY_CONFIG.exchanges,
                     uri: configService.get<string>(
                         'rabbitMQConfig.API_RABBITMQ_URI',
                     ),
                     connectionInitOptions: {
-                        wait: false,
+                        wait: waitForConnection,
                         timeout: 5000,
                     },
                     // Both options live under connectionManagerOptions in

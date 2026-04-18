@@ -31,7 +31,6 @@ describe('CodeReviewHandlerService - skip feedback control', () => {
 
     const service = new CodeReviewHandlerService(
         mockPipelineFactory as any,
-        {} as any,
         mockCodeManagement as any,
     );
 

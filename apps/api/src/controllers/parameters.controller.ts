@@ -70,7 +70,6 @@ import { GetDefaultConfigUseCase } from '@libs/organization/application/use-case
 import { CreateOrUpdateCodeReviewParameterDto } from '@libs/organization/dtos/create-or-update-code-review-parameter.dto';
 import { DeleteRepositoryCodeReviewParameterDto } from '@libs/organization/dtos/delete-repository-code-review-parameter.dto';
 import { PreviewPrSummaryDto } from '@libs/organization/dtos/preview-pr-summary.dto';
-import archiver from 'archiver';
 import { finished } from 'stream/promises';
 import { ApplyCodeReviewPresetDto } from '../dtos/apply-code-review-preset.dto';
 
@@ -581,6 +580,7 @@ export class ParametersController {
                 'attachment; filename=centralized-config.zip',
         });
 
+        const { default: archiver } = await import('archiver');
         const archive = archiver('zip', { zlib: { level: 9 } });
         archive.on('error', (err) => {
             response.destroy(err);

@@ -20,6 +20,14 @@ export interface BYOKConfig {
         model: string;
         baseURL?: string;
         disableReasoning?: boolean;
+        /** Reasoning effort level: none disables thinking, low/medium/high
+         *  map to provider-specific reasoning config (budget_tokens for
+         *  Claude, thinkingBudget for Gemini, reasoningEffort for OpenAI).
+         *  When set, takes precedence over disableReasoning. */
+        reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+        /** Raw JSON override for provider-specific reasoning config.
+         *  When set, takes precedence over reasoningEffort preset. */
+        reasoningConfigOverride?: string;
         temperature?: number;
         maxInputTokens?: number;
         maxConcurrentRequests?: number;

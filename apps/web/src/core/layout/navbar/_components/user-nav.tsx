@@ -30,6 +30,7 @@ import { useSubscriptionStatus } from "src/core/providers/byok.provider";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { TEAM_STATUS } from "src/core/types";
 import { isSelfHosted } from "src/core/utils/self-hosted";
+
 import { VersionInfo } from "./version-info";
 
 export function UserNav() {

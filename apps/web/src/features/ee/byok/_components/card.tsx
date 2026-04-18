@@ -86,115 +86,81 @@ const ConfigNotSet = () => (
     </div>
 );
 
-const ConfigTable = ({ config }: { config: BYOKConfig }) => (
+const ConfigRow = ({
+    label,
+    value,
+}: {
+    label: string;
+    value: React.ReactNode;
+}) => (
     <>
-        <FormControl.Root className="flex flex-row justify-between">
-            <FormControl.Label>Provider</FormControl.Label>
-            <FormControl.Input>
-                <span className="text-text-secondary text-sm">
-                    {config?.provider}
-                </span>
-            </FormControl.Input>
-        </FormControl.Root>
-
         <Separator className="bg-card-lv2 my-2" />
-
         <FormControl.Root className="flex flex-row justify-between">
-            <FormControl.Label>Model</FormControl.Label>
+            <FormControl.Label>{label}</FormControl.Label>
             <FormControl.Input>
-                <span className="text-text-secondary text-sm">
-                    {config?.model}
-                </span>
+                <span className="text-text-secondary text-sm">{value}</span>
             </FormControl.Input>
         </FormControl.Root>
-
-        <Separator className="bg-card-lv2 my-2" />
-
-        <FormControl.Root className="flex flex-row justify-between">
-            <FormControl.Label>Key</FormControl.Label>
-            <FormControl.Input>
-                <span className="text-text-secondary text-sm">
-                    {config?.apiKey}
-                </span>
-            </FormControl.Input>
-        </FormControl.Root>
-
-        {config.baseURL && (
-            <>
-                <Separator className="bg-card-lv2 my-2" />
-
-                <FormControl.Root className="flex flex-row justify-between">
-                    <FormControl.Label>Base URL</FormControl.Label>
-                    <FormControl.Input>
-                        <span className="text-text-secondary text-sm">
-                            {config?.baseURL}
-                        </span>
-                    </FormControl.Input>
-                </FormControl.Root>
-            </>
-        )}
-
-        {config.temperature != null && (
-            <>
-                <Separator className="bg-card-lv2 my-2" />
-
-                <FormControl.Root className="flex flex-row justify-between">
-                    <FormControl.Label>Temperature</FormControl.Label>
-                    <FormControl.Input>
-                        <span className="text-text-secondary text-sm">
-                            {config.temperature}
-                        </span>
-                    </FormControl.Input>
-                </FormControl.Root>
-            </>
-        )}
-
-        {config.maxOutputTokens != null && config.maxOutputTokens > 0 && (
-            <>
-                <Separator className="bg-card-lv2 my-2" />
-
-                <FormControl.Root className="flex flex-row justify-between">
-                    <FormControl.Label>Max output tokens</FormControl.Label>
-                    <FormControl.Input>
-                        <span className="text-text-secondary text-sm">
-                            {config.maxOutputTokens}
-                        </span>
-                    </FormControl.Input>
-                </FormControl.Root>
-            </>
-        )}
-
-        {config.maxInputTokens != null && config.maxInputTokens > 0 && (
-            <>
-                <Separator className="bg-card-lv2 my-2" />
-
-                <FormControl.Root className="flex flex-row justify-between">
-                    <FormControl.Label>Max input tokens</FormControl.Label>
-                    <FormControl.Input>
-                        <span className="text-text-secondary text-sm">
-                            {config.maxInputTokens}
-                        </span>
-                    </FormControl.Input>
-                </FormControl.Root>
-            </>
-        )}
-
-        {config.maxConcurrentRequests != null &&
-            config.maxConcurrentRequests > 0 && (
-                <>
-                    <Separator className="bg-card-lv2 my-2" />
-
-                    <FormControl.Root className="flex flex-row justify-between">
-                        <FormControl.Label>
-                            Max concurrent requests
-                        </FormControl.Label>
-                        <FormControl.Input>
-                            <span className="text-text-secondary text-sm">
-                                {config.maxConcurrentRequests}
-                            </span>
-                        </FormControl.Input>
-                    </FormControl.Root>
-                </>
-            )}
     </>
 );
+
+const ConfigTable = ({ config }: { config: BYOKConfig }) => {
+    const thinkingLabel =
+        config.reasoningEffort && config.reasoningEffort !== "none"
+            ? config.reasoningConfigOverride
+                ? "Custom"
+                : config.reasoningEffort.charAt(0).toUpperCase() +
+                  config.reasoningEffort.slice(1)
+            : null;
+
+    return (
+        <>
+            <FormControl.Root className="flex flex-row justify-between">
+                <FormControl.Label>Provider</FormControl.Label>
+                <FormControl.Input>
+                    <span className="text-text-secondary text-sm">
+                        {config.provider}
+                    </span>
+                </FormControl.Input>
+            </FormControl.Root>
+
+            <ConfigRow label="Model" value={config.model} />
+            <ConfigRow label="Key" value={config.apiKey} />
+
+            {config.baseURL && (
+                <ConfigRow label="Base URL" value={config.baseURL} />
+            )}
+
+            {thinkingLabel && (
+                <ConfigRow label="Thinking" value={thinkingLabel} />
+            )}
+
+            {config.temperature != null && (
+                <ConfigRow label="Temperature" value={config.temperature} />
+            )}
+
+            {config.maxOutputTokens != null &&
+                config.maxOutputTokens > 0 && (
+                    <ConfigRow
+                        label="Max output tokens"
+                        value={config.maxOutputTokens}
+                    />
+                )}
+
+            {config.maxInputTokens != null && config.maxInputTokens > 0 && (
+                <ConfigRow
+                    label="Max input tokens"
+                    value={config.maxInputTokens}
+                />
+            )}
+
+            {config.maxConcurrentRequests != null &&
+                config.maxConcurrentRequests > 0 && (
+                    <ConfigRow
+                        label="Max concurrent requests"
+                        value={config.maxConcurrentRequests}
+                    />
+                )}
+        </>
+    );
+};

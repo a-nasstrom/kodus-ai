@@ -1194,9 +1194,11 @@ export class BitbucketService implements Omit<
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            const workspaces = await bitbucketAPI.workspaces
-                .getWorkspaces({ pagelen: 50 })
-                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            const workspaces = await this.listAccessibleWorkspaces({
+                username:
+                    bitbucketAuthDetail.email ?? bitbucketAuthDetail.username,
+                token: decrypt(bitbucketAuthDetail.appPassword),
+            });
 
             const workspacesWithRepos = await Promise.all(
                 workspaces.map((workspace) =>
@@ -2159,11 +2161,24 @@ export class BitbucketService implements Omit<
         return `\`\`\`${language}\n${code}\n\`\`\``;
     }
 
+    private dedentCode(code: string): string {
+        const lines = code.split('\n');
+        const indents = lines
+            .filter((line) => line.trim().length > 0)
+            .map((line) => line.match(/^[ \t]*/)?.[0].length ?? 0);
+        if (indents.length === 0) return code;
+        const minIndent = Math.min(...indents);
+        if (minIndent === 0) return code;
+        return lines
+            .map((line) => (line.length >= minIndent ? line.slice(minIndent) : line))
+            .join('\n');
+    }
+
     private formatBodyForBitbucket(lineComment: any, repository: any) {
         const codeBlock = lineComment?.body?.improvedCode
             ? this.formatCodeBlock(
                   repository?.language?.toLowerCase(),
-                  lineComment?.body?.improvedCode,
+                  this.dedentCode(lineComment?.body?.improvedCode),
               )
             : '';
         const suggestionContent = lineComment?.body?.suggestionContent || '';
@@ -3351,6 +3366,57 @@ export class BitbucketService implements Omit<
         });
     }
 
+    /**
+     * Lists workspaces the authenticated user can access via the new
+     * GET /2.0/user/workspaces endpoint. Required because Atlassian sunsetted
+     * the cross-workspace GET /2.0/workspaces and GET /2.0/user/permissions/workspaces
+     * endpoints on 2026-04-14 (CHANGE-2770 / CHANGE-3022) and the bitbucket
+     * npm SDK (v2.12.0) does not expose this new endpoint.
+     */
+    private async listAccessibleWorkspaces(auth: {
+        username: string;
+        token: string;
+    }): Promise<Schema.Workspace[]> {
+        const basic = Buffer.from(
+            `${auth.username}:${auth.token}`,
+        ).toString('base64');
+        const workspaces: Schema.Workspace[] = [];
+        let nextUrl: string | undefined =
+            'https://api.bitbucket.org/2.0/user/workspaces?pagelen=50';
+
+        while (nextUrl) {
+            const response = await this.safeFetch(nextUrl, {
+                method: 'GET',
+                headers: {
+                    accept: 'application/json',
+                    authorization: `Basic ${basic}`,
+                },
+            });
+
+            if (!response.ok) {
+                const body = await response.text().catch(() => '');
+                throw new Error(
+                    `GET /2.0/user/workspaces failed with ${response.status}: ${body}`,
+                );
+            }
+
+            const body = (await response.json()) as {
+                values?: Array<{ workspace?: Schema.Workspace }>;
+                next?: string;
+            };
+
+            for (const entry of body.values ?? []) {
+                if (entry?.workspace?.uuid) {
+                    workspaces.push(entry.workspace);
+                }
+            }
+
+            nextUrl = body.next;
+        }
+
+        return workspaces;
+    }
+
     private instanceBitbucketApi(bitbucketAuthDetail: BitbucketAuthDetail) {
         try {
             const bitbucketAPI = new Bitbucket({
@@ -3446,6 +3512,10 @@ export class BitbucketService implements Omit<
 
             const checkRepos = await this.checkRepositoryPermissions({
                 bitbucketAPI,
+                auth: {
+                    username: email ?? username,
+                    token,
+                },
             });
             if (!checkRepos.success) {
                 return checkRepos;
@@ -3494,13 +3564,12 @@ export class BitbucketService implements Omit<
 
     private async checkRepositoryPermissions(params: {
         bitbucketAPI: APIClient;
+        auth: { username: string; token: string };
     }) {
         try {
-            const { bitbucketAPI } = params;
+            const { bitbucketAPI, auth } = params;
 
-            const workspaces = await bitbucketAPI.workspaces
-                .getWorkspaces({})
-                .then((res) => res.data.values);
+            const workspaces = await this.listAccessibleWorkspaces(auth);
 
             for (const workspace of workspaces) {
                 const repositories = await bitbucketAPI.repositories

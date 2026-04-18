@@ -81,6 +81,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates procps git ripgrep \
   && rm -rf /var/lib/apt/lists/*
 
+# Install bun (pinned) + kodus-graph CLI, then remove build-only deps (curl/unzip).
+# BUN_INSTALL is set inline (not ENV) so it doesn't persist at runtime —
+# prevents user 1000 from accidentally trying to write to /usr/local.
+ARG BUN_VERSION=1.2.12
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip \
+    && export BUN_INSTALL=/usr/local \
+    && curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
+    && bun install -g @kodus/kodus-graph \
+    && apt-get purge -y --auto-remove curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --chown=1000:1000 --from=prod-deps /usr/src/app/node_modules ./node_modules
 COPY --chown=1000:1000 --from=build /usr/src/app/dist ./dist
 COPY --chown=1000:1000 --from=build /usr/src/app/package.json ./package.json

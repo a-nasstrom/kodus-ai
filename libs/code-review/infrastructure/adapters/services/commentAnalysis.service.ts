@@ -100,6 +100,7 @@ export class CommentAnalysisService {
                     spanName,
                     runName,
                     attrs: spanAttrs,
+                    byokConfig,
                     exec: async (callbacks) => {
                         return promptRunner
                             .builder()
@@ -232,6 +233,7 @@ export class CommentAnalysisService {
                         type: promptRunner.executeMode,
                         commentsCount: filteredComments.length,
                     },
+                    byokConfig,
                     exec: async (callbacks) => {
                         return promptRunner
                             .builder()
@@ -297,6 +299,7 @@ export class CommentAnalysisService {
                             newRulesCount: generatedWithUuids.length,
                             existingRulesCount: existingRulesAsLibrary.length,
                         },
+                        byokConfig,
                         exec: async (callbacks) => {
                             return promptRunner
                                 .builder()
@@ -357,6 +360,7 @@ export class CommentAnalysisService {
                         type: promptRunner.executeMode,
                         candidateRulesCount: deduplicatedRules.length,
                     },
+                    byokConfig,
                     exec: async (callbacks) => {
                         return promptRunner
                             .builder()
@@ -493,6 +497,7 @@ export class CommentAnalysisService {
                     spanName,
                     runName,
                     attrs: spanAttrs,
+                    byokConfig,
                     exec: async (callbacks) => {
                         return promptRunner
                             .builder()
@@ -676,11 +681,14 @@ export class CommentAnalysisService {
         try {
             const total = files.length;
 
-            const count = files.reduce((acc, file) => {
-                const extension = file.filename.split('.').pop();
-                acc[extension] = (acc[extension] || 0) + 1;
-                return acc;
-            }, {});
+            const count = files.reduce<Record<string, number>>(
+                (acc, file) => {
+                    const extension = file.filename.split('.').pop();
+                    acc[extension] = (acc[extension] || 0) + 1;
+                    return acc;
+                },
+                {},
+            );
 
             return this.getPercentages(count, total);
         } catch (error) {

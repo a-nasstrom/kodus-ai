@@ -70,29 +70,10 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
 
     /**
      * Webhook-processing jobs
+     * Delayed exchange bindings are created by RabbitMQDLQInitializer.
      */
     @RabbitSubscribe({
         exchange: 'workflow.exchange',
-        routingKey: 'workflow.jobs.*.WEBHOOK_PROCESSING',
-        queue: 'workflow.jobs.webhook.queue',
-        errorBehavior: MessageHandlerErrorBehavior.ACK,
-        errorHandler: createErrorHandlerWithFallback('workflow.job.failed'),
-        queueOptions: {
-            channel: 'channel-webhook',
-            arguments: {
-                'x-queue-type': 'quorum',
-                'x-dead-letter-exchange': 'workflow.exchange.dlx',
-                'x-dead-letter-routing-key': 'workflow.job.failed',
-            },
-        },
-    })
-    /**
-     * Binding from delayed exchange for retry messages.
-     * This creates the binding: workflow.exchange.delayed -> workflow.jobs.<type>.queue
-     * Required for the retry mechanism to work.
-     */
-    @RabbitSubscribe({
-        exchange: 'workflow.exchange.delayed',
         routingKey: 'workflow.jobs.*.WEBHOOK_PROCESSING',
         queue: 'workflow.jobs.webhook.queue',
         errorBehavior: MessageHandlerErrorBehavior.ACK,
@@ -120,24 +101,10 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
 
     /**
      * Code-review jobs
+     * Delayed exchange bindings are created by RabbitMQDLQInitializer.
      */
     @RabbitSubscribe({
         exchange: 'workflow.exchange',
-        routingKey: 'workflow.jobs.*.CODE_REVIEW',
-        queue: 'workflow.jobs.code_review.queue',
-        errorBehavior: MessageHandlerErrorBehavior.ACK,
-        errorHandler: createErrorHandlerWithFallback('workflow.job.failed'),
-        queueOptions: {
-            channel: 'channel-code-review',
-            arguments: {
-                'x-queue-type': 'quorum',
-                'x-dead-letter-exchange': 'workflow.exchange.dlx',
-                'x-dead-letter-routing-key': 'workflow.job.failed',
-            },
-        },
-    })
-    @RabbitSubscribe({
-        exchange: 'workflow.exchange.delayed',
         routingKey: 'workflow.jobs.*.CODE_REVIEW',
         queue: 'workflow.jobs.code_review.queue',
         errorBehavior: MessageHandlerErrorBehavior.ACK,
@@ -165,24 +132,10 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
 
     /**
      * Implementation Check jobs
+     * Delayed exchange bindings are created by RabbitMQDLQInitializer.
      */
     @RabbitSubscribe({
         exchange: 'workflow.exchange',
-        routingKey: 'workflow.jobs.*.CHECK_SUGGESTION_IMPLEMENTATION',
-        queue: 'workflow.jobs.check_implementation.queue',
-        errorBehavior: MessageHandlerErrorBehavior.ACK,
-        errorHandler: createErrorHandlerWithFallback('workflow.job.failed'),
-        queueOptions: {
-            channel: 'channel-check-implementation',
-            arguments: {
-                'x-queue-type': 'quorum',
-                'x-dead-letter-exchange': 'workflow.exchange.dlx',
-                'x-dead-letter-routing-key': 'workflow.job.failed',
-            },
-        },
-    })
-    @RabbitSubscribe({
-        exchange: 'workflow.exchange.delayed',
         routingKey: 'workflow.jobs.*.CHECK_SUGGESTION_IMPLEMENTATION',
         queue: 'workflow.jobs.check_implementation.queue',
         errorBehavior: MessageHandlerErrorBehavior.ACK,
@@ -203,6 +156,68 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
         return this.handleWorkflowJob(
             'workflow-job-consumer.check_implementation',
             'workflow.jobs.check_implementation.queue',
+            message,
+            amqpMsg,
+        );
+    }
+
+    /**
+     * AST Graph Build jobs
+     * Delayed exchange bindings are created by RabbitMQDLQInitializer.
+     */
+    @RabbitSubscribe({
+        exchange: 'workflow.exchange',
+        routingKey: 'workflow.jobs.*.AST_GRAPH_BUILD',
+        queue: 'workflow.jobs.ast_graph_build.queue',
+        errorBehavior: MessageHandlerErrorBehavior.ACK,
+        errorHandler: createErrorHandlerWithFallback('workflow.job.failed'),
+        queueOptions: {
+            channel: 'channel-ast-graph-build',
+            arguments: {
+                'x-queue-type': 'quorum',
+                'x-dead-letter-exchange': 'workflow.exchange.dlx',
+                'x-dead-letter-routing-key': 'workflow.job.failed',
+            },
+        },
+    })
+    async handleAstGraphBuildJob(
+        message: WorkflowJobMessage | MessagePayload<WorkflowJobMessage>,
+        amqpMsg: ConsumeMessage,
+    ): Promise<void> {
+        return this.handleWorkflowJob(
+            'workflow-job-consumer.ast_graph_build',
+            'workflow.jobs.ast_graph_build.queue',
+            message,
+            amqpMsg,
+        );
+    }
+
+    /**
+     * AST Graph Incremental Update jobs
+     * Delayed exchange bindings are created by RabbitMQDLQInitializer.
+     */
+    @RabbitSubscribe({
+        exchange: 'workflow.exchange',
+        routingKey: 'workflow.jobs.*.AST_GRAPH_INCREMENTAL',
+        queue: 'workflow.jobs.ast_graph_incremental.queue',
+        errorBehavior: MessageHandlerErrorBehavior.ACK,
+        errorHandler: createErrorHandlerWithFallback('workflow.job.failed'),
+        queueOptions: {
+            channel: 'channel-ast-graph-incremental',
+            arguments: {
+                'x-queue-type': 'quorum',
+                'x-dead-letter-exchange': 'workflow.exchange.dlx',
+                'x-dead-letter-routing-key': 'workflow.job.failed',
+            },
+        },
+    })
+    async handleAstGraphIncrementalJob(
+        message: WorkflowJobMessage | MessagePayload<WorkflowJobMessage>,
+        amqpMsg: ConsumeMessage,
+    ): Promise<void> {
+        return this.handleWorkflowJob(
+            'workflow-job-consumer.ast_graph_incremental',
+            'workflow.jobs.ast_graph_incremental.queue',
             message,
             amqpMsg,
         );
@@ -416,8 +431,15 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
             metadata: { activeJobs: this.activeJobs },
         });
 
-        const checkIntervalMs = 1000;
-        while (this.activeJobs > 0) {
+        // Cap the wait so we always get a chance to release locks before
+        // ECS sends SIGKILL (default grace period is 30s). 25s of waiting
+        // leaves ~5s headroom for the release-locks query and other
+        // shutdown hooks downstream of this one.
+        const maxWaitMs = 25_000;
+        const checkIntervalMs = 1_000;
+        const waitStart = Date.now();
+
+        while (this.activeJobs > 0 && Date.now() - waitStart < maxWaitMs) {
             this.logger.log({
                 message: `Waiting for ${this.activeJobs} active jobs to complete...`,
                 context: WorkflowJobConsumer.name,
@@ -427,8 +449,47 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
             );
         }
 
+        if (this.activeJobs > 0) {
+            this.logger.warn({
+                message: `Shutdown timeout reached with ${this.activeJobs} active jobs still running — releasing inbox locks anyway so other workers can reclaim the messages.`,
+                context: WorkflowJobConsumer.name,
+                metadata: {
+                    activeJobs: this.activeJobs,
+                    instanceId: this.instanceId,
+                },
+            });
+        }
+
+        // Release every PROCESSING lock held by this host. Prevents the
+        // "dead worker leaves locks" pattern we traced in prod: without
+        // this, orphan locks sit around until the reaper cron's 2.5h
+        // timeout, blocking other workers from picking up the messages.
+        try {
+            const released = await this.inboxRepository.releaseAllByInstance(
+                this.instanceId,
+            );
+            if (released > 0) {
+                this.logger.log({
+                    message: `Released ${released} inbox locks during shutdown`,
+                    context: WorkflowJobConsumer.name,
+                    metadata: {
+                        instanceId: this.instanceId,
+                        released,
+                    },
+                });
+            }
+        } catch (error) {
+            // Never throw from a shutdown hook — best-effort by design.
+            this.logger.error({
+                message: 'Failed to release inbox locks during shutdown',
+                context: WorkflowJobConsumer.name,
+                error,
+                metadata: { instanceId: this.instanceId },
+            });
+        }
+
         this.logger.log({
-            message: 'All jobs completed. Proceeding with shutdown.',
+            message: 'Shutdown complete.',
             context: WorkflowJobConsumer.name,
         });
     }

@@ -142,8 +142,18 @@ function getPinoLogger(): pino.Logger {
             });
         }
 
+        let transportFailed = false;
         transport.on('error', (err) => {
-            console.error('Pino transport failure:', err);
+            if (transportFailed) return;
+            transportFailed = true;
+            console.error(
+                'Pino transport worker died, falling back to in-process stdout logger:',
+                err,
+            );
+            // Worker thread is gone — rebuild the singleton with an in-process
+            // destination so subsequent getPinoLogger() calls return a healthy
+            // logger that can't die the same way.
+            pinoLogger = pino(baseConfig, pino.destination({ dest: 1 }));
         });
 
         pinoLogger = pino(baseConfig, transport);

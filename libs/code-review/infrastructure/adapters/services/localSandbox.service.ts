@@ -2,8 +2,16 @@ import { createLogger } from '@kodus/flow';
 import { PlatformType } from '@libs/core/domain/enums';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { execFile } from 'child_process';
-import { lstat, mkdtemp, realpath, rm } from 'fs/promises';
+import { exec, execFile, ExecFileOptions, spawn } from 'child_process';
+import {
+    lstat,
+    mkdtemp,
+    readFile,
+    realpath,
+    rm,
+    writeFile,
+    mkdir,
+} from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { promisify } from 'util';
@@ -12,6 +20,7 @@ import {
     CreateSandboxParams,
     ISandboxProvider,
     SandboxInstance,
+    SandboxRunResult,
 } from '@libs/code-review/domain/contracts/sandbox.provider';
 import { RemoteCommands } from './collectCrossFileContexts.service';
 
@@ -53,7 +62,7 @@ export class LocalSandboxService implements ISandboxProvider {
             );
             const refspec =
                 prNumber != null
-                    ? this.getPrRefspec(platform, prNumber)
+                    ? this.getPrRefspec(platform, prNumber, cloneUrl, branch)
                     : `refs/heads/${branch}`;
             const localRef = prNumber != null ? 'pr-head' : 'cli-head';
 
@@ -91,7 +100,7 @@ export class LocalSandboxService implements ISandboxProvider {
                 {
                     timeout: CLONE_TIMEOUT_MS,
                     env: fetchEnv,
-                },
+                } as ExecFileOptions,
             );
 
             await execFileAsync('git', ['-C', tempDir, 'checkout', localRef], {
@@ -113,7 +122,100 @@ export class LocalSandboxService implements ISandboxProvider {
                 }
             };
 
-            return { remoteCommands, cleanup };
+            const capturedRepoDir = tempDir;
+
+            // Privileged shell exec for infrastructure callers (graph build,
+            // AST extraction, sandbox bootstrap). Unlike `remoteCommands.exec`
+            // this does NOT whitelist programs — it runs the command through
+            // /bin/sh so mkdir, pipes, redirections, etc. work. That power
+            // comes with a safety contract: **callers MUST shell-quote any
+            // value that could come (directly or transitively) from user
+            // input** (PR filenames, branch names, commit messages, etc.).
+            //
+            // As a runtime tripwire we reject command substitution (`$(...)`
+            // and backticks) on the raw string. Internal infrastructure
+            // commands have no legitimate need to spawn subshells, and a
+            // leaked `$()` is the most common path from "string concatenation
+            // bug" to RCE. The block is conservative by design — if a real
+            // use case ever needs command substitution, it should opt in
+            // explicitly instead of piggybacking on this entry point.
+            const run = async (
+                command: string,
+                opts?: { timeoutMs?: number },
+            ): Promise<SandboxRunResult> => {
+                if (/`|\$\(/.test(command)) {
+                    this.logger.warn({
+                        message:
+                            'Rejected sandbox.run command containing shell substitution',
+                        context: LocalSandboxService.name,
+                        metadata: {
+                            preview: command.slice(0, 200),
+                        },
+                    });
+                    return {
+                        stdout: '',
+                        stderr: 'Command substitution ($(...) / backticks) is not allowed in sandbox.run',
+                        exitCode: 1,
+                    };
+                }
+
+                const execAsync = promisify(exec);
+                try {
+                    const { stdout, stderr } = await execAsync(command, {
+                        cwd: capturedRepoDir,
+                        timeout: opts?.timeoutMs ?? CMD_TIMEOUT_MS,
+                        maxBuffer: MAX_BUFFER,
+                        env: process.env,
+                    });
+                    return {
+                        stdout: stdout || '',
+                        stderr: stderr || '',
+                        exitCode: 0,
+                    };
+                } catch (error: any) {
+                    return {
+                        stdout: error.stdout || '',
+                        stderr: error.stderr || '',
+                        exitCode: error.code ?? 1,
+                    };
+                }
+            };
+
+            // Path safety: reads go through `resolveSafePath` so absolute
+            // paths, `..` traversals, and symlink escapes are all rejected
+            // at the boundary. Writes can target files that don't exist
+            // yet (so `lstat`/`realpath` don't apply), but we still
+            // normalize and compare against the repo root so the final
+            // target can't escape — `validatePath` plus the prefix check
+            // covers `../..`, `/etc/...`, and embedded traversals.
+            const sandboxReadFile = async (path: string): Promise<string> => {
+                const fullPath = path.startsWith('/')
+                    ? path
+                    : join(capturedRepoDir, path);
+                return readFile(fullPath, 'utf-8');
+            };
+
+            const sandboxWriteFile = async (
+                path: string,
+                content: string,
+            ): Promise<void> => {
+                const fullPath = path.startsWith('/')
+                    ? path
+                    : join(capturedRepoDir, path);
+                const dir = join(fullPath, '..');
+                await mkdir(dir, { recursive: true });
+                await writeFile(fullPath, content, 'utf-8');
+            };
+
+            return {
+                remoteCommands,
+                cleanup,
+                type: 'local' as const,
+                repoDir: capturedRepoDir,
+                run,
+                readFile: sandboxReadFile,
+                writeFile: sandboxWriteFile,
+            };
         } catch (error) {
             try {
                 await rm(tempDir, { recursive: true, force: true });
@@ -166,9 +268,18 @@ export class LocalSandboxService implements ISandboxProvider {
                 end: number,
             ): Promise<string> => {
                 const safePath = await this.resolveSafePath(repoDir, path);
+                // When start=0 and end=0, read the entire file (cat).
+                // GNU sed rejects address 0 so we must avoid `sed -n '0,0p'`.
+                if (start === 0 && end === 0) {
+                    const { stdout } = await execFileAsync('cat', [safePath], {
+                        timeout: CMD_TIMEOUT_MS,
+                        maxBuffer: MAX_BUFFER,
+                    });
+                    return stdout;
+                }
                 const { stdout } = await execFileAsync(
                     'sed',
-                    ['-n', `${start},${end}p`, safePath],
+                    ['-n', `${start < 1 ? 1 : start},${end}p`, safePath],
                     { timeout: CMD_TIMEOUT_MS, maxBuffer: MAX_BUFFER },
                 );
                 return stdout;
@@ -200,6 +311,205 @@ export class LocalSandboxService implements ISandboxProvider {
                     },
                 );
                 return stdout;
+            },
+
+            exec: async (
+                command: string,
+            ): Promise<{ stdout: string; exitCode: number }> => {
+                // Strict whitelist — only allow programs that READ files. This
+                // runs on the host machine with no container isolation, so any
+                // program that evaluates code in the cloned repo is an RCE
+                // vector: `cargo check` runs `build.rs`, `npx` resolves local
+                // `node_modules/.bin/*` binaries that a PR can ship, `go
+                // generate` runs `//go:generate` directives, `eslint` loads
+                // custom plugins via `.eslintrc`, `tsc` can trigger module
+                // resolution side effects, and `python`/`python3` are direct
+                // code execution. Running those here means a malicious PR is
+                // host RCE on the worker. They only stay safe inside the E2B
+                // provider, which has real container isolation.
+                const ALLOWED_PROGRAMS = new Set([
+                    'sg', // ast-grep (macOS/homebrew)
+                    'ast-grep', // ast-grep (npm global)
+                    'cat',
+                    'wc',
+                    'head',
+                    'tail',
+                    'file',
+                    'fd', // fast file finder (respects .gitignore)
+                    'find', // fallback file finder
+                    'grep', // text filter used in pipelines (e.g. `... | grep -v "Syntax OK"`)
+                ]);
+
+                if (!command.trim()) {
+                    return { stdout: '', exitCode: 1 };
+                }
+
+                // Reject shell features we don't emulate up front. We support
+                // only the subset the agent tools actually emit:
+                //   - `2>&1` (stderr merged into stdout, which we always do)
+                //   - top-level `|` pipelines between whitelisted programs
+                // Anything else (`>`, `>>`, `<`, `;`, `&&`, `||`, backticks,
+                // `$(...)`) would require real shell semantics we intentionally
+                // don't provide, so we bail out instead of running it through
+                // execFile where the operator would be passed as a literal arg
+                // and confuse the underlying tool.
+                // Command substitution (`...` / $(...)) is never legitimate
+                // input for our tool commands. Check on the raw command first,
+                // before any quote stripping, so a payload hidden inside a
+                // quoted string (e.g. `cat "file-$(reboot)"`) can't slip past
+                // the later "outside quotes" scan and — if this layer ever
+                // gets wired to a real shell — execute.
+                if (/`|\$\(/.test(command)) {
+                    return {
+                        stdout: `Command substitution is not allowed in local sandbox: ${command}`,
+                        exitCode: 1,
+                    };
+                }
+
+                const outsideQuotes = command
+                    .replace(/"[^"]*"|'[^']*'/g, '')
+                    .replace(/\b2>&1\b/g, '');
+                if (/(?:>>|<<|>|<|;|&&|\|\|)/.test(outsideQuotes)) {
+                    return {
+                        stdout: `Unsupported shell syntax in local sandbox: ${command}`,
+                        exitCode: 1,
+                    };
+                }
+
+                // Split into pipeline stages on top-level `|` (respecting quotes).
+                const stages = command
+                    .split(/\|(?=(?:[^"']*(?:"[^"]*"|'[^']*'))*[^"']*$)/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+
+                const validated: Array<{ program: string; args: string[] }> =
+                    [];
+                for (const stage of stages) {
+                    // Drop `2>&1` tokens — stderr is always merged into stdout below.
+                    const parts =
+                        stage.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+                    if (parts.length === 0) {
+                        return { stdout: '', exitCode: 1 };
+                    }
+                    const tokens = parts
+                        .map((p) => p.replace(/^['"]|['"]$/g, ''))
+                        .filter((t) => t !== '2>&1');
+                    const [program, ...args] = tokens;
+
+                    if (!ALLOWED_PROGRAMS.has(program)) {
+                        return {
+                            stdout: `Program "${program}" is not allowed in local sandbox. Allowed: ${[...ALLOWED_PROGRAMS].join(', ')}`,
+                            exitCode: 1,
+                        };
+                    }
+
+                    // Block path traversal anywhere in the argument list. The
+                    // old implementation tried to skip flags + their values,
+                    // but it assumed every flag takes a value — so a valueless
+                    // flag right before a malicious path (e.g.
+                    // `cat -n ../../../etc/passwd`) would skip the dangerous
+                    // arg. Validate every argument instead; flags themselves
+                    // never contain `..` or `/foo` so they will pass naturally.
+                    //
+                    // Allow `..` as part of pattern syntax (e.g. ripgrep
+                    // `'$A..$B'`) by only flagging it when it appears as a
+                    // path segment, and only treat absolute paths as traversal
+                    // when they look like filesystem paths (start with `/`) —
+                    // flag shorthands like `-n` or `--include` start with `-`,
+                    // never `/`.
+                    const hasTraversal = args.some(
+                        (a) => a.startsWith('/') || /(^|\/)\.\.($|\/)/.test(a),
+                    );
+                    if (hasTraversal) {
+                        return {
+                            stdout: 'Arguments with path traversal (..) or absolute paths are not allowed.',
+                            exitCode: 1,
+                        };
+                    }
+
+                    validated.push({ program, args });
+                }
+
+                if (validated.length === 1) {
+                    try {
+                        const { stdout, stderr } = await execFileAsync(
+                            validated[0].program,
+                            validated[0].args,
+                            {
+                                cwd: repoDir,
+                                timeout: CMD_TIMEOUT_MS,
+                                maxBuffer: MAX_BUFFER,
+                            },
+                        );
+                        return {
+                            stdout: stdout + (stderr || ''),
+                            exitCode: 0,
+                        };
+                    } catch (error: any) {
+                        return {
+                            stdout: (error.stdout || '') + (error.stderr || ''),
+                            exitCode: error.code ?? 1,
+                        };
+                    }
+                }
+
+                return await new Promise((resolve) => {
+                    const children = validated.map(({ program, args }, idx) =>
+                        spawn(program, args, {
+                            cwd: repoDir,
+                            stdio: [
+                                idx === 0 ? 'ignore' : 'pipe',
+                                'pipe',
+                                'pipe',
+                            ],
+                        }),
+                    );
+
+                    let finalOutput = '';
+                    let totalSize = 0;
+                    let bufferExceeded = false;
+                    const collect = (chunk: Buffer) => {
+                        if (bufferExceeded) return;
+                        totalSize += chunk.length;
+                        if (totalSize > MAX_BUFFER) {
+                            bufferExceeded = true;
+                            finalOutput += '\n[output truncated]';
+                            return;
+                        }
+                        finalOutput += chunk.toString('utf8');
+                    };
+
+                    for (let i = 0; i < children.length; i++) {
+                        const child = children[i];
+                        const next = children[i + 1];
+                        // Merge stderr of every stage into the final output so
+                        // compiler/linter diagnostics (usually on stderr) survive.
+                        child.stderr?.on('data', collect);
+                        if (next) {
+                            child.stdout?.pipe(next.stdin!);
+                            child.stdout?.on('error', () => {});
+                            next.stdin?.on('error', () => {});
+                        } else {
+                            child.stdout?.on('data', collect);
+                        }
+                    }
+
+                    const last = children[children.length - 1];
+                    const timeout = setTimeout(() => {
+                        for (const c of children) c.kill('SIGTERM');
+                    }, CMD_TIMEOUT_MS);
+
+                    last.on('close', (code) => {
+                        clearTimeout(timeout);
+                        resolve({ stdout: finalOutput, exitCode: code ?? 0 });
+                    });
+
+                    for (const c of children) {
+                        c.on('error', (err) => {
+                            finalOutput += `\n${err.message}`;
+                        });
+                    }
+                });
             },
         };
     }
@@ -264,14 +574,25 @@ export class LocalSandboxService implements ISandboxProvider {
         }
     }
 
-    private getPrRefspec(platform: PlatformType, prNumber: number): string {
+    private getPrRefspec(
+        platform: PlatformType,
+        prNumber: number,
+        cloneUrl: string,
+        branch: string,
+    ): string {
         switch (platform) {
             case PlatformType.GITHUB:
                 return `refs/pull/${prNumber}/head`;
             case PlatformType.GITLAB:
                 return `refs/merge-requests/${prNumber}/head`;
-            case PlatformType.BITBUCKET:
-                return `refs/pull-requests/${prNumber}/from`;
+            case PlatformType.BITBUCKET: {
+                const isCloud = /(^|\/\/|\.)bitbucket\.org(\/|$)/i.test(
+                    cloneUrl,
+                );
+                return isCloud
+                    ? `refs/heads/${branch}`
+                    : `refs/pull-requests/${prNumber}/from`;
+            }
             case PlatformType.AZURE_REPOS:
                 return `refs/pull/${prNumber}/merge`;
             default:

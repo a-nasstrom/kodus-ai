@@ -98,6 +98,7 @@ export abstract class BaseAgentProvider {
                         spanName,
                         runName,
                         attrs: spanAttrs,
+                        byokConfig: this.byokConfig,
                         exec: async (callbacks) => {
                             let builder = promptRunner
                                 .builder()

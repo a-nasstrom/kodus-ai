@@ -18,6 +18,7 @@ import { CodeManagementService } from '@libs/platform/infrastructure/adapters/se
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { CloneParamsResolverService } from '@libs/code-review/pipeline/services/clone-params-resolver.service';
 
 jest.mock('@libs/common/utils/posthog', () => ({
     __esModule: true,
@@ -65,7 +66,7 @@ describe('GatherDocumentationContextStage', () => {
         >;
     };
 
-    const independentFixture: FixtureInput = {
+    const _independentFixture: FixtureInput = {
         pullRequestNumber: 123,
         repositoryId: 'tmp-repo-id',
         repositoryName: 'kodus-ai',
@@ -95,7 +96,7 @@ describe('GatherDocumentationContextStage', () => {
         ],
     };
 
-    function buildIndependentContext(
+    function _buildIndependentContext(
         fixtureInput: FixtureInput,
     ): CodeReviewPipelineContext {
         return {
@@ -124,7 +125,7 @@ describe('GatherDocumentationContextStage', () => {
         } as unknown as CodeReviewPipelineContext;
     }
 
-    function buildPromptRunnerServiceMock(): PromptRunnerService {
+    function _buildPromptRunnerServiceMock(): PromptRunnerService {
         const service = {
             builder: jest.fn(() => {
                 const state: { payload?: any } = {};
@@ -178,7 +179,7 @@ describe('GatherDocumentationContextStage', () => {
         return service as unknown as PromptRunnerService;
     }
 
-    function buildRealPromptRunnerService(): PromptRunnerService {
+    function _buildRealPromptRunnerService(): PromptRunnerService {
         const logger = new Logger('DocumentationPromptIntegrationTest');
         const byokProviderService = new BYOKProviderService();
         const llmProviderService = new LLMProviderService(
@@ -241,6 +242,10 @@ describe('GatherDocumentationContextStage', () => {
                 {
                     provide: SANDBOX_PROVIDER_TOKEN,
                     useValue: sandboxProvider,
+                },
+                {
+                    provide: CloneParamsResolverService,
+                    useValue: { resolve: jest.fn() },
                 },
                 {
                     provide: CodeManagementService,

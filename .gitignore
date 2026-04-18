@@ -87,6 +87,8 @@ dev.env
 /temp
 
 .kodus-graph-cache.json
+.kody/sessions/*
+.kody/logs/*
 
 environment.ts
 src/ee/configs/environment/environment.ts
@@ -118,6 +120,8 @@ specs
 .opencode
 .cursor
 .claude
+!.claude/commands/
+!.claude/commands/**
 .codex
 .agents
 skills-lock.json
@@ -125,6 +129,9 @@ skills-lock.json
 # Eval results
 evals/promptfoo/results/
 evals/promptfoo-safeguard/results/
+scripts/benchmark/results/
+scripts/benchmark/*-trace-metrics.json
+evals/investigation/evals/
 
 # ESLint Cache
 .eslintcache
@@ -133,6 +140,7 @@ evals/promptfoo-safeguard/results/
 .entire
 
 scripts/pr-creator/accounts.json
+scripts/pr-creator/prs.json
 scripts/pr-creator/package-lock.json
 scripts/pr-creator/node_modules
 .spectral-report.json
@@ -164,3 +172,5 @@ apps/web/*.launch
 apps/web/.settings/
 apps/web/*.sublime-workspace
 apps/web/.vscode
+worktrees
+scripts/benchmark/runs/*

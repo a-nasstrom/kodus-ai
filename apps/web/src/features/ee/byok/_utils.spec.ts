@@ -97,4 +97,34 @@ describe("BYOK topbar visibility", () => {
             }),
         ).toBe(true);
     });
+
+    it("treats trial subscriptions as BYOK eligible (no planType to inspect)", async () => {
+        const { isBYOKSubscriptionPlan } = await import("./_utils");
+
+        expect(
+            isBYOKSubscriptionPlan({
+                valid: true,
+                subscriptionStatus: "trial",
+                trialEnd: new Date().toISOString(),
+            } as any),
+        ).toBe(true);
+    });
+
+    it("does not treat canceled/expired/payment_failed subscriptions as BYOK eligible", async () => {
+        const { isBYOKSubscriptionPlan } = await import("./_utils");
+
+        for (const status of [
+            "canceled",
+            "expired",
+            "payment_failed",
+            "inactive",
+        ] as const) {
+            expect(
+                isBYOKSubscriptionPlan({
+                    subscriptionStatus: status,
+                    planType: "teams_byok",
+                } as any),
+            ).toBe(false);
+        }
+    });
 });

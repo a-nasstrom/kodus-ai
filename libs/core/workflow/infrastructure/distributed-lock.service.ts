@@ -23,7 +23,7 @@ export class DistributedLock {
                         this.logger.error({
                             message: 'Error auto-releasing lock',
                             context: DistributedLock.name,
-                            error,
+                            error: error instanceof Error ? error : undefined,
                             metadata: { lockId },
                         });
                     });

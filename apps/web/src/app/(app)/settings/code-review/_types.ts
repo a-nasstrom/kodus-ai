@@ -92,7 +92,8 @@ export type CodeReviewGlobalConfig = {
     kodyRulesGeneratorEnabled?: boolean;
     llmGeneratedMemoriesRequireApproval?: boolean;
     runOnDraft: boolean;
-    codeReviewVersion?: "legacy" | "v2";
+    codeReviewVersion?: "legacy" | "v2" | "v3-agent";
+    crossFileDependenciesAnalysis?: boolean;
     ideRulesSyncEnabled: boolean;
     v2PromptOverrides?: {
         categories?: {
@@ -110,12 +111,16 @@ export type CodeReviewGlobalConfig = {
                 low?: string;
             };
         };
+        level?: {
+            critical?: string;
+            issue?: string;
+            warning?: string;
+        };
         generation?: {
             main?: string;
         };
     };
     enableCommittableSuggestions: boolean;
-    crossFileDependenciesAnalysis: boolean;
 };
 
 export type CodeReviewBaseConfig = {

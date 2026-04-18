@@ -87,16 +87,12 @@ KEYS=(
 
     "/qa/kodus-orchestrator/GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK"
 
-    "/qa/kodus-orchestrator/API_ENABLE_CODE_REVIEW_AST"
-
     "/qa/kodus-orchestrator/CODE_MANAGEMENT_SECRET"
     "/qa/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
 
     "/qa/kodus-orchestrator/GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK"
 
     "/qa/kodus-orchestrator/API_POSTHOG_KEY"
-
-    "/qa/kodus-orchestrator/API_SERVICE_AST_URL"
 
     "/qa/kodus-orchestrator/API_MCP_SERVER_ENABLED"
     "/qa/kodus-orchestrator/API_KODUS_SERVICE_MCP_MANAGER"

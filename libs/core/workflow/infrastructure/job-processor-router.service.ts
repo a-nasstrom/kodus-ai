@@ -15,10 +15,14 @@ import { WebhookProcessingJobProcessorService } from '@libs/automation/webhook-p
 import { CodeReviewJobProcessorService } from '@libs/code-review/workflow/code-review-job-processor.service';
 
 import { ImplementationVerificationProcessor } from '@libs/code-review/workflow/implementation-verification.processor';
+import { AstGraphBuildJobProcessor } from '@libs/code-review/workflow/ast-graph-build-job.processor';
+import { AstGraphIncrementalJobProcessor } from '@libs/code-review/workflow/ast-graph-incremental-job.processor';
 
 const WEBHOOK_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
 const CODE_REVIEW_PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const CHECK_IMPLEMENTATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const AST_GRAPH_BUILD_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
+const AST_GRAPH_INCREMENTAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 min
 
 @Injectable()
 export class JobProcessorRouterService
@@ -32,6 +36,8 @@ export class JobProcessorRouterService
         private readonly codeReviewProcessor: CodeReviewJobProcessorService,
         private readonly webhookProcessor: WebhookProcessingJobProcessorService,
         private readonly implementationVerificationProcessor: ImplementationVerificationProcessor,
+        private readonly astGraphBuildProcessor: AstGraphBuildJobProcessor,
+        private readonly astGraphIncrementalProcessor: AstGraphIncrementalJobProcessor,
     ) {}
 
     async process(jobId: string): Promise<void> {
@@ -117,6 +123,10 @@ export class JobProcessorRouterService
                 return this.codeReviewProcessor;
             case WorkflowType.CHECK_SUGGESTION_IMPLEMENTATION:
                 return this.implementationVerificationProcessor;
+            case WorkflowType.AST_GRAPH_BUILD:
+                return this.astGraphBuildProcessor;
+            case WorkflowType.AST_GRAPH_INCREMENTAL:
+                return this.astGraphIncrementalProcessor;
             default:
                 throw new Error(
                     `No processor found for workflow type: ${workflowType}`,
@@ -132,6 +142,10 @@ export class JobProcessorRouterService
                 return CODE_REVIEW_PROCESS_TIMEOUT_MS;
             case WorkflowType.CHECK_SUGGESTION_IMPLEMENTATION:
                 return CHECK_IMPLEMENTATION_TIMEOUT_MS;
+            case WorkflowType.AST_GRAPH_BUILD:
+                return AST_GRAPH_BUILD_TIMEOUT_MS;
+            case WorkflowType.AST_GRAPH_INCREMENTAL:
+                return AST_GRAPH_INCREMENTAL_TIMEOUT_MS;
             default:
                 return CODE_REVIEW_PROCESS_TIMEOUT_MS;
         }

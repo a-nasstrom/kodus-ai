@@ -28,7 +28,7 @@ import { ApplyFiltersToKodyRules } from "./_components/apply-filters-to-kody-rul
 import { LimitationTypeField } from "./_components/limitation-type";
 import { MaxSuggestions } from "./_components/max-suggestions";
 import { MinimumSeverityLevel } from "./_components/minimum-severity-level";
-import { SuggestionGroupingMode } from "./_components/suggestion-grouping-mode";
+// SuggestionGroupingMode removed — V3 agents always post individual inline comments
 import { SuggestionsPerSeverityLevel } from "./_components/suggestions-per-severity-level";
 
 export default function SuggestionControl(
@@ -39,6 +39,7 @@ export default function SuggestionControl(
     const platformConfig = usePlatformConfig();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
     const limitationType = form.watch("suggestionControl.limitationType.value");
+    const codeReviewVersion = form.watch("codeReviewVersion.value" as any);
     const { saveSettings } = useCodeReviewSettingsMutation({
         teamId,
         repositoryId,
@@ -101,11 +102,11 @@ export default function SuggestionControl(
     return (
         <Page.Root>
             <Page.Header>
-                <CodeReviewPagesBreadcrumb pageName="Suggestion control" />
+                <CodeReviewPagesBreadcrumb pageName="Review filters" />
             </Page.Header>
 
             <Page.Header>
-                <Page.Title>Suggestion control</Page.Title>
+                <Page.Title>Review filters</Page.Title>
                 <hr />
 
                 <Page.HeaderActions>
@@ -132,39 +133,45 @@ export default function SuggestionControl(
                 </Page.HeaderActions>
             </Page.Header>
 
-            <Page.Content className="mt-10 flex-none">
-                <CentralizedConfigReadOnlyAlert />
-                <div data-field-name="suggestionControl.suggestionGroupingMode">
-                    <SuggestionGroupingMode />
-                </div>
-
-                <div className="mt-10 flex flex-col gap-8">
-                    <div>
-                        <Heading variant="h2">Suggestion limit</Heading>
-                        <span className="text-text-secondary text-sm">
-                            Configure the number of comments Kody can leave
-                            during code reviews
-                        </span>
-                    </div>
-
-                    <div data-field-name="suggestionControl.applyFiltersToKodyRules">
-                        <ApplyFiltersToKodyRules />
-                    </div>
-                    <div data-field-name="suggestionControl.limitationType">
-                        <LimitationTypeField />
-                    </div>
-
-                    {limitationType === LimitationType.SEVERITY ? (
-                        <React.Fragment key="severity-limitation">
-                            <SuggestionsPerSeverityLevel />
-                        </React.Fragment>
-                    ) : (
-                        <React.Fragment key="other-limitation">
-                            <MaxSuggestions />
+            <Page.Content className="flex-none">
+                {codeReviewVersion === "v3-agent" ? (
+                    <div className="flex flex-col gap-8">
+                        <div data-field-name="suggestionControl.severityLevelFilter">
                             <MinimumSeverityLevel />
-                        </React.Fragment>
-                    )}
-                </div>
+                        </div>
+                        <div data-field-name="suggestionControl.applyFiltersToKodyRules">
+                            <ApplyFiltersToKodyRules />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-8">
+                        <div>
+                            <Heading variant="h2">Suggestion limit</Heading>
+                            <span className="text-text-secondary text-sm">
+                                Configure the number of comments Kody can leave
+                                during code reviews
+                            </span>
+                        </div>
+
+                        <div data-field-name="suggestionControl.applyFiltersToKodyRules">
+                            <ApplyFiltersToKodyRules />
+                        </div>
+                        <div data-field-name="suggestionControl.limitationType">
+                            <LimitationTypeField />
+                        </div>
+
+                        {limitationType === LimitationType.SEVERITY ? (
+                            <React.Fragment key="severity-limitation">
+                                <SuggestionsPerSeverityLevel />
+                            </React.Fragment>
+                        ) : (
+                            <React.Fragment key="other-limitation">
+                                <MaxSuggestions />
+                                <MinimumSeverityLevel />
+                            </React.Fragment>
+                        )}
+                    </div>
+                )}
             </Page.Content>
         </Page.Root>
     );

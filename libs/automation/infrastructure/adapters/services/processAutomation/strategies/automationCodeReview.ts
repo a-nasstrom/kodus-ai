@@ -53,7 +53,6 @@ export class AutomationCodeReviewService implements Omit<
 
     async setup(payload?: any): Promise<any> {
         try {
-            // Fetch automation ID
             const automation: IAutomation = (
                 await this.automationService.find({
                     automationType: this.automationType,
@@ -105,7 +104,8 @@ export class AutomationCodeReviewService implements Omit<
 
         if (!orgId || !repoId || !prNumber) {
             this.logger.error({
-                message: 'Cannot generate lock key due to missing identifiers in payload',
+                message:
+                    'Cannot generate lock key due to missing identifiers in payload',
                 context: AutomationCodeReviewService.name,
                 metadata: { orgId, repoId, prNumber },
             });
@@ -127,7 +127,10 @@ export class AutomationCodeReviewService implements Omit<
                     metadata: {
                         lockKey,
                         organizationAndTeamData,
-                        repository: { id: repository?.id, name: repository?.name },
+                        repository: {
+                            id: repository?.id,
+                            name: repository?.name,
+                        },
                         pullRequestNumber: pullRequest?.number,
                     },
                 });

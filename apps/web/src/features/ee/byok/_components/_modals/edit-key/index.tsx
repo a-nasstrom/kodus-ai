@@ -62,6 +62,10 @@ export const BYOKEditKeyModal = ({
             maxInputTokens: config?.maxInputTokens ?? null,
             maxConcurrentRequests: config?.maxConcurrentRequests ?? null,
             maxOutputTokens: config?.maxOutputTokens ?? null,
+            reasoningEffort: config?.reasoningConfigOverride
+                ? ("custom" as any)
+                : config?.reasoningEffort ?? null,
+            reasoningConfigOverride: config?.reasoningConfigOverride ?? null,
         },
     });
 
@@ -71,6 +75,7 @@ export const BYOKEditKeyModal = ({
     const model = form.watch("model");
 
     const handleSubmit = form.handleSubmit(async (data) => {
+        const effort = data.reasoningEffort;
         await onSave({
             ...data,
             apiKey: data.apiKey || undefined!,
@@ -79,6 +84,12 @@ export const BYOKEditKeyModal = ({
             maxInputTokens: data.maxInputTokens ?? undefined,
             maxConcurrentRequests: data.maxConcurrentRequests ?? undefined,
             maxOutputTokens: data.maxOutputTokens ?? undefined,
+            reasoningEffort:
+                effort === "custom" || !effort ? undefined : effort,
+            reasoningConfigOverride:
+                effort === "custom"
+                    ? (data.reasoningConfigOverride ?? undefined)
+                    : undefined,
         });
         magicModal.hide();
     });

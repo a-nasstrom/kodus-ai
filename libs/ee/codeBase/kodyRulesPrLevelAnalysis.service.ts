@@ -188,7 +188,7 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
             return { codeSuggestions: [] };
         }
 
-        let filteredKodyRules: Array<Partial<IKodyRule>> = [];
+        let filteredKodyRules: Array<Partial<IKodyRule>>;
 
         // Safe check for suggestionControl
         const suggestionControl = context.codeReviewConfig?.suggestionControl;
@@ -559,7 +559,7 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
                 }
 
                 const escapeMarkdownSyntax = (text: string): string =>
-                    text.replace(/([[]\\]\\`*_{}()#+-.!])/g, '\\$1');
+                    text.replace(/([\[\]\\`*_{}()#+\-.!])/g, '\\$1');
                 const markdownLink = `[${escapeMarkdownSyntax(rule.title)}](${ruleLink})`;
 
                 // Verificar se o ID está entre crases simples `id`
@@ -1180,12 +1180,15 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
                 context?.codeReviewConfig?.byokConfig?.fallback?.model,
         };
 
+        const byokConfigRef = context?.codeReviewConfig?.byokConfig;
+
         try {
             const { result: analysis } =
                 await this.observabilityService.runLLMInSpan({
                     spanName,
                     runName,
                     attrs: spanAttrs,
+                    byokConfig: byokConfigRef,
                     exec: async (callbacks) => {
                         return await promptRunner
                             .builder()
@@ -1547,6 +1550,7 @@ export class KodyRulesPrLevelAnalysisService implements IKodyRulesAnalysisServic
                     spanName,
                     runName,
                     attrs: spanAttrs,
+                    byokConfig,
                     exec: async (callbacks) => {
                         return await promptRunner
                             .builder()

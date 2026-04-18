@@ -36,7 +36,7 @@ describe('FetchChangedFilesStage', () => {
 
     const createBaseContext = (
         overrides: Partial<CodeReviewPipelineContext> = {},
-    ): CodeReviewPipelineContext => ({
+    ) => ({
         dryRun: { enabled: false },
         organizationAndTeamData: mockOrganizationAndTeamData as any,
         repository: {
@@ -65,7 +65,6 @@ describe('FetchChangedFilesStage', () => {
         codeReviewConfig: {
             ignorePaths: [],
         } as any,
-        batches: [],
         preparedFileContexts: [],
         validSuggestions: [],
         discardedSuggestions: [],
@@ -96,7 +95,7 @@ describe('FetchChangedFilesStage', () => {
 
     describe('fetching changed files', () => {
         it('should fetch and process changed files successfully', async () => {
-            const mockFiles = [
+            const mockFiles: any[] = [
                 {
                     filename: 'src/test.ts',
                     status: 'modified',
@@ -148,7 +147,7 @@ describe('FetchChangedFilesStage', () => {
         });
 
         it('should reuse preliminaryFiles from context when available', async () => {
-            const mockFiles = [
+            const mockFiles: any[] = [
                 {
                     filename: 'src/test.ts',
                     status: 'modified',

@@ -114,8 +114,7 @@ export const AddRepoModal = ({
 
     return (
         <Dialog open onOpenChange={() => magicModal.hide()}>
-            <DialogContent
-                onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
                 <DialogHeader>
                     <DialogTitle>Create repository settings</DialogTitle>
                 </DialogHeader>
@@ -159,9 +158,7 @@ export const AddRepoModal = ({
                                 {showRepoList && (
                                     <CommandList
                                         className="max-h-56 overflow-y-auto"
-                                        onMouseDown={(e) =>
-                                            e.preventDefault()
-                                        }>
+                                        onMouseDown={(e) => e.preventDefault()}>
                                         <CommandEmpty>
                                             No repository found.
                                         </CommandEmpty>

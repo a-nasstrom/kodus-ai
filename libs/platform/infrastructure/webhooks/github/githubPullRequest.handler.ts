@@ -1,4 +1,5 @@
 import { createLogger } from '@kodus/flow';
+import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/application/use-cases/enqueue-ast-graph-update-on-merged.use-case';
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
     hasReviewMarker,
@@ -17,7 +18,7 @@ import {
     IWebhookEventParams,
 } from '@libs/platform/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
 import { SavePullRequestUseCase } from '@libs/platformData/application/use-cases/pullRequests/save.use-case';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CodeManagementService } from '../../adapters/services/codeManagement.service';
 
@@ -37,6 +38,8 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
         private readonly eventEmitter: EventEmitter2,
         private readonly enqueueCodeReviewJobUseCase: EnqueueCodeReviewJobUseCase,
         private readonly enqueueImplementationCheckUseCase: EnqueueImplementationCheckUseCase,
+        @Optional()
+        private readonly enqueueAstGraphUpdateOnMergedUseCase?: EnqueueAstGraphUpdateOnMergedUseCase,
     ) {}
 
     public canHandle(params: IWebhookEventParams): boolean {
@@ -239,7 +242,6 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         if (baseRef !== defaultBranch) {
                             changedFiles = undefined;
                         } else {
-                            // fetch changed files
                             changedFiles =
                                 await this.codeManagement.getFilesByPullRequestId(
                                     {
@@ -252,6 +254,24 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                                         prNumber: payload?.pull_request?.number,
                                     },
                                 );
+
+                            this.enqueueAstGraphUpdateOnMergedUseCase
+                                ?.execute({
+                                    prNumber: payload?.pull_request?.number,
+                                    repoExternalId: repository.id,
+                                    repoName: repository.name,
+                                    platform: PlatformType.GITHUB,
+                                    baseBranch: baseRef,
+                                    organizationAndTeamData:
+                                        context.organizationAndTeamData,
+                                })
+                                .catch((e) => {
+                                    this.logger.warn({
+                                        message: `[AST-GRAPH] Failed to enqueue graph update after PR#${prNumber} merge`,
+                                        context: GitHubPullRequestHandler.name,
+                                        error: e,
+                                    });
+                                });
                         }
                     } catch (e) {
                         this.logger.error({
@@ -306,7 +326,6 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
     private async handleComment(params: IWebhookEventParams): Promise<void> {
         const { payload, event } = params;
         const prNumber = payload?.object_attributes?.iid;
-        const repositoryName = payload?.repository?.name;
 
         try {
             // Extract comment data

@@ -454,7 +454,8 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
             const successPullRequestExpr = '"success"."pullRequestNumber"';
 
             const inProgressRepositoryExpr = '"in_progress"."repositoryId"';
-            const inProgressPullRequestExpr = '"in_progress"."pullRequestNumber"';
+            const inProgressPullRequestExpr =
+                '"in_progress"."pullRequestNumber"';
 
             const inProgressSubquery = queryBuilder
                 .subQuery()
@@ -480,7 +481,7 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                 .andWhere('success.status = :successStatus')
                 .andWhere(`${successRepositoryExpr} IS NOT NULL`)
                 .andWhere(`${successPullRequestExpr} IS NOT NULL`)
-                .andWhere(`NOT EXISTS ${inProgressSubquery}`)
+                .andWhere(`NOT EXISTS (${inProgressSubquery})`)
                 .groupBy(successRepositoryExpr)
                 .addGroupBy(successPullRequestExpr)
                 .setParameters({

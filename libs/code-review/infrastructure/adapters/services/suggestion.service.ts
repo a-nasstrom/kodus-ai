@@ -38,7 +38,7 @@ import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfac
 
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
-import { extractLinesFromDiffHunk } from '@libs/common/utils/patch';
+import { extractLinesFromUnifiedDiff } from '@libs/common/utils/patch';
 import { LLM_ANALYSIS_SERVICE_TOKEN } from './llmAnalysis.service';
 
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
@@ -208,7 +208,7 @@ export class SuggestionService implements ISuggestionService {
         patchWithLinesStr: string,
         codeSuggestions: Partial<CodeSuggestion>[],
     ) {
-        const visibleRanges = extractLinesFromDiffHunk(patchWithLinesStr);
+        const visibleRanges = extractLinesFromUnifiedDiff(patchWithLinesStr);
 
         return codeSuggestions?.filter((suggestion) => {
             const suggestionStart = suggestion?.relevantLinesStart;
@@ -246,7 +246,7 @@ export class SuggestionService implements ISuggestionService {
         memories?: Array<Partial<IKodyRule>>,
         externalReferences?: unknown[],
         externalReferenceErrors?: unknown[] | string,
-        sandboxCloneParams?: CreateSandboxParams,
+        getFreshCloneParams?: () => Promise<CreateSandboxParams>,
         documentationContext?: DocumentationContextItem[],
     ) {
         if (!suggestions?.length) {
@@ -268,7 +268,7 @@ export class SuggestionService implements ISuggestionService {
             memories,
             externalReferences,
             externalReferenceErrors,
-            sandboxCloneParams,
+            getFreshCloneParams,
             documentationContext,
         );
     }
@@ -343,7 +343,7 @@ export class SuggestionService implements ISuggestionService {
             );
         }
 
-        let prioritizedByQuantity: Partial<CodeSuggestion>[] = [];
+        let prioritizedByQuantity: Partial<CodeSuggestion>[];
 
         if (limitationType === LimitationType.SEVERITY && severityLimits) {
             // Nova lógica para limitação por severidade
@@ -1848,8 +1848,7 @@ export class SuggestionService implements ISuggestionService {
                         metadata: {
                             suggestionId: suggestion?.id,
                             commentId: repriorizedCommentId,
-                            pullRequestReviewId:
-                                repriorizedPullRequestReviewId,
+                            pullRequestReviewId: repriorizedPullRequestReviewId,
                             deliveryStatus: result?.deliveryStatus,
                         },
                     });
@@ -1920,10 +1919,7 @@ export class SuggestionService implements ISuggestionService {
                                       result.codeReviewFeedbackData
                                           .pullRequestReviewId;
 
-                                  if (
-                                      !prLevelCommentId ||
-                                      !prLevelReviewId
-                                  ) {
+                                  if (!prLevelCommentId || !prLevelReviewId) {
                                       this.logger.error({
                                           message: `PR-level suggestion missing comment IDs`,
                                           context: SuggestionService.name,
