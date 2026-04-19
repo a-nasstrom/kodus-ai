@@ -126,6 +126,65 @@ describe('E2BSandboxService', () => {
         });
     });
 
+    // ─── embedCredentials ──────────────────────────────────────────────────
+
+    describe('embedCredentials()', () => {
+        beforeEach(async () => {
+            service = await createService({ API_E2B_KEY: 'key' });
+        });
+
+        const embedCredentials = (
+            url: string,
+            username: string | undefined,
+            password: string,
+        ) => (service as any).embedCredentials(url, username, password);
+
+        it('should embed user:pass in URL', () => {
+            expect(
+                embedCredentials(
+                    'https://bitbucket.org/org/repo',
+                    'bbuser',
+                    'app-pass',
+                ),
+            ).toBe('https://bbuser:app-pass@bitbucket.org/org/repo');
+        });
+
+        it('should URL-encode special chars in username and password', () => {
+            expect(
+                embedCredentials(
+                    'https://bitbucket.org/org/repo',
+                    'user@domain.com',
+                    'p@ss:w/rd',
+                ),
+            ).toBe(
+                'https://user%40domain.com:p%40ss%3Aw%2Frd@bitbucket.org/org/repo',
+            );
+        });
+
+        it('should strip existing userinfo before embedding', () => {
+            expect(
+                embedCredentials(
+                    'https://olduser@bitbucket.org/org/repo',
+                    'bbuser',
+                    'app-pass',
+                ),
+            ).toBe('https://bbuser:app-pass@bitbucket.org/org/repo');
+            expect(
+                embedCredentials(
+                    'https://olduser:oldpass@bitbucket.org/org/repo',
+                    'bbuser',
+                    'app-pass',
+                ),
+            ).toBe('https://bbuser:app-pass@bitbucket.org/org/repo');
+        });
+
+        it('should throw when username missing', () => {
+            expect(() =>
+                embedCredentials('https://bitbucket.org/org/repo', undefined, 'x'),
+            ).toThrow('requires a username');
+        });
+    });
+
     // ─── getPrRefspec ──────────────────────────────────────────────────────
 
     describe('getPrRefspec()', () => {
