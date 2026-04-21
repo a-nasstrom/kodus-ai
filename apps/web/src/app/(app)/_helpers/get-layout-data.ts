@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { getBYOK } from "@services/organizationParameters/fetch";
+import { getLLMConfigStatus } from "@services/organizationParameters/fetch";
 import { getOrganizationName } from "@services/organizations/fetch";
 import { getPermissions } from "@services/permissions/fetch";
 import { getTeams } from "@services/teams/fetch";
@@ -22,7 +22,7 @@ export const getLayoutData = cache(
             organizationName,
             organizationLicense,
             usersWithAssignedLicense,
-            byokConfig,
+            llmConfigStatus,
             tokenUsagePageFeatureFlag,
             codeReviewDryRunFeatureFlag,
             businessLogicFeatureFlag,
@@ -37,7 +37,7 @@ export const getLayoutData = cache(
             getOrganizationName().catch(() => ""),
             validateOrganizationLicense({ teamId }).catch(() => null),
             getUsersWithLicense({ teamId }).catch(() => []),
-            getBYOK().catch(() => null),
+            getLLMConfigStatus().catch(() => null),
             isFeatureEnabled({ feature: FEATURE_FLAGS.tokenUsagePage }).catch(
                 () => false,
             ),
@@ -71,7 +71,7 @@ export const getLayoutData = cache(
             organizationName,
             organizationLicense,
             usersWithAssignedLicense,
-            byokConfig,
+            llmConfigStatus,
             featureFlags: {
                 tokenUsagePage: tokenUsagePageFeatureFlag,
                 codeReviewDryRun: codeReviewDryRunFeatureFlag,

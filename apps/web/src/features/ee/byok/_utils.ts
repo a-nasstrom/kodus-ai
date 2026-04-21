@@ -1,4 +1,5 @@
 import { UserRole } from "@enums";
+import type { LLMConfigStatus } from "@services/organizationParameters/fetch";
 import {
     Action,
     ResourceType,
@@ -7,7 +8,6 @@ import {
 import { hasPermission } from "src/core/utils/permission-map";
 
 import type { OrganizationLicense } from "../subscription/_services/billing/types";
-import type { BYOKConfig } from "./_types";
 
 export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
     if (
@@ -32,20 +32,21 @@ export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
 
 export const shouldShowBYOKMissingKeyTopbar = (params: {
     license: OrganizationLicense | null;
-    byokConfig:
-        | {
-              main?: BYOKConfig;
-              fallback?: BYOKConfig;
-          }
-        | null
-        | undefined;
+    llmConfigStatus: LLMConfigStatus | null | undefined;
     permissions: PermissionsMap;
     organizationId: string;
     role?: UserRole;
 }) => {
-    const { license, byokConfig, permissions, organizationId, role } = params;
+    const { license, llmConfigStatus, permissions, organizationId, role } =
+        params;
 
-    if (!license || byokConfig?.main || !isBYOKSubscriptionPlan(license)) {
+    if (!license || !isBYOKSubscriptionPlan(license)) {
+        return false;
+    }
+
+    // Either source (DB BYOK or self-hosted `.env`) is enough to run reviews.
+    // Only nag when nothing is configured at all.
+    if (llmConfigStatus && llmConfigStatus.source !== "none") {
         return false;
     }
 

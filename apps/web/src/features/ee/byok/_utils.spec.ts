@@ -12,6 +12,26 @@ describe("BYOK topbar visibility", () => {
         planType: "enterprise",
         numberOfLicenses: 0,
     } as const;
+    const noneStatus = {
+        source: "none",
+        byok: { configured: false },
+        env: { configured: false },
+    } as const;
+    const envStatus = {
+        source: "env",
+        byok: { configured: false },
+        env: {
+            configured: true,
+            model: "gpt-4o",
+            providerId: "openai_compatible",
+            baseUrl: "https://api.openai.com/v1",
+        },
+    } as const;
+    const byokStatus = {
+        source: "byok",
+        byok: { configured: true, model: "gpt-4o", providerId: "openai" },
+        env: { configured: false },
+    } as const;
 
     it("does not show the missing key topbar when the user cannot update organization settings", async () => {
         const { shouldShowBYOKMissingKeyTopbar } = await import("./_utils");
@@ -19,7 +39,7 @@ describe("BYOK topbar visibility", () => {
         expect(
             shouldShowBYOKMissingKeyTopbar({
                 license: activeBYOKLicense as any,
-                byokConfig: null,
+                llmConfigStatus: noneStatus as any,
                 organizationId: "org-1",
                 permissions: {
                     [ResourceType.CodeReviewSettings]: {
@@ -38,7 +58,7 @@ describe("BYOK topbar visibility", () => {
         expect(
             shouldShowBYOKMissingKeyTopbar({
                 license: activeBYOKLicense as any,
-                byokConfig: null,
+                llmConfigStatus: noneStatus as any,
                 organizationId: "org-1",
                 permissions: {
                     [ResourceType.OrganizationSettings]: {
@@ -57,7 +77,7 @@ describe("BYOK topbar visibility", () => {
         expect(
             shouldShowBYOKMissingKeyTopbar({
                 license: activeBYOKLicense as any,
-                byokConfig: null,
+                llmConfigStatus: noneStatus as any,
                 organizationId: "org-1",
                 permissions: {
                     [ResourceType.All]: {
@@ -76,7 +96,7 @@ describe("BYOK topbar visibility", () => {
         expect(
             shouldShowBYOKMissingKeyTopbar({
                 license: activeBYOKLicense as any,
-                byokConfig: null,
+                llmConfigStatus: noneStatus as any,
                 organizationId: "org-1",
                 permissions: {},
                 role: UserRole.OWNER,
@@ -90,7 +110,7 @@ describe("BYOK topbar visibility", () => {
         expect(
             shouldShowBYOKMissingKeyTopbar({
                 license: licensedSelfHostedEnterprise as any,
-                byokConfig: null,
+                llmConfigStatus: noneStatus as any,
                 organizationId: "org-1",
                 permissions: {},
                 role: UserRole.OWNER,
@@ -120,7 +140,35 @@ describe("BYOK topbar visibility", () => {
                     subscriptionStatus: "trial",
                     trialEnd: new Date().toISOString(),
                 } as any,
-                byokConfig: null,
+                llmConfigStatus: noneStatus as any,
+                organizationId: "org-1",
+                permissions: {},
+                role: UserRole.OWNER,
+            }),
+        ).toBe(false);
+    });
+
+    it("does not show the missing key topbar when the LLM is configured via env", async () => {
+        const { shouldShowBYOKMissingKeyTopbar } = await import("./_utils");
+
+        expect(
+            shouldShowBYOKMissingKeyTopbar({
+                license: licensedSelfHostedEnterprise as any,
+                llmConfigStatus: envStatus as any,
+                organizationId: "org-1",
+                permissions: {},
+                role: UserRole.OWNER,
+            }),
+        ).toBe(false);
+    });
+
+    it("does not show the missing key topbar when BYOK is configured", async () => {
+        const { shouldShowBYOKMissingKeyTopbar } = await import("./_utils");
+
+        expect(
+            shouldShowBYOKMissingKeyTopbar({
+                license: activeBYOKLicense as any,
+                llmConfigStatus: byokStatus as any,
                 organizationId: "org-1",
                 permissions: {},
                 role: UserRole.OWNER,

@@ -56,6 +56,37 @@ export const deleteBYOK = async (params: {
     );
 };
 
+export type LLMConfigSource = "byok" | "env" | "none";
+
+export type LLMConfigStatus = {
+    source: LLMConfigSource;
+    byok: {
+        configured: boolean;
+        model?: string;
+        providerId?: string;
+        baseUrl?: string;
+    };
+    env: {
+        configured: boolean;
+        model?: string;
+        providerId?:
+            | "openai"
+            | "openai_compatible"
+            | "anthropic"
+            | "google_gemini"
+            | "google_vertex";
+        baseUrl?: string;
+        vertexLocation?: string;
+    };
+};
+
+export const getLLMConfigStatus = async (): Promise<LLMConfigStatus> => {
+    return await authorizedFetch<LLMConfigStatus>(
+        ORGANIZATION_PARAMETERS_PATHS.GET_LLM_CONFIG_STATUS,
+        { cache: "no-store" },
+    );
+};
+
 export const getOrganizationParameterByKey = async <
     T extends { configValue: unknown },
 >(

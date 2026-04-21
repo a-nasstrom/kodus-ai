@@ -18,6 +18,10 @@ import {
 } from '@libs/organization/application/use-cases/organizationParameters/get-models-by-provider.use-case';
 import { DeleteByokConfigUseCase } from '@libs/organization/application/use-cases/organizationParameters/delete-byok-config.use-case';
 import {
+    GetLLMConfigStatusUseCase,
+    LLMConfigStatus,
+} from '@libs/organization/application/use-cases/organizationParameters/get-llm-config-status.use-case';
+import {
     GetCockpitMetricsVisibilityUseCase,
     GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN,
 } from '@libs/organization/application/use-cases/organizationParameters/get-cockpit-metrics-visibility.use-case';
@@ -67,6 +71,7 @@ export class OrganizationParametersController {
         private readonly getModelsByProviderUseCase: GetModelsByProviderUseCase,
         private readonly providerService: ProviderService,
         private readonly deleteByokConfigUseCase: DeleteByokConfigUseCase,
+        private readonly getLLMConfigStatusUseCase: GetLLMConfigStatusUseCase,
         @Inject(GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN)
         private readonly getCockpitMetricsVisibilityUseCase: GetCockpitMetricsVisibilityUseCase,
         private readonly ignoreBotsUseCase: IgnoreBotsUseCase,
@@ -219,6 +224,31 @@ export class OrganizationParametersController {
             organizationId,
             configType,
         );
+    }
+
+    @Get('/llm-config/status')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.OrganizationSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Get LLM provider configuration status',
+        description:
+            'Return which LLM configuration source is active (BYOK, env, or none) and a non-sensitive descriptor of each source. Never returns the API key itself.',
+    })
+    public async getLLMConfigStatus(): Promise<LLMConfigStatus> {
+        const organizationId = this.request?.user?.organization?.uuid;
+
+        if (!organizationId) {
+            throw new BadRequestException('Missing organizationId in request');
+        }
+
+        return await this.getLLMConfigStatusUseCase.execute({
+            organizationId,
+        });
     }
 
     @Get('/cockpit-metrics-visibility')
