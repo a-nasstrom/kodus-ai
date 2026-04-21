@@ -77,7 +77,7 @@ export default async function Layout({ children }: React.PropsWithChildren) {
         organizationName,
         organizationLicense,
         usersWithAssignedLicense,
-        byokConfig,
+        llmConfigStatus,
         featureFlags,
     } = layoutData;
 
@@ -87,7 +87,7 @@ export default async function Layout({ children }: React.PropsWithChildren) {
     const isTrial = organizationLicense?.subscriptionStatus === "trial";
     const showBYOKMissingKeyTopbar = shouldShowBYOKMissingKeyTopbar({
         license: organizationLicense,
-        byokConfig,
+        llmConfigStatus,
         permissions,
         organizationId,
         role: session.user.role,
