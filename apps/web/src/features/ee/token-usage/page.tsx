@@ -77,14 +77,6 @@ export default async function TokenUsagePage({
 }: {
     searchParams: { [key: string]: string | string[] | undefined };
 }) {
-    const tokenUsagePageFeatureFlag = await isFeatureEnabled({
-        feature: FEATURE_FLAGS.tokenUsagePage,
-    });
-
-    if (!tokenUsagePageFeatureFlag) {
-        notFound();
-    }
-
     const params = await searchParams;
     const teamId = await getGlobalSelectedTeamId();
     const subscription = await validateOrganizationLicense({ teamId }).catch(
