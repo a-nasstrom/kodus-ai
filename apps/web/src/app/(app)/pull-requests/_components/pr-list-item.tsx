@@ -483,6 +483,18 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 </TableCell>
                 <TableCell className="hidden w-28 lg:table-cell">
                     <span className="text-text-tertiary text-sm tabular-nums">
+                        {latest.automationExecution?.createdAt ? (
+                            <TimeAgoDisplay
+                                dateString={latest.automationExecution.createdAt}
+                                timezone={timezone}
+                            />
+                        ) : (
+                            "—"
+                        )}
+                    </span>
+                </TableCell>
+                <TableCell className="hidden w-28 lg:table-cell">
+                    <span className="text-text-tertiary text-sm tabular-nums">
                         <TimeAgoDisplay
                             dateString={latest.createdAt}
                             timezone={timezone}
@@ -527,7 +539,7 @@ export const PrListItem = ({ group }: PrListItemProps) => {
             {isOpen && (
                 <TableRow className="hover:bg-transparent">
                     <TableCell
-                        colSpan={10}
+                        colSpan={11}
                         className="border-b-card-lv3/60 bg-card-lv2/20 p-0">
                         <div className="max-w-[calc(100vw-6rem)] px-4 pt-2 pb-6">
                             <div className="pt-2">
