@@ -30,6 +30,22 @@ export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
     return license.planType.includes("byok");
 };
 
+export const isEnterprisePlan = (license: OrganizationLicense): boolean => {
+    if (
+        license.subscriptionStatus === "self-hosted" ||
+        license.subscriptionStatus === "licensed-self-hosted"
+    ) {
+        return true;
+    }
+    if (license.subscriptionStatus === "trial") {
+        return true;
+    }
+    if (license.subscriptionStatus !== "active") {
+        return false;
+    }
+    return license.planType?.startsWith("enterprise") ?? false;
+};
+
 export const shouldShowBYOKMissingKeyTopbar = (params: {
     license: OrganizationLicense | null;
     llmConfigStatus: LLMConfigStatus | null | undefined;
@@ -67,4 +83,15 @@ export const shouldShowBYOKMissingKeyTopbar = (params: {
         action: Action.Update,
         resource: ResourceType.OrganizationSettings,
     });
+};
+
+/**
+ * Obfuscate an API key for display so shoulder-surfing and screen-sharing
+ * can't leak the secret. Keeps a short prefix + suffix so the user can
+ * still recognize which key is stored.
+ */
+export const maskKey = (key?: string): string => {
+    if (!key) return "";
+    if (key.length <= 8) return "•••• ••••";
+    return `${key.slice(0, 4)}•••••${key.slice(-4)}`;
 };

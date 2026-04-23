@@ -49,13 +49,19 @@ export class TypeORMFactory implements TypeOrmOptionsFactory {
         };
         const poolConfig = poolConfigs[componentType] || poolConfigs.default;
 
+        const connectionConfig = this.config.url
+            ? { url: this.config.url }
+            : {
+                  host: this.config.host,
+                  port: this.config.port,
+                  username: this.config.username,
+                  password: this.config.password,
+                  database: this.config.database,
+              };
+
         const optionsTypeOrm: TypeOrmModuleOptions = {
             type: 'postgres',
-            host: this.config.host,
-            port: this.config.port,
-            username: this.config.username,
-            password: this.config.password,
-            database: this.config.database,
+            ...connectionConfig,
             entities: ENTITIES,
             autoLoadEntities: false,
             cache: false,
