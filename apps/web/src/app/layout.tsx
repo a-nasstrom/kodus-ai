@@ -57,6 +57,7 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
         tokenDocsAzureRepos: process.env.WEB_TOKEN_DOCS_AZUREREPOS ?? "",
         ruleFilesDocs: process.env.WEB_RULE_FILES_DOCS ?? "",
         releaseVersion: process.env.RELEASE_VERSION ?? "",
+        nodeEnv: process.env.WEB_NODE_ENV ?? "",
     };
 
     return (

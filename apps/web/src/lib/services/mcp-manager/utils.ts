@@ -1,18 +1,17 @@
+import "server-only";
+
 import { typedFetch } from "@services/fetch";
 import { auth } from "src/core/config/auth";
 import { createUrl } from "src/core/utils/helpers";
 import { isServerSide } from "src/core/utils/server-side";
 import { getJWTToken } from "src/core/utils/session";
 
-/**
- * Custom error for MCP Manager service unavailable
- */
-export class MCPServiceUnavailableError extends Error {
-    constructor(message = "MCP Manager service is not available") {
-        super(message);
-        this.name = "MCPServiceUnavailableError";
-    }
-}
+import { MCPServiceUnavailableError } from "./errors";
+
+// Re-exported for backward compatibility with server-only callers that
+// used to import the error class from this file. Client consumers must
+// import from "./errors" directly (this file is now server-only).
+export { MCPServiceUnavailableError } from "./errors";
 
 /**
  * MCP Manager fetch utility

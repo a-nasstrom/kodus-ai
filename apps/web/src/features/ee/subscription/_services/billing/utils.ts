@@ -1,3 +1,5 @@
+import "server-only";
+
 import { typedFetch } from "@services/fetch";
 import { createUrl } from "src/core/utils/helpers";
 import { isServerSide } from "src/core/utils/server-side";

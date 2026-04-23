@@ -24,6 +24,10 @@ export type PublicConfig = {
     tokenDocsAzureRepos: string;
     ruleFilesDocs: string;
     releaseVersion: string;
+    // Distinguishes "development" / "production" / "self-hosted" so
+    // client components (e.g. sso-callback) can decide things like
+    // shared-cookie domain without reading process.env in the browser.
+    nodeEnv: string;
 };
 // Note: WEB_TERMS_AND_CONDITIONS has no client consumer yet, but it's
 // populated end-to-end (SSM → CI workflow → .env, with a real Notion URL
