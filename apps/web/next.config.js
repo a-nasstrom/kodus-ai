@@ -154,21 +154,24 @@ const nextConfig = {
         ];
     },
     reactStrictMode: true,
+    // All public client-facing envs moved to PublicConfig / useConfig()
+    // by waves 1-4 of the web-runtime-config-migration plan. Server-only
+    // envs (internal hostnames/ports, secrets) are now read directly from
+    // process.env in server-only modules (see `import 'server-only'`
+    // guards added in task 7).
     env: {
+        // Kept intentionally: WEB_NODE_ENV / WEB_HOSTNAME_API / WEB_PORT_API
+        // are currently consumed by server-side helpers (helpers.ts) that
+        // still run inside client-imported files in dev; once helpers.ts is
+        // fully guarded with `import 'server-only'` (task 7) these last 3
+        // entries can be removed in task 8.
         WEB_NODE_ENV: process.env.WEB_NODE_ENV,
         WEB_HOSTNAME_API: process.env.WEB_HOSTNAME_API,
         WEB_PORT_API: process.env.WEB_PORT_API,
-        // Wave 1 (GitLab OAuth), Wave 2 (docs/support/token-docs) and
-        // Wave 3 (GitHub / Bitbucket install URLs) migrated to PublicConfig
-        // / useConfig() — no longer inlined at build time.
-        WEB_TERMS_AND_CONDITIONS: process.env.WEB_TERMS_AND_CONDITIONS,
         WEB_HOSTNAME_BILLING: process.env.WEB_HOSTNAME_BILLING,
         WEB_PORT_BILLING: process.env.WEB_PORT_BILLING,
-
         WEB_HOSTNAME_MCP_MANAGER: process.env.WEB_HOSTNAME_MCP_MANAGER,
         WEB_PORT_MCP_MANAGER: process.env.WEB_PORT_MCP_MANAGER,
-        WEB_RULE_FILES_DOCS: process.env.WEB_RULE_FILES_DOCS,
-        RELEASE_VERSION: process.env.RELEASE_VERSION,
     },
 };
 

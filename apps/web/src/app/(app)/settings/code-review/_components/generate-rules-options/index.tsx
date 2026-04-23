@@ -21,6 +21,7 @@ import {
 } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
+import { useConfig } from "@providers/ConfigProvider";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 
 import { getCentralizedPrToastPayload } from "../../_utils/centralized-pr-feedback";
@@ -30,6 +31,7 @@ import { GenerateFromPastReviewsFirstTimeModal } from "./generate-from-past-revi
 import { SyncFromIDEFilesFirstTimeModal } from "./sync-from-ide-files-modal";
 
 export const GenerateRulesOptions = () => {
+    const cfg = useConfig();
     const config = useCodeReviewConfig();
     const { teamId } = useSelectedTeamId();
     const { repositoryId } = useCodeReviewRouteParams();
@@ -247,9 +249,7 @@ export const GenerateRulesOptions = () => {
                 <span>
                     For a detailed list of rule files that can be scanned,{" "}
                 </span>
-                <Link href={process.env.WEB_RULE_FILES_DOCS ?? ""}>
-                    check the docs
-                </Link>
+                <Link href={cfg.ruleFilesDocs || ""}>check the docs</Link>
                 .
             </span>
 
