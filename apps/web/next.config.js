@@ -151,6 +151,9 @@ const nextConfig = {
         WEB_PORT_MCP_MANAGER: process.env.WEB_PORT_MCP_MANAGER,
         WEB_RULE_FILES_DOCS: process.env.WEB_RULE_FILES_DOCS,
         RELEASE_VERSION: process.env.RELEASE_VERSION,
+
+        WEB_HOSTNAME_HELPDESK: process.env.WEB_HOSTNAME_HELPDESK,
+        WEB_PORT_HELPDESK: process.env.WEB_PORT_HELPDESK,
     },
 };
 

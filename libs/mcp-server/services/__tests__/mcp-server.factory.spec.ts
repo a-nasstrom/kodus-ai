@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 const loggerMock = {
     log: jest.fn(),
     error: jest.fn(),
@@ -5,7 +7,8 @@ const loggerMock = {
     debug: jest.fn(),
 };
 
-const toShapeMock = jest.fn((schema) => schema);
+const emptyZodShape = { __placeholder: z.string().optional() };
+const toShapeMock = jest.fn(() => emptyZodShape);
 
 const mockRegisterTool = jest.fn();
 const mockConnect = jest.fn();

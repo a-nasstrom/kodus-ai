@@ -129,6 +129,9 @@ KEYS=(
     "/qa/kodus-orchestrator/API_BETTERSTACK_HEARTBEAT_WEBHOOK_URL"
 
     "/qa/kodus-orchestrator/API_EXA_KEY"
+
+    "/qa/kodus-orchestrator/WEB_HOSTNAME_HELPDESK"
+    "/qa/kodus-orchestrator/WEB_PORT_HELPDESK" 
 )
 
 # Lista de todas as chaves que você precisa
