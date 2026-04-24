@@ -15,10 +15,26 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@components/ui/tooltip";
-import { FileTextIcon, LifeBuoy } from "lucide-react";
+import { FileTextIcon, Headset, LifeBuoy } from "lucide-react";
 import { cn } from "src/core/utils/components";
+import { useSubscriptionStatus } from "src/features/ee/subscription/_hooks/use-subscription-status";
+import { isSelfHosted } from "src/core/utils/self-hosted";
+
+function useShowHelpdesk() {
+    const subscription = useSubscriptionStatus();
+
+    if (isSelfHosted) return false;
+
+    const planType =
+        "planType" in subscription ? subscription.planType : undefined;
+    if (!planType) return false;
+
+    return planType.startsWith("enterprise");
+}
 
 export const SupportSidebarButton = () => {
+    const showHelpdesk = useShowHelpdesk();
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             // Cmd/Ctrl + Alt/Option + H (Help)
@@ -78,6 +94,19 @@ export const SupportSidebarButton = () => {
                 sideOffset={10}
                 className="w-52 p-0">
                 <div className="flex flex-col">
+                    {showHelpdesk && (
+                        <NextLink
+                            href="/helpdesk"
+                            className={cn(
+                                "flex items-center gap-3 px-4 py-3",
+                                "text-text-secondary hover:text-text-primary hover:bg-background-tertiary",
+                                "border-border-primary cursor-pointer border-b transition-colors",
+                            )}>
+                            <Headset className="size-4" />
+                            <span className="text-sm">Helpdesk</span>
+                        </NextLink>
+                    )}
+
                     <NextLink
                         target="_blank"
                         href={

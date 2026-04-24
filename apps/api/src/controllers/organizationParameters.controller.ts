@@ -310,7 +310,7 @@ export class OrganizationParametersController {
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
-            resource: ResourceType.OrganizationSettings,
+            resource: ResourceType.Cockpit,
         }),
     )
     @ApiOperation({
@@ -335,7 +335,7 @@ export class OrganizationParametersController {
     @CheckPolicies(
         checkPermissions({
             action: Action.Update,
-            resource: ResourceType.OrganizationSettings,
+            resource: ResourceType.Cockpit,
         }),
     )
     @ApiOperation({

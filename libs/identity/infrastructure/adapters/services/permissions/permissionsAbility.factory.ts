@@ -98,6 +98,7 @@ export class PermissionsAbilityFactory {
                 canInRepo(Action.Delete, ResourceType.KodyRules);
 
                 canInRepo(Action.Read, ResourceType.Cockpit, {}, true);
+                canInOrg(Action.Update, ResourceType.Cockpit);
 
                 canInOrg(Action.Read, ResourceType.Issues);
                 canInRepo(Action.Update, ResourceType.Issues);
