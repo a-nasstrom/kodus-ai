@@ -354,17 +354,14 @@ export const AddRepoModal = ({
                 {singleSelectedRepoId && directoryPaths.length > 0 && (
                     <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-400">
                         <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
-                        {directoryPaths.length === 1 ? (
-                            <span>
-                                PRs will only be reviewed when all changed files
-                                are inside this directory.
-                            </span>
-                        ) : (
-                            <span>
-                                PRs will be reviewed when at least one changed
-                                file is inside any of the selected directories.
-                            </span>
-                        )}
+                        <span>
+                            PRs will be reviewed when at least one changed
+                            file is inside any of the selected{" "}
+                            {directoryPaths.length === 1
+                                ? "directory"
+                                : "directories"}
+                            .
+                        </span>
                     </div>
                 )}
 
