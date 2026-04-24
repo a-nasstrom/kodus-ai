@@ -329,9 +329,14 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
         expect(updatedRepository.directories).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    path: '/src/config',
                     name: 'config',
                     isSelected: true,
+                    folders: expect.arrayContaining([
+                        expect.objectContaining({
+                            path: '/src/config',
+                            name: 'config',
+                        }),
+                    ]),
                 }),
             ]),
         );
