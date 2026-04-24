@@ -92,6 +92,8 @@ export class ExecuteCliReviewUseCase implements IUseCase {
         let execution: IAutomationExecution | null = null;
 
         try {
+            const isFastMode = input.config?.fast === true;
+
             this.logger.log({
                 message: 'Starting CLI review',
                 context: ExecuteCliReviewUseCase.name,
@@ -100,18 +102,23 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                     teamId: organizationAndTeamData.teamId,
                     correlationId,
                     isTrialMode,
-                    isFastMode: input.config?.fast,
+                    isFastMode,
                     filesCount: input.config?.files?.length || 0,
                 },
             });
 
-            // 1. Create automation execution for tracking
-            execution = await this.createAutomationExecution(
-                organizationAndTeamData,
-                correlationId,
-                userEmail,
-                gitContext,
-            );
+            // 1. Create automation execution for tracking (skipped in trial
+            //    mode — trial requests have teamId='trial' which is not a
+            //    valid UUID and would fail the team_automations lookup with
+            //    QueryFailedError: invalid input syntax for type uuid).
+            execution = isTrialMode
+                ? null
+                : await this.createAutomationExecution(
+                      organizationAndTeamData,
+                      correlationId,
+                      userEmail,
+                      gitContext,
+                  );
 
             // 2. Convert CLI input to FileChange[]
             const changedFiles = this.converter.convertToFileChanges(input);
@@ -151,16 +158,23 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                   );
 
             // 4. Create pipeline context
+            //    When --fast is set, force the CLI-specific fast review mode
+            //    on the resolved config so the agent orchestrator uses the
+            //    capped step budget and skips heavy passes.
+            const effectiveConfig = isFastMode
+                ? { ...codeReviewConfig, reviewMode: 'fast' as const }
+                : codeReviewConfig;
+
             const context: CliReviewPipelineContext = {
                 // CLI-specific fields
-                isFastMode: input.config?.fast || !input.config?.files,
+                isFastMode,
                 isTrialMode,
                 startTime,
                 correlationId,
 
                 // Required by CodeReviewPipelineContext (dummy values for CLI)
                 organizationAndTeamData,
-                codeReviewConfig,
+                codeReviewConfig: effectiveConfig,
                 changedFiles,
                 validSuggestions: [],
                 discardedSuggestions: [],
@@ -211,20 +225,24 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                       }
                     : undefined,
 
-                // Pipeline metadata
+                // Pipeline metadata — populate lastExecution with the real
+                // AutomationExecution uuid so the pipeline observer uses
+                // that (a valid uuid) instead of falling back to
+                // `correlationId`, which for CLI is a `corr_xxx` string
+                // and breaks uuid-typed queries.
                 pipelineVersion: '1.0',
                 errors: [] as PipelineError[],
                 statusInfo: {
                     status: AutomationStatus.IN_PROGRESS,
                 },
+                pipelineMetadata: execution?.uuid
+                    ? {
+                          lastExecution: {
+                              uuid: execution.uuid,
+                          },
+                      }
+                    : undefined,
 
-                // Analysis tasks metadata
-                tasks: {
-                    astAnalysis: {
-                        taskId: correlationId,
-                        status: 'TASK_STATUS_COMPLETED' as any,
-                    },
-                },
             };
 
             // 5. Execute pipeline
@@ -376,7 +394,9 @@ export class ExecuteCliReviewUseCase implements IUseCase {
                 config: {
                     ...normalizedConfig,
                     languageResultPrompt:
-                        (normalizedConfig as any).languageResultPrompt || {},
+                        typeof (normalizedConfig as any).languageResultPrompt === 'string'
+                            ? (normalizedConfig as any).languageResultPrompt
+                            : 'en-US',
                     kodyRules: standardRules,
                     kodyMemoryRules: memoryRules,
                 } as any as CodeReviewConfig,
@@ -531,7 +551,7 @@ export class ExecuteCliReviewUseCase implements IUseCase {
             ...defaults,
             automatedReviewActive: true,
             pullRequestApprovalActive: false,
-            languageResultPrompt: {},
+            languageResultPrompt: 'en-US',
         } as any as CodeReviewConfig;
 
         // Force Gemini Flash for trial users (cost optimization)

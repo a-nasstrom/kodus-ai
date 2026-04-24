@@ -159,9 +159,12 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                 availableProviders: error.availableProviders,
             });
 
+            const requiredLabels = (error.requiredMcps ?? [])
+                .map((m: any) => m?.label || m?.category || 'unknown')
+                .join(', ');
+            const availableProviders = error.availableProviders ?? [];
             this.logger.warn({
-                message:
-                    'Business rules validation skipped due to missing required MCP integrations',
+                message: `Business rules validation skipped — required MCP integrations missing: [${requiredLabels || 'unknown'}]. Available providers: [${availableProviders.join(', ') || 'none'}]`,
                 context: BusinessRulesValidationAgentProvider.name,
                 serviceName: BusinessRulesValidationAgentProvider.name,
                 metadata: {
@@ -169,6 +172,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                         context.organizationAndTeamData?.organizationId,
                     teamId: context.organizationAndTeamData?.teamId,
                     requiredMcps: error.requiredMcps,
+                    availableProviders,
                 },
             });
 
@@ -181,15 +185,16 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
                 availableProviders: error.availableProviders,
             });
 
+            const availableProviders = error.availableProviders ?? [];
             this.logger.warn({
-                message:
-                    'Business rules validation skipped due to MCP connection failure during fetcher initialization',
+                message: `Business rules validation skipped due to MCP connection failure during fetcher initialization — available providers: [${availableProviders.join(', ') || 'none'}]`,
                 context: BusinessRulesValidationAgentProvider.name,
                 serviceName: BusinessRulesValidationAgentProvider.name,
                 metadata: {
                     organizationId:
                         context.organizationAndTeamData?.organizationId,
                     teamId: context.organizationAndTeamData?.teamId,
+                    availableProviders,
                     errorMessage:
                         error instanceof Error ? error.message : String(error),
                 },

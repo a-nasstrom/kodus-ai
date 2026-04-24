@@ -25,6 +25,14 @@ services:
     kodus-api:
         <<: *app-service-defaults
         container_name: kodus_api
+        depends_on:
+            rabbitmq:
+                condition: service_healthy
+                # Optional so the compose file still validates when the
+                # `local-db` profile is not active (e.g. pointing at an
+                # external RabbitMQ). When the local rabbitmq IS running,
+                # docker waits for its healthcheck before starting.
+                required: false
         ports:
             - '${API_PORT:-3001}:${API_PORT:-3001}'
             - '9229:9229'
@@ -61,6 +69,14 @@ services:
     worker:
         <<: *app-service-defaults
         container_name: kodus_worker
+        depends_on:
+            rabbitmq:
+                condition: service_healthy
+                # Optional so the compose file still validates when the
+                # `local-db` profile is not active (e.g. pointing at an
+                # external RabbitMQ). When the local rabbitmq IS running,
+                # docker waits for its healthcheck before starting.
+                required: false
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
@@ -83,7 +99,7 @@ services:
             start_period: 60s
         environment:
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
-            - NODE_OPTIONS=--max-semi-space-size=64
+            - NODE_OPTIONS=--max-old-space-size=4096 --max-semi-space-size=64
             - DEBUG_PORT=9231
             - COMPONENT_TYPE=worker
             - API_LOG_PRETTY=true
@@ -93,6 +109,14 @@ services:
     webhooks:
         <<: *app-service-defaults
         container_name: kodus_webhooks
+        depends_on:
+            rabbitmq:
+                condition: service_healthy
+                # Optional so the compose file still validates when the
+                # `local-db` profile is not active (e.g. pointing at an
+                # external RabbitMQ). When the local rabbitmq IS running,
+                # docker waits for its healthcheck before starting.
+                required: false
         volumes:
             - .:/usr/src/app:delegated
             - node_modules_cache:/usr/src/app/node_modules:nocopy
@@ -116,7 +140,7 @@ services:
             start_period: 60s
         environment:
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
-            - NODE_OPTIONS=--max-semi-space-size=64
+            - NODE_OPTIONS=--max-old-space-size=4096 --max-semi-space-size=64
             - DEBUG_PORT=9232
             - API_LOG_PRETTY=true
             - PYROSCOPE_SERVER_ADDRESS=${PYROSCOPE_SERVER_ADDRESS:-http://pyroscope:4040}
@@ -202,6 +226,11 @@ services:
             - '5672:5672'
             - '15672:15672'
             - '15692:15692'
+        environment:
+            - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-dev}
+            - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-devpass}
+            - RABBITMQ_HOSTNAME=${RABBITMQ_HOSTNAME:-rabbitmq}
+            - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit disk_free_limit 1000000000 -rabbit heartbeat 60
         volumes:
             - rabbitmq-data:/var/lib/rabbitmq
         restart: unless-stopped
@@ -223,11 +252,7 @@ services:
             nofile:
                 soft: 65536
                 hard: 65536
-        environment:
-            RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-dev}
-            RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-devpass}
-            RABBITMQ_HOSTNAME: ${RABBITMQ_HOSTNAME:-rabbitmq}
-            RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: '-rabbit heartbeat 60'
+
         command: /usr/local/bin/init-definitions.sh
 
     db_postgres:

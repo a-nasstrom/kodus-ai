@@ -11,7 +11,7 @@ export class DistributedLock {
 
     constructor(
         private readonly dataSource: DataSource,
-        private readonly lockId: number,
+        private readonly lockId: [number, number],
         private readonly ttl?: number,
         private readonly logger = createLogger(DistributedLock.name),
     ) {
@@ -23,7 +23,7 @@ export class DistributedLock {
                         this.logger.error({
                             message: 'Error auto-releasing lock',
                             context: DistributedLock.name,
-                            error,
+                            error: error instanceof Error ? error : undefined,
                             metadata: { lockId },
                         });
                     });
@@ -38,9 +38,10 @@ export class DistributedLock {
         }
 
         try {
-            await this.dataSource.query(`SELECT pg_advisory_unlock($1)`, [
+            await this.dataSource.query(
+                `SELECT pg_advisory_unlock($1, $2)`,
                 this.lockId,
-            ]);
+            );
             this.released = true;
             this.logger.debug({
                 message: 'Distributed lock released',
@@ -83,8 +84,8 @@ export class DistributedLockService {
 
         try {
             const result = await this.dataSource.query(
-                `SELECT pg_try_advisory_lock($1) as acquired`,
-                [lockId],
+                `SELECT pg_try_advisory_lock($1, $2) as acquired`,
+                lockId,
             );
 
             if (!result[0]?.acquired) {
@@ -121,18 +122,27 @@ export class DistributedLockService {
     }
 
     /**
-     * Hash string key to bigint for PostgreSQL advisory lock
-     * PostgreSQL advisory locks use bigint (64-bit integer)
+     * Hash string key to two 32-bit integers for PostgreSQL advisory lock.
+     * Uses pg_try_advisory_lock(int, int) for 64-bit key space,
+     * reducing collision probability from ~1/65k to ~1/4B concurrent locks.
      */
-    private hashKey(key: string): number {
-        // Use simple hash (djb2 algorithm)
-        let hash = 5381;
+    private hashKey(key: string): [number, number] {
+        // djb2 hash — first 32 bits
+        let hash1 = 5381;
         for (let i = 0; i < key.length; i++) {
-            hash = (hash << 5) + hash + key.charCodeAt(i);
-            hash = hash & hash; // Convert to 32bit integer
+            hash1 = (hash1 << 5) + hash1 + key.charCodeAt(i);
+            hash1 = hash1 & hash1;
         }
-        // PostgreSQL needs a positive number
-        return Math.abs(hash);
+
+        // FNV-1a hash — second 32 bits (independent algorithm to minimize correlation)
+        let hash2 = 0x811c9dc5;
+        for (let i = 0; i < key.length; i++) {
+            hash2 ^= key.charCodeAt(i);
+            hash2 = Math.imul(hash2, 0x01000193);
+            hash2 = hash2 & hash2;
+        }
+
+        return [Math.abs(hash1), Math.abs(hash2)];
     }
 
     /**
@@ -142,15 +152,16 @@ export class DistributedLockService {
         const lockId = this.hashKey(key);
         try {
             const result = await this.dataSource.query(
-                `SELECT pg_try_advisory_lock($1) as acquired`,
-                [lockId],
+                `SELECT pg_try_advisory_lock($1, $2) as acquired`,
+                lockId,
             );
 
             if (result[0]?.acquired) {
                 // Release immediately (was just checking)
-                await this.dataSource.query(`SELECT pg_advisory_unlock($1)`, [
+                await this.dataSource.query(
+                    `SELECT pg_advisory_unlock($1, $2)`,
                     lockId,
-                ]);
+                );
                 return false; // Was not in use
             }
 

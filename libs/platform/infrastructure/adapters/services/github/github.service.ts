@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createAppAuth } from '@octokit/auth-app';
+import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';
 import { graphql } from '@octokit/graphql';
 import { enterpriseServer313 } from '@octokit/plugin-enterprise-server';
 import { retry } from '@octokit/plugin-retry';
@@ -2278,6 +2279,7 @@ export class GithubService
         try {
             const octokit = new Octokit({
                 auth: auth.token,
+                request: { timeout: INTEGRATION_REQUEST_TIMEOUT_MS },
             });
 
             await octokit.rest.rateLimit.get();
@@ -2588,6 +2590,7 @@ export class GithubService
                         'API_GITHUB_CLIENT_SECRET',
                     ),
                 },
+                request: { timeout: INTEGRATION_REQUEST_TIMEOUT_MS },
             });
 
             const installationAuthentication = await appOctokit.auth({
@@ -3252,6 +3255,21 @@ export class GithubService
         return `\`\`\`${language}\n${code}\n\`\`\``;
     }
 
+    private dedentCode(code: string): string {
+        const lines = code.split('\n');
+        const indents = lines
+            .filter((line) => line.trim().length > 0)
+            .map((line) => line.match(/^[ \t]*/)?.[0].length ?? 0);
+        if (indents.length === 0) return code;
+        const minIndent = Math.min(...indents);
+        if (minIndent === 0) return code;
+        return lines
+            .map((line) =>
+                line.length >= minIndent ? line.slice(minIndent) : line,
+            )
+            .join('\n');
+    }
+
     formatSub(text: string) {
         return `<sub>${text}</sub>\n\n`;
     }
@@ -3313,7 +3331,12 @@ ${copyPrompt}
             : '';
 
         const codeBlock = improvedCode
-            ? this.formatCodeBlock(language, improvedCode)
+            ? this.formatCodeBlock(
+                  language,
+                  isCommittableSuggestion
+                      ? improvedCode
+                      : this.dedentCode(improvedCode),
+              )
             : '';
         const suggestionContent = lineComment?.body?.suggestionContent || '';
         const actionStatement = lineComment?.body?.actionStatement
@@ -4051,11 +4074,24 @@ This is an experimental feature that generates committable changes. Review the d
 
                 return lines;
             } catch (error) {
-                this.logger.error({
-                    message: 'Error getting file content from pull request',
+                const status =
+                    (error as any)?.status ?? (error as any)?.response?.status;
+                const refDeleted =
+                    status === 404 &&
+                    /No commit found for the ref/i.test(
+                        (error as any)?.message ?? '',
+                    );
+                this.logger.warn({
+                    message: refDeleted
+                        ? 'PR head ref missing — falling back to base ref'
+                        : 'Error getting file content from pull request',
                     context: GithubService.name,
                     error,
-                    metadata: { ...params },
+                    metadata: {
+                        ...params,
+                        prHeadMissing: refDeleted,
+                        httpStatus: status,
+                    },
                 });
 
                 // If it fails, try to fetch from the base branch

@@ -1,9 +1,10 @@
 import { createHash } from 'crypto';
 
 import { createLogger } from '@kodus/flow';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/application/use-cases/enqueue-ast-graph-update-on-merged.use-case';
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
     hasReviewMarker,
@@ -45,6 +46,8 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
         private readonly enqueueImplementationCheckUseCase: EnqueueImplementationCheckUseCase,
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestsService: IPullRequestsService,
+        @Optional()
+        private readonly enqueueAstGraphUpdateOnMergedUseCase?: EnqueueAstGraphUpdateOnMergedUseCase,
     ) {}
 
     /**
@@ -244,7 +247,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                                     message:
                                         'Failed to enqueue implementation check',
                                     context: AzureReposPullRequestHandler.name,
-                                    error: e,
+                                    error: e instanceof Error ? e : undefined,
                                     metadata: {
                                         repository,
                                         prId,
@@ -297,6 +300,32 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                                                         ?.pullRequestId,
                                             },
                                         );
+
+                                    this.enqueueAstGraphUpdateOnMergedUseCase
+                                        ?.execute({
+                                            prNumber:
+                                                params?.payload?.resource
+                                                    ?.pullRequestId,
+                                            repoExternalId: repository.id,
+                                            repoName: repository.name,
+                                            platform:
+                                                PlatformType.AZURE_REPOS,
+                                            baseBranch: baseRefFull,
+                                            newSha:
+                                                params?.payload?.resource
+                                                    ?.lastMergeCommit
+                                                    ?.commitId,
+                                            organizationAndTeamData:
+                                                context.organizationAndTeamData,
+                                        })
+                                        .catch((e) => {
+                                            this.logger.warn({
+                                                message: `[AST-GRAPH] Failed to enqueue graph update after PR#${prId} merge`,
+                                                context:
+                                                    AzureReposPullRequestHandler.name,
+                                                error: e,
+                                            });
+                                        });
                                 }
                             }
                         }
@@ -304,7 +333,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                         this.logger.error({
                             message: 'Failed to sync Kody Rules after PR merge',
                             context: AzureReposPullRequestHandler.name,
-                            error: e,
+                            error: e instanceof Error ? e : undefined,
                             metadata: {
                                 prId,
                                 eventType,
@@ -352,7 +381,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                 },
                 message: `Successfully processed Azure Repos event '${eventType}' for PR ID: ${prId}`,
             });
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error({
                 context: AzureReposPullRequestHandler.name,
                 serviceName: AzureReposPullRequestHandler.name,
@@ -362,8 +391,8 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     repoName,
                     organizationAndTeamData: context.organizationAndTeamData,
                 },
-                message: `Error processing Azure Repos pull request #${prId}: ${error.message}`,
-                error,
+                message: `Error processing Azure Repos pull request #${prId}: ${error?.message}`,
+                error: error instanceof Error ? error : undefined,
             });
             throw error;
         }
@@ -508,7 +537,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                 this.chatWithKodyFromGitUseCase.execute(params);
                 return;
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error({
                 context: AzureReposPullRequestHandler.name,
                 serviceName: AzureReposPullRequestHandler.name,
@@ -516,8 +545,8 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     prId,
                     repository,
                 },
-                message: `Error processing Azure Repos comment: ${error.message}`,
-                error,
+                message: `Error processing Azure Repos comment: ${error?.message}`,
+                error: error instanceof Error ? error : undefined,
             });
             throw error;
         }
@@ -647,11 +676,11 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
 
             // Default: Return true (new commit or no stored PR)
             return true;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error({
-                message: `Error in shouldTriggerCodeReview: ${error.message}`,
+                message: `Error in shouldTriggerCodeReview: ${error?.message}`,
                 context: AzureReposPullRequestHandler.name,
-                error,
+                error: error instanceof Error ? error : undefined,
                 metadata: { prId },
             });
             // Fail safe: process it if check fails

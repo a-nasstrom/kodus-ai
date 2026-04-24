@@ -20,7 +20,6 @@ import { useAuth } from "src/core/providers/auth.provider";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { ClientSideCookieHelpers } from "src/core/utils/cookie";
 import { captureSegmentEvent } from "src/core/utils/segment";
-import { isSelfHosted } from "src/core/utils/self-hosted";
 
 import { StepIndicators } from "../_components/step-indicators";
 import { useGoToStep } from "../_hooks/use-goto-step";
@@ -39,9 +38,7 @@ export function SetupConnectingGitToolPage(props: {
     const pathname = usePathname();
     const { teamId } = useSelectedTeamId();
     const { userId, email } = useAuth();
-    const nextStepPath = isSelfHosted
-        ? "/setup/byok"
-        : "/setup/choosing-repositories";
+    const nextStepPath = "/setup/choosing-repositories";
 
     const connectOauthIntegration = async (
         key: (typeof GIT_INTEGRATIONS_KEY)[keyof typeof GIT_INTEGRATIONS_KEY],
@@ -290,12 +287,12 @@ export function SetupConnectingGitToolPage(props: {
 
                                     const response =
                                         await magicModal.show<true>(() => (
-                                        <BitbucketTokenModal
-                                            teamId={teamId}
-                                            userId={userId!}
-                                            userEmail={email}
-                                        />
-                                    ));
+                                            <BitbucketTokenModal
+                                                teamId={teamId}
+                                                userId={userId!}
+                                                userEmail={email}
+                                            />
+                                        ));
 
                                     if (!response) return;
 
@@ -324,12 +321,12 @@ export function SetupConnectingGitToolPage(props: {
 
                                     const response =
                                         await magicModal.show<true>(() => (
-                                        <AzureReposTokenModal
-                                            teamId={teamId}
-                                            userId={userId!}
-                                            userEmail={email}
-                                        />
-                                    ));
+                                            <AzureReposTokenModal
+                                                teamId={teamId}
+                                                userId={userId!}
+                                                userEmail={email}
+                                            />
+                                        ));
 
                                     if (!response) return;
 

@@ -17,6 +17,7 @@ import {
 import {
     KodyRuleCentralizedStatus,
     KodyRulesType,
+    resolveKodyRuleDisplaySeverity,
     type KodyRuleWithInheritanceDetails,
 } from "@services/kodyRules/types";
 import { usePermission } from "@services/permissions/hooks";
@@ -76,7 +77,9 @@ export const KodyRuleItem = ({
                 <div className="-mb-2 flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                         {!isMemory && (
-                            <IssueSeverityLevelBadge severity={rule.severity} />
+                            <IssueSeverityLevelBadge
+                                severity={resolveKodyRuleDisplaySeverity(rule)}
+                            />
                         )}
 
                         {rule.sourcePath && (

@@ -1550,6 +1550,7 @@ export class KodyRulesSyncService {
                     type: promptRunner.executeMode,
                     fallback: false,
                 },
+                byokConfig: byokConfigValue,
                 exec: async (callbacks) => {
                     return await promptRunner
                         .builder()
@@ -1659,6 +1660,7 @@ export class KodyRulesSyncService {
                             type: promptRunner.executeMode,
                             fallback: true,
                         },
+                        byokConfig: byokConfigValue,
                         exec: async (callbacks) => {
                             return await promptRunner
                                 .builder()
@@ -1763,6 +1765,7 @@ export class KodyRulesSyncService {
                     type: promptRunner.executeMode,
                     fallback: false,
                 },
+                byokConfig: byokConfigValue,
                 exec: async (callbacks) => {
                     return await promptRunner
                         .builder()
@@ -1838,6 +1841,7 @@ export class KodyRulesSyncService {
                             type: promptRunner.executeMode,
                             fallback: true,
                         },
+                        byokConfig: byokConfigValue,
                         exec: async (callbacks) => {
                             return await promptRunner
                                 .builder()
@@ -1930,6 +1934,7 @@ export class KodyRulesSyncService {
                     type: promptRunner.executeMode,
                     fallback: false,
                 },
+                byokConfig: byokConfigValue,
                 exec: async (callbacks) => {
                     return await promptRunner
                         .builder()
@@ -2000,6 +2005,7 @@ export class KodyRulesSyncService {
                             type: promptRunner.executeMode,
                             fallback: true,
                         },
+                        byokConfig: byokConfigValue,
                         exec: async (callbacks) => {
                             return await promptRunner
                                 .builder()

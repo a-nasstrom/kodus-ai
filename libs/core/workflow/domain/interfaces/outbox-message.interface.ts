@@ -8,4 +8,6 @@ export interface OutboxMessage {
     exchange: string;
     routingKey: string;
     payload: Record<string, unknown>;
+    /** When set, the outbox relay will not pick up this message until after this time. */
+    nextAttemptAt?: Date;
 }

@@ -7,7 +7,7 @@ import { toast } from "@components/ui/toaster/use-toast";
 import { useGetCodeReviewLabels } from "@services/parameters/hooks";
 import { KodyLearningStatus } from "@services/parameters/types";
 import { RotateCcwIcon, SaveIcon } from "lucide-react";
-import { useFormContext, useWatch } from "react-hook-form";
+import { useFormContext } from "react-hook-form";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { unformatConfig } from "src/core/utils/helpers";
 
@@ -24,7 +24,6 @@ import {
 } from "../../../_components/context";
 import { useCodeReviewRouteParams } from "../../../_hooks";
 import { AnalysisTypes } from "../general/_components/analysis-types";
-import { CodeReviewVersionSelector } from "../general/_components/code-review-version-selector";
 import {
     filterVisibleReviewLabels,
     mergeMissingReviewOptions,
@@ -36,12 +35,7 @@ export default function ReviewCategories() {
     const form = useFormContext<CodeReviewFormType>();
     const { teamId } = useSelectedTeamId();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
-    const codeReviewVersion =
-        useWatch({
-            control: form.control,
-            name: "codeReviewVersion.value",
-        }) || "v2";
-    const { data: labels = [] } = useGetCodeReviewLabels(codeReviewVersion);
+    const { data: labels = [] } = useGetCodeReviewLabels("v2");
     const { saveSettings } = useCodeReviewSettingsMutation({
         teamId,
         repositoryId,
@@ -69,14 +63,10 @@ export default function ReviewCategories() {
                 prepare: (data) => {
                     const { language: _language, ...config } = data;
                     const unformatted = unformatConfig(config);
-                    const rawVersion = unformatted.codeReviewVersion;
-                    const codeReviewVersion =
-                        rawVersion === "legacy" ? "legacy" : "v2";
                     return {
                         savedFormData: data,
                         codeReviewConfig: {
                             ...unformatted,
-                            codeReviewVersion,
                             reviewOptions: unformatted.reviewOptions,
                         },
                     };
@@ -157,9 +147,6 @@ export default function ReviewCategories() {
 
             <Page.Content>
                 <CentralizedConfigReadOnlyAlert />
-                <div data-field-name="codeReviewVersion">
-                    <CodeReviewVersionSelector />
-                </div>
                 <div data-field-name="analysisTypes">
                     <AnalysisTypes />
                 </div>

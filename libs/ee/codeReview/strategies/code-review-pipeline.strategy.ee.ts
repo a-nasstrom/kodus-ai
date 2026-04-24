@@ -23,8 +23,6 @@ import { ValidateConfigStage } from '@libs/code-review/pipeline/stages/validate-
 import { IPipelineStrategy } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-strategy.interface';
 import { PipelineStage } from '@libs/core/infrastructure/pipeline/interfaces/pipeline.interface';
 
-import { CodeAnalysisASTCleanupStage } from '../stages/code-analysis-ast-cleanup.stage';
-import { CodeAnalysisASTStage } from '../stages/code-analysis-ast.stage';
 import { KodyFineTuningStage } from '../stages/kody-fine-tuning.stage';
 
 import { FileContextGateStage } from '@libs/code-review/pipeline/stages/file-context-gate.stage';
@@ -49,12 +47,10 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
         private readonly initialCommentStage: InitialCommentStage,
         private readonly collectCrossFileContextStage: CollectCrossFileContextStage,
         private readonly kodyFineTuningStage: KodyFineTuningStage,
-        private readonly codeAnalysisASTStage: CodeAnalysisASTStage,
         private readonly processFilesPrLevelReviewStage: ProcessFilesPrLevelReviewStage,
         private readonly processFilesReview: ProcessFilesReview,
         private readonly createPrLevelCommentsStage: CreatePrLevelCommentsStage,
         private readonly createFileCommentsStage: CreateFileCommentsStage,
-        private readonly codeAnalysisASTCleanupStage: CodeAnalysisASTCleanupStage,
         private readonly aggregateResultsStage: AggregateResultsStage,
         private readonly updateCommentsAndGenerateSummaryStage: UpdateCommentsAndGenerateSummaryStage,
         private readonly requestChangesOrApproveStage: RequestChangesOrApproveStage,

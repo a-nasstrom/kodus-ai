@@ -13,6 +13,7 @@ import {
 import { Spinner } from "@components/ui/spinner";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     GaugeIcon,
     GitPullRequestIcon,
@@ -20,7 +21,6 @@ import {
     LibraryBig,
     SlidersHorizontalIcon,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { UserNav } from "src/core/layout/navbar/_components/user-nav";
 import { cn } from "src/core/utils/components";

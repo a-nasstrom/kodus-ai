@@ -293,6 +293,7 @@ export class CommentManagerService implements ICommentManagerService {
                             spanName,
                             runName,
                             attrs: spanAttrs,
+                            byokConfig: byokConfigValue,
                             exec: async (callbacks) => {
                                 return await promptRunner
                                     .builder()
@@ -349,6 +350,7 @@ export class CommentManagerService implements ICommentManagerService {
                                         chunkIndex: i,
                                         totalChunks: fileChunks.length,
                                     },
+                                    byokConfig: byokConfigValue,
                                     exec: async (callbacks) => {
                                         return await promptRunner
                                             .builder()
@@ -413,6 +415,7 @@ You must always respond in ${languageResultPrompt}.`;
                             spanName: consolidationSpanName,
                             runName: consolidationRunName,
                             attrs: spanAttrs,
+                            byokConfig: byokConfigValue,
                             exec: async (callbacks) => {
                                 return await promptRunner
                                     .builder()
@@ -1049,8 +1052,8 @@ You must always respond in ${languageResultPrompt}.`;
                                     prNumber,
                                     repository,
                                     suggestionId:
-                                        fallbackResult.fallbackComment.suggestion
-                                            ?.id,
+                                        fallbackResult.fallbackComment
+                                            .suggestion?.id,
                                     commentId: fallbackCommentId,
                                     pullRequestReviewId:
                                         fallbackPullRequestReviewId,
@@ -1630,6 +1633,7 @@ ${reviewOptions}
                     spanName,
                     runName,
                     attrs: spanAttrs,
+                    byokConfig,
                     exec: async (callbacks) => {
                         return await promptRunner
                             .builder()
@@ -2225,8 +2229,6 @@ ${reviewOptions}
         let commentBody: string;
 
         if (endReviewMessage) {
-            commentBody = endReviewMessage;
-
             const placeholderContext = await this.getTemplateContext(
                 changedFiles,
                 organizationAndTeamData,

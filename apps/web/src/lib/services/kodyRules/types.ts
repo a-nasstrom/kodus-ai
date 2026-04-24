@@ -1,4 +1,5 @@
 import { ProgrammingLanguage } from "src/core/enums/programming-language";
+import { SeverityLevel } from "src/core/types";
 
 export enum KodyRuleInheritanceOrigin {
     GLOBAL = "global",
@@ -67,7 +68,7 @@ export type LibraryRule = {
     title: string;
     rule: string;
     why_is_this_important: string;
-    severity: "Low" | "Medium" | "High" | "Critical";
+    severity?: "Low" | "Medium" | "High" | "Critical";
     bad_example?: string;
     good_example?: string;
     /**
@@ -96,7 +97,7 @@ type KodyRulesExample = {
 
 export type FindLibraryKodyRulesFilters = {
     name?: string;
-    severity?: "Low" | "Medium" | "High" | "Critical";
+    severity?: KodyRule["severity"];
     tags?: string[];
     language?: keyof typeof ProgrammingLanguage;
     buckets?: string[];
@@ -195,4 +196,23 @@ export type KodyRuleSuggestion = {
     prUrl: string;
     repositoryId: string;
     repositoryFullName: string;
+};
+
+export const resolveKodyRuleDisplaySeverity = ({
+    severity,
+}: {
+    severity?: string;
+}): SeverityLevel => {
+    const normalizedSeverity = severity?.toLowerCase();
+
+    if (
+        normalizedSeverity === SeverityLevel.CRITICAL ||
+        normalizedSeverity === SeverityLevel.HIGH ||
+        normalizedSeverity === SeverityLevel.MEDIUM ||
+        normalizedSeverity === SeverityLevel.LOW
+    ) {
+        return normalizedSeverity as SeverityLevel;
+    }
+
+    return SeverityLevel.LOW;
 };

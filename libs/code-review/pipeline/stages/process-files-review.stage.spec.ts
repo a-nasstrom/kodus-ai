@@ -1,10 +1,9 @@
 import { SUGGESTION_SERVICE_TOKEN } from '@libs/code-review/domain/contracts/SuggestionService.contract';
-import { ASTContentFormatterService } from '@libs/code-review/infrastructure/adapters/services/astContentFormatter.service';
 import { FILE_REVIEW_CONTEXT_PREPARATION_TOKEN } from '@libs/core/domain/interfaces/file-review-context-preparation.interface';
-import { KODY_AST_ANALYZE_CONTEXT_PREPARATION_TOKEN } from '@libs/core/domain/interfaces/kody-ast-analyze-context-preparation.interface';
 import { KODY_FINE_TUNING_CONTEXT_PREPARATION_TOKEN } from '@libs/core/domain/interfaces/kody-fine-tuning-context-preparation.interface';
 import { FileChange } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { CodeAnalysisOrchestrator } from '@libs/ee/codeBase/codeAnalysisOrchestrator.service';
+import { GraphContentFormatter } from '@libs/code-review/infrastructure/adapters/services/graphContentFormatter.service';
 import { PULL_REQUESTS_SERVICE_TOKEN } from '@libs/platformData/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
@@ -39,10 +38,6 @@ describe('ProcessFilesReview', () => {
             prepareKodyFineTuningContext: jest.fn(),
         };
 
-        const mockKodyAstAnalyzeContextPreparation = {
-            prepareKodyASTAnalyzeContext: jest.fn(),
-        };
-
         const mockCodeAnalysisOrchestrator = {
             executeStandardAnalysis: jest.fn(),
             executeKodyRulesAnalysis: jest.fn(),
@@ -68,19 +63,13 @@ describe('ProcessFilesReview', () => {
                     useValue: mockKodyFineTuningContextPreparation,
                 },
                 {
-                    provide: KODY_AST_ANALYZE_CONTEXT_PREPARATION_TOKEN,
-                    useValue: mockKodyAstAnalyzeContextPreparation,
-                },
-                {
                     provide: CodeAnalysisOrchestrator,
                     useValue: mockCodeAnalysisOrchestrator,
                 },
                 {
-                    provide: ASTContentFormatterService,
+                    provide: GraphContentFormatter,
                     useValue: {
-                        fetchFormattedContent: jest
-                            .fn()
-                            .mockResolvedValue(new Map()),
+                        formatContent: jest.fn().mockResolvedValue(new Map()),
                     },
                 },
             ],
@@ -99,7 +88,6 @@ describe('ProcessFilesReview', () => {
                 teamId: 'team-1',
             } as any,
             changedFiles: [{ filename: 'test-file.ts' } as FileChange],
-            tasks: { astAnalysis: {} } as any,
             errors: [],
         } as CodeReviewPipelineContext;
     });

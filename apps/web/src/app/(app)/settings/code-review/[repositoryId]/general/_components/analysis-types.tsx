@@ -28,17 +28,11 @@ export const AnalysisTypes = () => {
     const currentLevel = useCurrentConfigLevel();
     const { businessLogic } = useFeatureFlags();
     const form = useFormContext<CodeReviewFormType>();
-    const codeReviewVersion =
-        useWatch({
-            control: form.control,
-            name: "codeReviewVersion.value",
-        }) || "v2";
     const reviewOptions = useWatch({
         control: form.control,
         name: "reviewOptions",
     });
-    const { data: labels = [], isLoading } =
-        useGetCodeReviewLabels(codeReviewVersion);
+    const { data: labels = [], isLoading } = useGetCodeReviewLabels("v2");
     const isBusinessLogicEnabled = businessLogic === true;
     const visibleLabels = useMemo(
         () => filterVisibleReviewLabels(labels, isBusinessLogicEnabled),

@@ -6,7 +6,7 @@ import { createLogger } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { CommentResult } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { PullRequestReviewState } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
+// SeverityLevel no longer used — request changes is driven by level classification
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
 @Injectable()
@@ -14,6 +14,7 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
     readonly stageName = 'RequestChangesOrApproveStage';
     readonly label = 'Finalizing Review';
     readonly visibility = StageVisibility.PRIMARY;
+    readonly errorSeverity = 'partial' as const;
 
     private readonly logger = createLogger(RequestChangesOrApproveStage.name);
 
@@ -86,11 +87,11 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
                 return;
             }
 
-            const criticalComments = lineComments.filter(
-                (comment) =>
-                    comment.comment.suggestion?.severity ===
-                    SeverityLevel.CRITICAL,
-            );
+            const criticalComments = lineComments.filter((comment) => {
+                const severity =
+                    comment.comment.suggestion?.severity?.toLowerCase();
+                return severity === 'critical';
+            });
 
             if (criticalComments.length === 0) {
                 return;

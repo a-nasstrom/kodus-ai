@@ -4,16 +4,38 @@ import { RemoteCommands } from '../../infrastructure/adapters/services/collectCr
 export interface CreateSandboxParams {
     cloneUrl: string;
     authToken: string;
+    branch: string;
+    platform: PlatformType;
     /** Platform username for auth (required by Bitbucket App Passwords) */
     authUsername?: string;
-    branch: string;
     prNumber?: number;
-    platform: PlatformType;
+    /** Base branch of the PR (e.g. "main", "develop"). Used to fetch the base ref so git diff works in the sandbox. */
+    baseBranch?: string;
+    /** Arbitrary key-value tags forwarded to the sandbox provider (e.g. E2B metadata for filtering/monitoring). */
+    sandboxMetadata?: Record<string, string>;
+}
+
+export interface SandboxRunResult {
+    stdout: string;
+    stderr?: string;
+    exitCode: number;
 }
 
 export interface SandboxInstance {
     remoteCommands: RemoteCommands;
     cleanup: () => Promise<void>;
+    /** Which sandbox provider created this instance */
+    type: 'e2b' | 'local' | 'null';
+    /** Base branch fetched in the sandbox (e.g. "main"). Allows tools to run git diff origin/${baseBranch}...HEAD */
+    baseBranch?: string;
+    /** Absolute path to the repo root inside the sandbox */
+    repoDir: string;
+    /** Run a shell command inside the sandbox */
+    run(command: string, opts?: { timeoutMs?: number }): Promise<SandboxRunResult>;
+    /** Read a file from the sandbox filesystem */
+    readFile(path: string, opts?: { timeoutMs?: number }): Promise<string>;
+    /** Write a file to the sandbox filesystem */
+    writeFile(path: string, content: string, opts?: { timeoutMs?: number }): Promise<void>;
 }
 
 export interface ISandboxProvider {

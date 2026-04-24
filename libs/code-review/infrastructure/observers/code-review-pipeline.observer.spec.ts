@@ -432,9 +432,12 @@ describe('CodeReviewPipelineObserver', () => {
         );
     });
 
-    it('should use correlationId as executionUuid if available', async () => {
+    it('should use correlationId as executionUuid when it is a valid UUID', async () => {
+        // The observer only falls back to correlationId when it looks like
+        // a real UUID — the CLI generates `corr_xxxx` strings that would
+        // otherwise break uuid-typed DB queries.
         context.pipelineMetadata!.lastExecution = undefined;
-        context.correlationId = 'correlation-uuid';
+        context.correlationId = 'a1b2c3d4-e5f6-7890-abcd-ef0123456789';
 
         await observer.onStageStart(
             'TestStage',
@@ -446,7 +449,34 @@ describe('CodeReviewPipelineObserver', () => {
             mockAutomationExecutionService.updateCodeReview,
         ).toHaveBeenCalledWith(
             expect.objectContaining({
-                uuid: 'correlation-uuid',
+                uuid: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789',
+            }),
+            expect.objectContaining({ status: AutomationStatus.IN_PROGRESS }),
+            'Starting...',
+            'TestStage',
+            undefined,
+        );
+    });
+
+    it('should fall back to pullRequestNumber/repositoryId when correlationId is not a UUID', async () => {
+        // CLI-generated correlation ids like `corr_xxxx` must NOT be used as
+        // executionUuid — they break uuid-typed DB queries. The observer
+        // should fall back to the pr/repo composite filter instead.
+        context.pipelineMetadata!.lastExecution = undefined;
+        context.correlationId = 'corr_blrboR3jgLQ5_mnumj6d9';
+
+        await observer.onStageStart(
+            'TestStage',
+            context as CodeReviewPipelineContext,
+            observersContext,
+        );
+
+        expect(
+            mockAutomationExecutionService.updateCodeReview,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pullRequestNumber: 123,
+                repositoryId: 'repo-1',
             }),
             expect.objectContaining({ status: AutomationStatus.IN_PROGRESS }),
             'Starting...',

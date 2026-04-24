@@ -133,8 +133,18 @@ describe('E2BSandboxService', () => {
             service = await createService({ API_E2B_KEY: 'key' });
         });
 
-        const getPrRefspec = (platform: PlatformType, prNumber: number) =>
-            (service as any).getPrRefspec(platform, prNumber);
+        const getPrRefspec = (
+            platform: PlatformType,
+            prNumber: number,
+            cloneUrl = 'https://example.com/org/repo.git',
+            branch = 'feature',
+        ) =>
+            (service as any).getPrRefspec(
+                platform,
+                prNumber,
+                cloneUrl,
+                branch,
+            );
 
         it('should return GitHub refspec', () => {
             expect(getPrRefspec(PlatformType.GITHUB, 42)).toBe(
@@ -146,6 +156,30 @@ describe('E2BSandboxService', () => {
             expect(getPrRefspec(PlatformType.GITLAB, 42)).toBe(
                 'refs/merge-requests/42/head',
             );
+        });
+
+        it('should return branch refspec for Bitbucket Cloud (bitbucket.org)', () => {
+            // Cloud doesn't expose PR refs via git — must clone the source branch.
+            expect(
+                getPrRefspec(
+                    PlatformType.BITBUCKET,
+                    42,
+                    'https://bitbucket.org/org/repo',
+                    'feat/my-branch',
+                ),
+            ).toBe('refs/heads/feat/my-branch');
+        });
+
+        it('should return pull-requests refspec for Bitbucket Server/DC', () => {
+            // Self-hosted Bitbucket exposes PR refs via git.
+            expect(
+                getPrRefspec(
+                    PlatformType.BITBUCKET,
+                    42,
+                    'https://bitbucket.company.internal/scm/proj/repo.git',
+                    'feat/my-branch',
+                ),
+            ).toBe('refs/pull-requests/42/from');
         });
     });
 
@@ -211,10 +245,12 @@ describe('E2BSandboxService', () => {
 
             await service.createSandboxWithRepo(defaultParams);
 
-            expect(Sandbox.create).toHaveBeenCalledWith({
-                timeoutMs: 10 * 60 * 1000,
-                apiKey: 'my-e2b-key',
-            });
+            expect(Sandbox.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    timeoutMs: 45 * 60 * 1000,
+                    apiKey: 'my-e2b-key',
+                }),
+            );
         });
 
         it('should run apt-get install as first command', async () => {
@@ -227,7 +263,7 @@ describe('E2BSandboxService', () => {
             expect(firstCall[0]).toContain('apt-get');
             expect(firstCall[0]).toContain('git');
             expect(firstCall[0]).toContain('ripgrep');
-            expect(firstCall[1]).toEqual({ timeoutMs: 120_000, user: 'root' });
+            expect(firstCall[1]).toEqual({ timeoutMs: 300_000, user: 'root' });
         });
 
         it('should run git commands with correct refspec and auth header', async () => {
@@ -239,19 +275,21 @@ describe('E2BSandboxService', () => {
             const gitCall = mockRun.mock.calls[1];
             const gitCommand = gitCall[0];
 
-            // Should init, fetch with refspec, checkout, add remote, block push
+            // Should init, fetch with refspec, checkout, add remote, block push.
+            // Refspec, localRef and cloneUrl are single-quoted to neutralize
+            // shell metacharacters in fork-controlled branch names.
             expect(gitCommand).toContain('git init /home/user/repo');
-            expect(gitCommand).toContain('refs/pull/42/head:pr-head');
-            expect(gitCommand).toContain('git checkout pr-head');
+            expect(gitCommand).toContain("'refs/pull/42/head':'pr-head'");
+            expect(gitCommand).toContain("git checkout 'pr-head'");
             expect(gitCommand).toContain(
-                `git remote add origin ${defaultParams.cloneUrl}`,
+                `git remote add origin '${defaultParams.cloneUrl}'`,
             );
             expect(gitCommand).toContain('no-push-allowed');
 
             // Auth header passed via envs, not embedded in URL
             const opts = gitCall[1];
             expect(opts.envs.GIT_AUTH_HEADER).toContain('Authorization: Basic');
-            expect(opts.timeoutMs).toBe(120_000);
+            expect(opts.timeoutMs).toBe(300_000);
         });
 
         it('should return remoteCommands and cleanup function', async () => {
@@ -276,10 +314,13 @@ describe('E2BSandboxService', () => {
 
             await service.createSandboxWithRepo(defaultParams);
 
-            expect(Sandbox.create).toHaveBeenCalledWith('kodus-sandbox', {
-                timeoutMs: 10 * 60 * 1000,
-                apiKey: 'key',
-            });
+            expect(Sandbox.create).toHaveBeenCalledWith(
+                'kodus-sandbox',
+                expect.objectContaining({
+                    timeoutMs: 45 * 60 * 1000,
+                    apiKey: 'key',
+                }),
+            );
 
             // Should NOT run apt-get install when using template
             const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
@@ -324,14 +365,21 @@ describe('E2BSandboxService', () => {
 
             // Should have tried template first, then fallback
             expect(Sandbox.create).toHaveBeenCalledTimes(2);
-            expect(Sandbox.create).toHaveBeenNthCalledWith(1, 'bad-template', {
-                timeoutMs: 10 * 60 * 1000,
-                apiKey: 'key',
-            });
-            expect(Sandbox.create).toHaveBeenNthCalledWith(2, {
-                timeoutMs: 10 * 60 * 1000,
-                apiKey: 'key',
-            });
+            expect(Sandbox.create).toHaveBeenNthCalledWith(
+                1,
+                'bad-template',
+                expect.objectContaining({
+                    timeoutMs: 45 * 60 * 1000,
+                    apiKey: 'key',
+                }),
+            );
+            expect(Sandbox.create).toHaveBeenNthCalledWith(
+                2,
+                expect.objectContaining({
+                    timeoutMs: 45 * 60 * 1000,
+                    apiKey: 'key',
+                }),
+            );
 
             // Should install deps via apt-get since fallback doesn't have template
             const commands = mockRun.mock.calls.map((c: any[]) => c[0]);
@@ -355,8 +403,10 @@ describe('E2BSandboxService', () => {
             const gitCall = mockRun.mock.calls[1];
             const gitCommand = gitCall[0];
 
-            expect(gitCommand).toContain('refs/heads/feat/my-feature:cli-head');
-            expect(gitCommand).toContain('git checkout cli-head');
+            expect(gitCommand).toContain(
+                "'refs/heads/feat/my-feature':'cli-head'",
+            );
+            expect(gitCommand).toContain("git checkout 'cli-head'");
             expect(gitCommand).not.toContain('pr-head');
         });
     });

@@ -1,4 +1,7 @@
+import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import z from 'zod';
+
+export { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 
 export interface FindMemoriesFilters {
     repositoryId?: string;
@@ -163,6 +166,28 @@ export enum KodyRulesType {
 export enum KodyRuleRequestType {
     MEMORY_CREATE = 'memory_create',
     MEMORY_UPDATE = 'memory_update',
+}
+
+/**
+ * Resolves the effective SeverityLevel for a Kody Rule.
+ * Reads `severity` (the only source of truth); defaults to HIGH when missing
+ * or set to an unrecognized value.
+ */
+export function resolveKodyRuleSeverityLevel(
+    rule: Partial<IKodyRule>,
+): SeverityLevel {
+    switch ((rule.severity || '').toLowerCase()) {
+        case SeverityLevel.CRITICAL:
+            return SeverityLevel.CRITICAL;
+        case SeverityLevel.HIGH:
+            return SeverityLevel.HIGH;
+        case SeverityLevel.MEDIUM:
+            return SeverityLevel.MEDIUM;
+        case SeverityLevel.LOW:
+            return SeverityLevel.LOW;
+        default:
+            return SeverityLevel.HIGH;
+    }
 }
 
 export const kodyRulesTypeSchema = z.enum([...Object.values(KodyRulesType)] as [

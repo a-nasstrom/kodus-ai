@@ -21,7 +21,10 @@ import {
     LockKeyholeOpenIcon,
     ShieldIcon,
 } from "lucide-react";
-import { isBYOKSubscriptionPlan } from "src/features/ee/byok/_utils";
+import {
+    isBYOKSubscriptionPlan,
+    isEnterprisePlan,
+} from "src/features/ee/byok/_utils";
 import { useSubscriptionContext } from "src/features/ee/subscription/_providers/subscription-context";
 import { useOrganizationContext } from "src/features/organization/_providers/organization-context";
 
@@ -34,6 +37,7 @@ export const ConfigsSidebar = () => {
     const { license } = useSubscriptionContext();
     const isTrial = license.subscriptionStatus === "trial";
     const isBYOK = isBYOKSubscriptionPlan(license);
+    const isEnterprise = isEnterprisePlan(license);
 
     const topItems = [
         {
@@ -46,7 +50,7 @@ export const ConfigsSidebar = () => {
             icon: ShieldIcon,
             label: "SSO",
             href: `/organization/sso`,
-            visible: sso ?? false,
+            visible: (isEnterprise || isTrial) && (sso ?? false),
         },
         {
             icon: GaugeIcon,

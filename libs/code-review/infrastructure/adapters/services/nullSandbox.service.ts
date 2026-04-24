@@ -14,3 +14,17 @@ export class NullSandboxProvider implements ISandboxProvider {
         throw new Error('No sandbox provider configured');
     }
 }
+
+export const NULL_SANDBOX_INSTANCE: SandboxInstance = {
+    remoteCommands: {
+        grep: async () => '',
+        read: async () => '',
+        listDir: async () => '',
+    },
+    cleanup: async () => {},
+    type: 'null',
+    repoDir: '',
+    run: async () => ({ stdout: '', stderr: '', exitCode: 1 }),
+    readFile: async () => { throw new Error('No sandbox configured'); },
+    writeFile: async () => { throw new Error('No sandbox configured'); },
+};

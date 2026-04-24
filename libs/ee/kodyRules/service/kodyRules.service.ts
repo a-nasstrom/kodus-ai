@@ -1115,6 +1115,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     libraryRulesCount: filteredLibrary.length,
                     type: promptRunner.executeMode,
                 },
+                byokConfig: byokConfigValue,
                 exec: async (callbacks) => {
                     return await promptRunner
                         .builder()
@@ -1630,6 +1631,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
                 existingMemoriesCount: existingMemories.length,
                 type: promptRunner.executeMode,
             },
+            byokConfig: byokConfigValue,
             exec: async (callbacks) => {
                 return await promptRunner
                     .builder()

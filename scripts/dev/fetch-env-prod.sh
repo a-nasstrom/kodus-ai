@@ -90,6 +90,7 @@ KEYS=(
     "/prod/kodus-orchestrator/API_CRON_SYNC_CODE_REVIEW_REACTIONS"
     "/prod/kodus-orchestrator/API_CRON_KODY_LEARNING"
     "/prod/kodus-orchestrator/API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED"
+    "/prod/kodus-orchestrator/API_CRON_SSO_TEST_SESSION_CLEANUP"
 
     "/prod/kodus-orchestrator/KODUS_SERVICE_TEAMS"
     "/prod/kodus-orchestrator/GLOBAL_KODUS_SERVICE_SLACK"
@@ -128,8 +129,6 @@ KEYS=(
 
     "/prod/kodus-orchestrator/GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK"
 
-    "/prod/kodus-orchestrator/API_ENABLE_CODE_REVIEW_AST"
-
     "/prod/kodus-orchestrator/CODE_MANAGEMENT_SECRET"
     "/prod/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
 
@@ -137,8 +136,6 @@ KEYS=(
     "/prod/kodus-orchestrator/GLOBAL_KODUS_SERVICE_BILLING"
 
     "/prod/kodus-orchestrator/API_POSTHOG_KEY"
-
-    "/prod/kodus-orchestrator/API_SERVICE_AST_URL"
 
     "/prod/kodus-orchestrator/API_MCP_SERVER_ENABLED"
     "/prod/kodus-orchestrator/API_KODUS_SERVICE_MCP_MANAGER"
