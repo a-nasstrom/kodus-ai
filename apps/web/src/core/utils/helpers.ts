@@ -8,6 +8,7 @@ import invariant from "tiny-invariant";
 
 import { type ApiRoute } from "../config/constants";
 import { type LiteralUnion } from "../types";
+import { apiProxyPath } from "../utils/api-proxy";
 import { isSelfHosted } from "../utils/self-hosted";
 import { isServerSide } from "./server-side";
 
@@ -19,19 +20,26 @@ export function pathToApiUrl(
 ): string {
     invariant(path, "Api path doesn't exist");
 
-    let hostName = process.env.WEB_HOSTNAME_API;
-
-    // if 'true' we are in the server and hostname is not a domain
-    if (isServerSide && hostName === "localhost") {
-        hostName = containerName;
-    }
-
     if (params) {
         Object.keys(params).forEach((key) => {
             path = path.replace(`:${key}`, params[key].toString());
         });
     }
 
+    // Dual-mode: server callers hit the upstream directly, client callers
+    // route through the same-origin proxy so the internal hostname never
+    // appears in the browser bundle. Any module-level call to
+    // pathToApiUrl(...) used to bake `http://undefined/...` into the
+    // client bundle because WEB_HOSTNAME_API / WEB_PORT_API were removed
+    // from next.config.js's `env:` block by the runtime-config migration.
+    if (!isServerSide) {
+        return apiProxyPath(path);
+    }
+
+    let hostName = process.env.WEB_HOSTNAME_API;
+    if (hostName === "localhost") {
+        hostName = containerName;
+    }
     const port = process.env.WEB_PORT_API;
 
     return createUrl(hostName, port, path);
