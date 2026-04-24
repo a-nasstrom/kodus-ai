@@ -60,6 +60,15 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
         nodeEnv: process.env.WEB_NODE_ENV ?? "",
     };
 
+    // Expose publicConfig as window.__KODUS_PUBLIC_CONFIG__ so module-scope
+    // client code (e.g. isSelfHosted) can read the runtime config before
+    // any React hook fires. Escaping < prevents premature </script>
+    // tag closure if a config value ever contains one.
+    const configScript =
+        "window.__KODUS_PUBLIC_CONFIG__ = " +
+        JSON.stringify(publicConfig).replace(/</g, "\\u003c") +
+        ";";
+
     return (
         <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
             <GoogleTagManager gtmId="GTM-KN2J57G" />
@@ -70,6 +79,7 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
                     overpass_mono.className,
                     dm_sans.className,
                 )}>
+                <script dangerouslySetInnerHTML={{ __html: configScript }} />
                 <ConfigProvider value={publicConfig}>
                     <TooltipProvider delayDuration={0} skipDelayDuration={0}>
                         <QueryProvider>
