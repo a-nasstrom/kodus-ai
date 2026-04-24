@@ -12,13 +12,21 @@ const isProduction = !['development', 'test'].includes(env);
 const disableSSL = process.env.API_DATABASE_DISABLE_SSL === 'true';
 const useSSL = isProduction && !disableSSL;
 
+const connectionUrl = process.env.DATABASE_URL ?? process.env.API_PG_DB_URL;
+
+const connectionConfig = connectionUrl
+    ? { url: connectionUrl }
+    : {
+          host: process.env.API_PG_DB_HOST,
+          port: parseInt(process.env.API_PG_DB_PORT!, 10),
+          username: process.env.API_PG_DB_USERNAME,
+          password: process.env.API_PG_DB_PASSWORD,
+          database: process.env.API_PG_DB_DATABASE,
+      };
+
 const optionsDataBase: DataSourceOptions = {
     type: 'postgres',
-    host: process.env.API_PG_DB_HOST,
-    port: parseInt(process.env.API_PG_DB_PORT!, 10),
-    username: process.env.API_PG_DB_USERNAME,
-    password: process.env.API_PG_DB_PASSWORD,
-    database: process.env.API_PG_DB_DATABASE,
+    ...connectionConfig,
     logging: false,
     logger: 'file',
     synchronize: false,

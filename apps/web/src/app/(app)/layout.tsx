@@ -8,6 +8,7 @@ import { TEAM_STATUS } from "src/core/types";
 import { BYOKMissingKeyTopbar } from "src/features/ee/byok/_components/missing-key-topbar";
 import {
     isBYOKSubscriptionPlan,
+    isEnterprisePlan,
     shouldShowBYOKMissingKeyTopbar,
 } from "src/features/ee/byok/_utils";
 import { FinishedTrialModal } from "src/features/ee/subscription/_components/finished-trial-modal";
@@ -77,7 +78,7 @@ export default async function Layout({ children }: React.PropsWithChildren) {
         organizationName,
         organizationLicense,
         usersWithAssignedLicense,
-        byokConfig,
+        llmConfigStatus,
         featureFlags,
     } = layoutData;
 
@@ -85,9 +86,12 @@ export default async function Layout({ children }: React.PropsWithChildren) {
         ? isBYOKSubscriptionPlan(organizationLicense)
         : false;
     const isTrial = organizationLicense?.subscriptionStatus === "trial";
+    const isEnterprise = organizationLicense
+        ? isEnterprisePlan(organizationLicense)
+        : false;
     const showBYOKMissingKeyTopbar = shouldShowBYOKMissingKeyTopbar({
         license: organizationLicense,
-        byokConfig,
+        llmConfigStatus,
         permissions,
         organizationId,
         role: session.user.role,
@@ -108,6 +112,7 @@ export default async function Layout({ children }: React.PropsWithChildren) {
             permissions={permissions}
             isBYOK={isBYOK}
             isTrial={isTrial}
+            isEnterprise={isEnterprise}
             featureFlags={featureFlags}>
             <SubscriptionProvider
                 license={

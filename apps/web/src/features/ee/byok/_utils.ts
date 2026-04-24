@@ -1,4 +1,5 @@
 import { UserRole } from "@enums";
+import type { LLMConfigStatus } from "@services/organizationParameters/fetch";
 import {
     Action,
     ResourceType,
@@ -7,7 +8,6 @@ import {
 import { hasPermission } from "src/core/utils/permission-map";
 
 import type { OrganizationLicense } from "../subscription/_services/billing/types";
-import type { BYOKConfig } from "./_types";
 
 export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
     if (
@@ -30,22 +30,39 @@ export const isBYOKSubscriptionPlan = (license: OrganizationLicense) => {
     return license.planType.includes("byok");
 };
 
+export const isEnterprisePlan = (license: OrganizationLicense): boolean => {
+    if (
+        license.subscriptionStatus === "self-hosted" ||
+        license.subscriptionStatus === "licensed-self-hosted"
+    ) {
+        return true;
+    }
+    if (license.subscriptionStatus === "trial") {
+        return true;
+    }
+    if (license.subscriptionStatus !== "active") {
+        return false;
+    }
+    return license.planType?.startsWith("enterprise") ?? false;
+};
+
 export const shouldShowBYOKMissingKeyTopbar = (params: {
     license: OrganizationLicense | null;
-    byokConfig:
-        | {
-              main?: BYOKConfig;
-              fallback?: BYOKConfig;
-          }
-        | null
-        | undefined;
+    llmConfigStatus: LLMConfigStatus | null | undefined;
     permissions: PermissionsMap;
     organizationId: string;
     role?: UserRole;
 }) => {
-    const { license, byokConfig, permissions, organizationId, role } = params;
+    const { license, llmConfigStatus, permissions, organizationId, role } =
+        params;
 
-    if (!license || byokConfig?.main || !isBYOKSubscriptionPlan(license)) {
+    if (!license || !isBYOKSubscriptionPlan(license)) {
+        return false;
+    }
+
+    // Either source (DB BYOK or self-hosted `.env`) is enough to run reviews.
+    // Only nag when nothing is configured at all.
+    if (llmConfigStatus && llmConfigStatus.source !== "none") {
         return false;
     }
 
@@ -66,4 +83,15 @@ export const shouldShowBYOKMissingKeyTopbar = (params: {
         action: Action.Update,
         resource: ResourceType.OrganizationSettings,
     });
+};
+
+/**
+ * Obfuscate an API key for display so shoulder-surfing and screen-sharing
+ * can't leak the secret. Keeps a short prefix + suffix so the user can
+ * still recognize which key is stored.
+ */
+export const maskKey = (key?: string): string => {
+    if (!key) return "";
+    if (key.length <= 8) return "•••• ••••";
+    return `${key.slice(0, 4)}•••••${key.slice(-4)}`;
 };

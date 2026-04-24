@@ -18,6 +18,14 @@ import {
 } from '@libs/organization/application/use-cases/organizationParameters/get-models-by-provider.use-case';
 import { DeleteByokConfigUseCase } from '@libs/organization/application/use-cases/organizationParameters/delete-byok-config.use-case';
 import {
+    GetLLMConfigStatusUseCase,
+    LLMConfigStatus,
+} from '@libs/organization/application/use-cases/organizationParameters/get-llm-config-status.use-case';
+import {
+    TestByokConnectionUseCase,
+    TestByokResult,
+} from '@libs/organization/application/use-cases/organizationParameters/test-byok-connection.use-case';
+import {
     GetCockpitMetricsVisibilityUseCase,
     GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN,
 } from '@libs/organization/application/use-cases/organizationParameters/get-cockpit-metrics-visibility.use-case';
@@ -67,6 +75,8 @@ export class OrganizationParametersController {
         private readonly getModelsByProviderUseCase: GetModelsByProviderUseCase,
         private readonly providerService: ProviderService,
         private readonly deleteByokConfigUseCase: DeleteByokConfigUseCase,
+        private readonly getLLMConfigStatusUseCase: GetLLMConfigStatusUseCase,
+        private readonly testByokConnectionUseCase: TestByokConnectionUseCase,
         @Inject(GET_COCKPIT_METRICS_VISIBILITY_USE_CASE_TOKEN)
         private readonly getCockpitMetricsVisibilityUseCase: GetCockpitMetricsVisibilityUseCase,
         private readonly ignoreBotsUseCase: IgnoreBotsUseCase,
@@ -221,12 +231,86 @@ export class OrganizationParametersController {
         );
     }
 
-    @Get('/cockpit-metrics-visibility')
+    @Post('/test-byok')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Create,
+            resource: ResourceType.OrganizationSettings,
+        }),
+    )
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['provider'],
+            properties: {
+                provider: { type: 'string' },
+                apiKey: { type: 'string' },
+                baseURL: { type: 'string' },
+                model: { type: 'string' },
+                vertexLocation: { type: 'string' },
+                awsBearerToken: { type: 'string' },
+                awsAccessKeyId: { type: 'string' },
+                awsSecretAccessKey: { type: 'string' },
+                awsRegion: { type: 'string' },
+                awsSessionToken: { type: 'string' },
+            },
+        },
+    })
+    @ApiOperation({
+        summary: 'Test BYOK connection',
+        description:
+            'Probe the provider with the supplied credentials to verify they work. Uses cheap metadata / identity calls (list-models for most providers, GoogleAuth token exchange for Vertex, STS GetCallerIdentity for Bedrock) — no LLM inference is performed.',
+    })
+    public async testByokConnection(
+        @Body()
+        body: {
+            provider: string;
+            apiKey?: string;
+            baseURL?: string;
+            model?: string;
+            vertexLocation?: string;
+            awsBearerToken?: string;
+            awsAccessKeyId?: string;
+            awsSecretAccessKey?: string;
+            awsRegion?: string;
+            awsSessionToken?: string;
+        },
+    ): Promise<TestByokResult> {
+        return await this.testByokConnectionUseCase.execute(body);
+    }
+
+    @Get('/llm-config/status')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
             resource: ResourceType.OrganizationSettings,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Get LLM provider configuration status',
+        description:
+            'Return which LLM configuration source is active (BYOK, env, or none) and a non-sensitive descriptor of each source. Never returns the API key itself.',
+    })
+    public async getLLMConfigStatus(): Promise<LLMConfigStatus> {
+        const organizationId = this.request?.user?.organization?.uuid;
+
+        if (!organizationId) {
+            throw new BadRequestException('Missing organizationId in request');
+        }
+
+        return await this.getLLMConfigStatusUseCase.execute({
+            organizationId,
+        });
+    }
+
+    @Get('/cockpit-metrics-visibility')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.Cockpit,
         }),
     )
     @ApiOperation({
@@ -251,7 +335,7 @@ export class OrganizationParametersController {
     @CheckPolicies(
         checkPermissions({
             action: Action.Update,
-            resource: ResourceType.OrganizationSettings,
+            resource: ResourceType.Cockpit,
         }),
     )
     @ApiOperation({

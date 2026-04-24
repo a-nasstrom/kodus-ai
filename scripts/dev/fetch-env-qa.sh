@@ -56,6 +56,7 @@ KEYS=(
     "/qa/kodus-orchestrator/API_CRON_SYNC_CODE_REVIEW_REACTIONS"
     "/qa/kodus-orchestrator/API_CRON_KODY_LEARNING"
     "/qa/kodus-orchestrator/API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED"
+    "/qa/kodus-orchestrator/API_CRON_SSO_TEST_SESSION_CLEANUP"
 
     "/qa/kodus-orchestrator/KODUS_SERVICE_TEAMS"
 
@@ -128,6 +129,9 @@ KEYS=(
     "/qa/kodus-orchestrator/API_BETTERSTACK_HEARTBEAT_WEBHOOK_URL"
 
     "/qa/kodus-orchestrator/API_EXA_KEY"
+
+    "/qa/kodus-orchestrator/WEB_HOSTNAME_HELPDESK"
+    "/qa/kodus-orchestrator/WEB_PORT_HELPDESK" 
 )
 
 # Lista de todas as chaves que você precisa

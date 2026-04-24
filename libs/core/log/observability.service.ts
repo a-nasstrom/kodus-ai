@@ -212,10 +212,11 @@ export class ObservabilityService implements OnModuleInit {
                 this.logger.error({
                     message: 'Error initializing observability',
                     context: ObservabilityService.name,
-                    error,
+                    error: this.safeErrorForLog(error),
                     metadata: {
                         serviceName: options.serviceName,
                         host: config.host,
+                        hasUrl: !!config.url,
                         database: config.database,
                     },
                 });
@@ -524,9 +525,13 @@ export class ObservabilityService implements OnModuleInit {
     }
 
     public buildConnectionString(config: DatabaseConnection): string {
+        if (config?.url) {
+            return config.url;
+        }
+
         if (!config?.host) {
             throw new Error(
-                'ObservabilityService: invalid or missing host in DatabaseConnection',
+                'ObservabilityService: invalid DatabaseConnection — provide either `url` or `host`',
             );
         }
 
@@ -639,9 +644,28 @@ export class ObservabilityService implements OnModuleInit {
         };
     }
 
+    private redactConnectionString(value: string | undefined): string | undefined {
+        if (!value) return value;
+        return value.replace(
+            /\b(mongodb(?:\+srv)?:\/\/)[^\s:@/]+:[^\s@/]+@/gi,
+            '$1***:***@',
+        );
+    }
+
+    private safeErrorForLog(err: unknown): Error {
+        const source = err instanceof Error ? err : new Error(String(err));
+        const redacted = new Error(
+            this.redactConnectionString(source.message) ?? '',
+        );
+        redacted.name = source.name;
+        redacted.stack = this.redactConnectionString(source.stack);
+        return redacted;
+    }
+
     private makeKey(config: DatabaseConnection, serviceName: string): string {
         return JSON.stringify({
-            h: config.host,
+            u: config.url ?? null,
+            h: config.host ?? null,
             p: config.port ?? null,
             db: config.database ?? null,
             s: serviceName,
