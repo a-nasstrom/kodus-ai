@@ -70,6 +70,16 @@
                     }
                 ]
             }
+        },
+        "analytics-cli": {
+            "type": "application",
+            "root": "apps/analytics-cli",
+            "entryFile": "main",
+            "sourceRoot": "apps/analytics-cli/src",
+            "compilerOptions": {
+                "tsConfigPath": "apps/analytics-cli/tsconfig.json",
+                "deleteOutDir": true
+            }
         }
     }
 }
