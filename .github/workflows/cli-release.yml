@@ -1,9 +1,11 @@
-name: Release
+name: "CLI: Release"
 
+# Trigger on tags like cli-v0.4.15. Namespaced so future publishable
+# packages in this monorepo can use their own prefix without colliding.
 on:
     push:
         tags:
-            - 'v*.*.*'
+            - 'cli-v*.*.*'
 
 jobs:
     publish:
@@ -12,12 +14,16 @@ jobs:
         permissions:
             contents: write
             id-token: write
+        defaults:
+            run:
+                working-directory: apps/cli
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
               with:
                   node-version: 24
                   cache: yarn
+                  cache-dependency-path: apps/cli/yarn.lock
             - run: npm --version
             - run: yarn install --frozen-lockfile
             - run: yarn skills:validate
@@ -25,6 +31,7 @@ jobs:
             - run: yarn build
             - run: yarn test
             - run: npm publish --provenance --access public
+
             - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
@@ -32,14 +39,16 @@ jobs:
 
             - name: Get previous release date
               id: prev
+              working-directory: ${{ github.workspace }}
               run: |
-                  prev=$(gh release list -R ${{ github.repository }} --limit 2 \
-                    --json tagName,publishedAt -q '.[1].publishedAt // empty')
+                  prev=$(gh release list -R ${{ github.repository }} --limit 50 \
+                    --json tagName,publishedAt -q '[.[] | select(.tagName | startswith("cli-v"))][1].publishedAt // empty')
                   echo "date=${prev:-$(date -d '-30 days' -Idate)}" >> "$GITHUB_OUTPUT"
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Generate changelog
+              working-directory: ${{ github.workspace }}
               run: |
                   end_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
                   response=$(curl -sf -X POST "${{ secrets.CHANGELOG_API_URL }}/api/v1/changelog" \
@@ -56,6 +65,7 @@ jobs:
                   echo "Generated changelog for ${{ github.ref_name }}"
 
             - name: Update release notes
+              working-directory: ${{ github.workspace }}
               run: |
                   gh release edit ${{ github.ref_name }} \
                     -R ${{ github.repository }} \
