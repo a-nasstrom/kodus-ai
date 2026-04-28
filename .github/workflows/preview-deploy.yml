@@ -73,7 +73,7 @@ jobs:
 
             - name: Wait for Railway deployment
               run: |
-                  ENV_NAME="pr-${{ github.event.pull_request.number }}"
+                  ENV_NAME="kodus-ai-pr-${{ github.event.pull_request.number }}"
                   echo "Waiting for Railway PR environment to be ready..."
 
                   # Railway native PR environments may take a moment to provision
@@ -95,7 +95,7 @@ jobs:
             - name: Get Railway domain
               id: url
               run: |
-                  ENV_NAME="pr-${{ github.event.pull_request.number }}"
+                  ENV_NAME="kodus-ai-pr-${{ github.event.pull_request.number }}"
 
                   API_URL=$(railway domain \
                     --project ${{ secrets.RAILWAY_PROJECT_ID }} \
@@ -106,7 +106,8 @@ jobs:
                     echo "api_url=https://$API_URL" >> $GITHUB_OUTPUT
                     echo "Backend URL: https://$API_URL"
                   else
-                    echo "Could not resolve Railway domain"
+                    echo "::error::Could not resolve Railway domain for environment $ENV_NAME"
+                    exit 1
                   fi
 
     # ------------------------------------------------------------------
