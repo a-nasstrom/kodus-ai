@@ -233,11 +233,31 @@ jobs:
                   ignore-unfixed: true
                   exit-code: "0"
 
-            - name: Upload Trivy SARIF reports
+            # CodeQL Action v4 rejects multiple SARIF runs sharing a
+            # category — one upload step per image with its own category.
+            - name: Upload Trivy SARIF — api
               uses: github/codeql-action/upload-sarif@v4
               with:
-                  sarif_file: "."
-                  category: "trivy-selfhosted"
+                  sarif_file: trivy-api.sarif
+                  category: trivy-selfhosted-api
+
+            - name: Upload Trivy SARIF — webhook
+              uses: github/codeql-action/upload-sarif@v4
+              with:
+                  sarif_file: trivy-webhook.sarif
+                  category: trivy-selfhosted-webhook
+
+            - name: Upload Trivy SARIF — worker
+              uses: github/codeql-action/upload-sarif@v4
+              with:
+                  sarif_file: trivy-worker.sarif
+                  category: trivy-selfhosted-worker
+
+            - name: Upload Trivy SARIF — web
+              uses: github/codeql-action/upload-sarif@v4
+              with:
+                  sarif_file: trivy-web.sarif
+                  category: trivy-selfhosted-web
 
     notify-discord:
         name: Notify Discord
