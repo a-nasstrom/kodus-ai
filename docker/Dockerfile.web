@@ -9,6 +9,11 @@ WORKDIR /usr/src/app
 ARG RELEASE_VERSION=local
 ENV RELEASE_VERSION=${RELEASE_VERSION}
 
+# Yarn1's default 30s tarball timeout is too tight for slow paths to
+# registry.npmjs.org from the GHA runners — see docker/Dockerfile for the
+# full rationale. Same fix applies here.
+ENV YARN_HTTP_TIMEOUT=600000
+
 COPY package.json yarn.lock ./
 
 RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
