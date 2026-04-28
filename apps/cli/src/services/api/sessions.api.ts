@@ -78,7 +78,8 @@ async function flushPending(repoRoot: string, token: string): Promise<void> {
     }
 
     const failed: string[] = [];
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         try {
             const event = JSON.parse(line) as SessionApiEvent;
             await postEvent(event, token);
@@ -91,8 +92,11 @@ async function flushPending(repoRoot: string, token: string): Promise<void> {
                 // 4xx (except 429) — discard, retry won't help
                 continue;
             }
-            // Network or 5xx/429 — keep for next flush
-            failed.push(line);
+            // Network or 5xx/429 — API likely unreachable. Bail out and
+            // keep this line plus all remaining for the next flush, so we
+            // don't sit here for hours hitting the same dead endpoint.
+            failed.push(...lines.slice(i));
+            break;
         }
     }
 

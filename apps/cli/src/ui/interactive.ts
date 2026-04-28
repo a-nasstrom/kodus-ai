@@ -118,7 +118,8 @@ class InteractiveUI {
             await this.reviewFileIssues(selectedFile, fileIssues, fixedIssues);
 
             // Remove file from list if all issues are fixed
-            if (fileIssues.every((issue) => fixedIssues.includes(issue))) {
+            const fixedSet = new Set(fixedIssues);
+            if (fileIssues.every((issue) => fixedSet.has(issue))) {
                 issuesByFile.delete(selectedFile);
 
                 if (issuesByFile.size === 0) {

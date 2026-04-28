@@ -94,24 +94,24 @@ export async function listStaleSessions(
     }
 
     const now = Date.now();
-    const stale: StaleSession[] = [];
+    const jsonEntries = entries.filter((entry) => entry.endsWith('.json'));
 
-    for (const entry of entries) {
-        if (!entry.endsWith('.json')) {
-            continue;
-        }
-        try {
-            const filePath = path.join(dir, entry);
-            const stat = await fs.stat(filePath);
-            const ageMs = now - stat.mtimeMs;
-            if (ageMs > maxAgeMs) {
-                stale.push({
-                    sessionId: entry.replace(/\.json$/, ''),
-                    ageMs,
-                });
-            }
-        } catch {
-            // Skip files we can't stat
+    const results = await Promise.allSettled(
+        jsonEntries.map(async (entry) => {
+            const stat = await fs.stat(path.join(dir, entry));
+            return { entry, mtimeMs: stat.mtimeMs };
+        }),
+    );
+
+    const stale: StaleSession[] = [];
+    for (const result of results) {
+        if (result.status !== 'fulfilled') continue;
+        const ageMs = now - result.value.mtimeMs;
+        if (ageMs > maxAgeMs) {
+            stale.push({
+                sessionId: result.value.entry.replace(/\.json$/, ''),
+                ageMs,
+            });
         }
     }
 
