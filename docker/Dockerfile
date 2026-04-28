@@ -17,12 +17,13 @@ ENV API_DEVELOPMENT_MODE=false
 ENV RELEASE_VERSION=${RELEASE_VERSION}
 ENV SENTRY_RELEASE=${RELEASE_VERSION}
 
-# Yarn1's default HTTP timeout is 30s, which is too tight for slow paths to
+# Yarn1's default HTTP timeout is 30s, too tight for slow paths to
 # registry.npmjs.org from the GitHub Actions runners — a single laggy
-# tarball (e.g. date-fns) can blow the whole `yarn install` after 4 retries
-# and abort the bake. 10 minutes covers realistic transient slowness; if
-# the registry is genuinely down we want to fail fast on a re-run anyway.
-ENV YARN_HTTP_TIMEOUT=600000
+# tarball (e.g. date-fns) blows the whole `yarn install` after 4 retries
+# and aborts the bake. Yarn1 honours `network-timeout` from `.yarnrc`
+# (NOT the env var; YARN_HTTP_TIMEOUT does nothing on yarn1), so set it
+# globally here. Inherited by `deps` and `prod-deps` since they FROM base.
+RUN echo 'network-timeout 600000' > /root/.yarnrc
 
 # apt cache mounts persist /var/cache/apt and /var/lib/apt across builds so
 # repeated apt-get runs don't re-download the same .deb packages. The

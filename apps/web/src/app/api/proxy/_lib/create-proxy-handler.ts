@@ -126,6 +126,25 @@ async function forward(
     const headers = new Headers(req.headers);
     headers.delete("host");
 
+    // Hop-by-hop headers (RFC 7230 §6.1) must not be forwarded by a
+    // proxy. The AWS ALB adds `Connection: upgrade` to every request,
+    // and forwarding it makes undici (Node's fetch) blow up with
+    // `UND_ERR_INVALID_ARG: invalid connection header`, killing every
+    // /api/proxy/* call with a TypeError. Stripping the full RFC list
+    // also covers any future hop-by-hop quirk an upstream LB might add.
+    for (const h of [
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    ]) {
+        headers.delete(h);
+    }
+
     if (options.resolveBearerToken) {
         const token = await options.resolveBearerToken(req);
         if (token) headers.set("Authorization", `Bearer ${token}`);
