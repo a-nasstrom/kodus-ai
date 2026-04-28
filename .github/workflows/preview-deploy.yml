@@ -55,8 +55,15 @@ jobs:
 
     # ------------------------------------------------------------------
     # 2. Resolve Railway API URL (if backend changed)
-    #    Railway deploys automatically via native PR environments.
-    #    This job just fetches the URL to pass to Vercel.
+    #
+    #    Railway exposes PR environments at a deterministic public host:
+    #    <service-slug>-<env-slug>.up.railway.app. We just construct it
+    #    instead of querying the Railway CLI — the previous approach
+    #    relied on `railway domain` which silently returned empty in our
+    #    setup, looped 30x, and wedged the workflow.
+    #
+    #    Then we poll the URL until the API responds (Railway PR envs
+    #    take a couple of minutes to boot from cold).
     # ------------------------------------------------------------------
     resolve-backend-url:
         name: Resolve backend URL
@@ -65,50 +72,36 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             api_url: ${{ steps.url.outputs.api_url }}
-        env:
-            RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         steps:
-            - name: Install Railway CLI
-              run: npm install -g @railway/cli
+            - name: Construct Railway URL
+              id: url
+              run: |
+                  PR_NUM="${{ github.event.pull_request.number }}"
+                  API_URL="https://kodus-ai-kodus-ai-pr-${PR_NUM}.up.railway.app"
+                  echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+                  echo "Backend URL: $API_URL"
 
             - name: Wait for Railway deployment
               run: |
-                  ENV_NAME="kodus-ai-pr-${{ github.event.pull_request.number }}"
-                  echo "Waiting for Railway PR environment to be ready..."
+                  API_URL="${{ steps.url.outputs.api_url }}"
+                  echo "Waiting for $API_URL to respond..."
 
-                  # Railway native PR environments may take a moment to provision
                   for i in $(seq 1 30); do
-                    API_URL=$(railway domain \
-                      --project ${{ secrets.RAILWAY_PROJECT_ID }} \
-                      --environment "$ENV_NAME" \
-                      --service ${{ secrets.RAILWAY_API_SERVICE_ID }} 2>/dev/null || echo "")
-
-                    if [ -n "$API_URL" ]; then
-                      echo "Railway environment ready: $API_URL"
-                      break
+                    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_URL/" || echo "000")
+                    # Any non-5xx (incl. 404) means the API is up enough to
+                    # route. 502/503/000 mean Railway is still cold-starting
+                    # or networking isn't ready yet.
+                    if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+                      echo "API is up (HTTP $code on attempt $i)"
+                      exit 0
                     fi
 
-                    echo "Attempt $i/30 - environment not ready yet..."
+                    echo "Attempt $i/30 - HTTP $code, retrying in 20s..."
                     sleep 20
                   done
 
-            - name: Get Railway domain
-              id: url
-              run: |
-                  ENV_NAME="kodus-ai-pr-${{ github.event.pull_request.number }}"
-
-                  API_URL=$(railway domain \
-                    --project ${{ secrets.RAILWAY_PROJECT_ID }} \
-                    --environment "$ENV_NAME" \
-                    --service ${{ secrets.RAILWAY_API_SERVICE_ID }} 2>/dev/null || echo "")
-
-                  if [ -n "$API_URL" ]; then
-                    echo "api_url=https://$API_URL" >> $GITHUB_OUTPUT
-                    echo "Backend URL: https://$API_URL"
-                  else
-                    echo "::error::Could not resolve Railway domain for environment $ENV_NAME"
-                    exit 1
-                  fi
+                  echo "::error::API at $API_URL did not become reachable after 10 minutes"
+                  exit 1
 
     # ------------------------------------------------------------------
     # 3. Web preview on Vercel
