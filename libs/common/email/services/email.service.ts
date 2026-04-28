@@ -211,6 +211,40 @@ export class EmailService {
         }
     }
 
+    async createContact(
+        input: { email: string; name?: string },
+        logger?: SimpleLogger,
+    ) {
+        const { firstName, lastName } = splitName(input.name);
+
+        try {
+            const client = this.resendClient.getClient();
+            const { data, error } = await client.contacts.create({
+                email: input.email,
+                firstName,
+                lastName,
+                unsubscribed: false,
+            });
+
+            if (error) {
+                throw new Error(
+                    `Resend contacts.create failed: ${
+                        error.name ?? 'unknown'
+                    } — ${error.message ?? 'no message'}`,
+                );
+            }
+
+            return data;
+        } catch (error) {
+            this.logFailure(
+                logger,
+                `Error creating Resend contact for ${input.email}`,
+                error,
+                { email: input.email },
+            );
+        }
+    }
+
     async sendDomainVerificationEmail(
         token: string,
         email: string,
@@ -287,4 +321,15 @@ export class EmailService {
             metadata,
         });
     }
+}
+
+function splitName(name?: string): { firstName?: string; lastName?: string } {
+    const trimmed = name?.trim();
+    if (!trimmed) return {};
+    const parts = trimmed.split(/\s+/);
+    const [firstName, ...rest] = parts;
+    return {
+        firstName,
+        lastName: rest.length ? rest.join(' ') : undefined,
+    };
 }
