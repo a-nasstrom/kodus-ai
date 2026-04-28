@@ -20,8 +20,8 @@ ENV API_DEVELOPMENT_MODE=false
 ENV RELEASE_VERSION=${RELEASE_VERSION}
 ENV SENTRY_RELEASE=${RELEASE_VERSION}
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lib,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -35,22 +35,20 @@ COPY package.json yarn.lock .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
 COPY packages/kodus-flow ./packages/kodus-flow
 
-# The `npmrc` BuildKit secret (optional) lets CI inject auth for the
-# @kodus registry without the token ever landing in an image layer.
-# Usage: `docker buildx build --secret id=npmrc,src=$HOME/.npmrc ...`.
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/yarn-cache,sharing=locked \
+# Railway's Metal builder doesn't support BuildKit secret mounts, so we
+# rely on the repo-local .npmrc copied above. That file only holds
+# registry URLs (no tokens), and the @kodus/* packages get replaced by
+# the local copies in packages/ via `cp -r` after install.
+RUN --mount=type=cache,id=yarn-cache,target=/yarn-cache,sharing=locked \
     cd packages/kodus-common \
   && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn prepack
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,id=yarn-cache,target=/yarn-cache,sharing=locked \
     cd packages/kodus-flow \
   && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn build
 
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,id=yarn-cache,target=/yarn-cache,sharing=locked \
     YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
@@ -79,19 +77,16 @@ COPY package.json yarn.lock .npmrc ./
 COPY packages/kodus-common ./packages/kodus-common
 COPY packages/kodus-flow ./packages/kodus-flow
 
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,id=yarn-cache,target=/yarn-cache,sharing=locked \
     cd packages/kodus-common \
   && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn prepack
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,id=yarn-cache,target=/yarn-cache,sharing=locked \
     cd packages/kodus-flow \
   && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn build
 
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
-    --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,id=yarn-cache,target=/yarn-cache,sharing=locked \
     YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile --prefer-offline --production=true
 
 # Drop nested node_modules/src/test that were needed for `yarn prepack`
@@ -118,8 +113,8 @@ ENV RELEASE_VERSION=${RELEASE_VERSION}
 ENV SENTRY_RELEASE=${RELEASE_VERSION}
 ENV SERVICE_TYPE=${SERVICE_TYPE}
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lib,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
