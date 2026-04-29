@@ -11,10 +11,10 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * is hand-written following the same pattern as
  * `2026031600000-addIpE2bEnumValue.ts`.
  */
-export class AddFirstReviewAtOrgParamEnum2026042900000
+export class AddFirstReviewAtOrgParamEnum2026042900200
     implements MigrationInterface
 {
-    name = 'AddFirstReviewAtOrgParamEnum2026042900000';
+    name = 'AddFirstReviewAtOrgParamEnum2026042900200';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
