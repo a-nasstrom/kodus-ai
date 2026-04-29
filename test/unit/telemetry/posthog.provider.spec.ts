@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { PostHog } from 'posthog-node';
 
 import { PostHogProvider } from '@libs/telemetry/infrastructure/providers/posthog.provider';
@@ -17,25 +18,26 @@ jest.mock('posthog-node');
 
 const MockedPostHog = PostHog as jest.MockedClass<typeof PostHog>;
 
+const buildConfig = (overrides: Record<string, string | undefined> = {}) =>
+    ({
+        get: jest.fn((key: string) => overrides[key]),
+    }) as unknown as ConfigService;
+
 describe('PostHogProvider', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    afterEach(() => {
-        delete process.env.API_POSTHOG_KEY;
-    });
-
     describe('when API_POSTHOG_KEY is missing', () => {
         it('reports isEnabled = false and never constructs the SDK client', () => {
-            const provider = new PostHogProvider();
+            const provider = new PostHogProvider(buildConfig({}));
 
             expect(provider.isEnabled).toBe(false);
             expect(MockedPostHog).not.toHaveBeenCalled();
         });
 
         it('makes capture/identify/groupIdentify pure no-ops (no log, no throw)', () => {
-            const provider = new PostHogProvider();
+            const provider = new PostHogProvider(buildConfig({}));
 
             expect(() => {
                 provider.capture('user-1', 'event', { foo: 'bar' });
@@ -51,9 +53,10 @@ describe('PostHogProvider', () => {
         let captureSpy: jest.Mock;
         let identifySpy: jest.Mock;
         let groupIdentifySpy: jest.Mock;
+        const configWithKey = () =>
+            buildConfig({ API_POSTHOG_KEY: 'phc_test_key' });
 
         beforeEach(() => {
-            process.env.API_POSTHOG_KEY = 'phc_test_key';
             captureSpy = jest.fn();
             identifySpy = jest.fn();
             groupIdentifySpy = jest.fn();
@@ -68,7 +71,7 @@ describe('PostHogProvider', () => {
         });
 
         it('forwards capture with the exact distinctId/event/properties and prunes undefined groups', () => {
-            const provider = new PostHogProvider();
+            const provider = new PostHogProvider(configWithKey());
 
             provider.capture(
                 'user-1',
@@ -87,7 +90,7 @@ describe('PostHogProvider', () => {
         });
 
         it('forwards identify with distinctId and properties', () => {
-            const provider = new PostHogProvider();
+            const provider = new PostHogProvider(configWithKey());
 
             provider.identify('user-1', { email: 'a@b.com' });
 
@@ -98,7 +101,7 @@ describe('PostHogProvider', () => {
         });
 
         it('forwards groupIdentify with type/key/properties', () => {
-            const provider = new PostHogProvider();
+            const provider = new PostHogProvider(configWithKey());
 
             provider.groupIdentify('team', 'team-1', {
                 name: 'Engineering',
@@ -130,7 +133,7 @@ describe('PostHogProvider', () => {
             });
 
             it('swallows capture errors and logs a warn', () => {
-                const provider = new PostHogProvider();
+                const provider = new PostHogProvider(configWithKey());
 
                 expect(() =>
                     provider.capture('user-1', 'evt', {}),
@@ -142,7 +145,7 @@ describe('PostHogProvider', () => {
             });
 
             it('swallows identify errors', () => {
-                const provider = new PostHogProvider();
+                const provider = new PostHogProvider(configWithKey());
 
                 expect(() => provider.identify('user-1', {})).not.toThrow();
                 expect(mockLogger.warn).toHaveBeenCalledTimes(1);
@@ -152,7 +155,7 @@ describe('PostHogProvider', () => {
             });
 
             it('swallows groupIdentify errors', () => {
-                const provider = new PostHogProvider();
+                const provider = new PostHogProvider(configWithKey());
 
                 expect(() =>
                     provider.groupIdentify('organization', 'org-1', {}),

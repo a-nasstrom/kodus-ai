@@ -49,11 +49,21 @@ export const useFinishOnboardingReviewingPR = ({
             await revalidateServerSideTag("team-dependent");
 
             if (!isSelfHosted) {
-                await startTeamTrial({
-                    teamId,
-                    organizationId,
-                    byok: choseBYOK,
-                });
+                // Trial creation is best-effort — backend onboarding is
+                // already committed at this point. A billing hiccup must
+                // not strand the user on the onboarding screen.
+                try {
+                    await startTeamTrial({
+                        teamId,
+                        organizationId,
+                        byok: choseBYOK,
+                    });
+                } catch (trialError) {
+                    console.error(
+                        "startTeamTrial failed (non-fatal, continuing):",
+                        trialError,
+                    );
+                }
             }
 
             onSuccess();

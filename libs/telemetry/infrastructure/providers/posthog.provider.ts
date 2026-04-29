@@ -1,5 +1,6 @@
 import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PostHog } from 'posthog-node';
 
 @Injectable()
@@ -7,8 +8,8 @@ export class PostHogProvider {
     private readonly logger = createLogger(PostHogProvider.name);
     private readonly client: PostHog | null = null;
 
-    constructor() {
-        const apiKey = process.env.API_POSTHOG_KEY;
+    constructor(configService: ConfigService) {
+        const apiKey = configService.get<string>('API_POSTHOG_KEY');
         if (apiKey) {
             this.client = new PostHog(apiKey, {
                 host: 'https://us.i.posthog.com',
