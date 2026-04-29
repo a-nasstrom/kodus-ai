@@ -16,6 +16,7 @@ import { ChangeStatusKodyRulesUseCase } from '@libs/kodyRules/application/use-ca
 import { SyncSelectedRepositoriesKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/sync-selected-repositories.use-case';
 import { KodyRulesStatus } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
 import { CreateOrUpdateParametersUseCase } from '@libs/organization/application/use-cases/parameters/create-or-update-use-case';
+import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
 
 @Injectable()
 export class FinishOnboardingUseCase {
@@ -29,10 +30,15 @@ export class FinishOnboardingUseCase {
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: {
+                organization: { uuid: string };
+                uuid?: string;
+                email?: string;
+            };
         },
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
+        private readonly telemetry: TelemetryService,
     ) {}
 
     async execute(params: FinishOnboardingDTO) {
@@ -106,6 +112,35 @@ export class FinishOnboardingUseCase {
                         pull_number: pullNumber,
                     },
                 });
+            }
+
+            const userId = this.request?.user?.uuid;
+            const userEmail = this.request?.user?.email;
+            if (userId) {
+                void this.telemetry.onboardingCompleted({
+                    userId,
+                    email: userEmail,
+                    organizationId,
+                    teamId,
+                    reviewedPR: !!reviewPR,
+                });
+
+                if (reviewPR) {
+                    void this.telemetry.onboardingReviewTriggered({
+                        userId,
+                        email: userEmail,
+                        teamId,
+                        organizationId,
+                        repositoryId,
+                    });
+                } else {
+                    void this.telemetry.onboardingReviewSkipped({
+                        userId,
+                        email: userEmail,
+                        teamId,
+                        organizationId,
+                    });
+                }
             }
         } catch (error) {
             this.logger.error({
