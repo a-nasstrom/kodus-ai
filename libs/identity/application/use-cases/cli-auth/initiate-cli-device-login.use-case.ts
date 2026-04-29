@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import {
@@ -33,6 +34,7 @@ export class InitiateCliDeviceLoginUseCase
     constructor(
         @Inject(CLI_AUTH_SESSION_REPOSITORY_TOKEN)
         private readonly sessionRepository: ICliAuthSessionRepository,
+        private readonly configService: ConfigService,
     ) {}
 
     async execute(
@@ -53,8 +55,9 @@ export class InitiateCliDeviceLoginUseCase
         });
 
         const frontendUrl =
-            process.env.API_FRONTEND_URL?.replace(/\/$/, '') ||
-            'https://app.kodus.io';
+            this.configService
+                .get<string>('API_FRONTEND_URL')
+                ?.replace(/\/$/, '') || 'https://app.kodus.io';
         const verificationUri = `${frontendUrl}/cli/authorize`;
         const verificationUriComplete = `${verificationUri}?code=${encodeURIComponent(
             userCode,

@@ -54,8 +54,9 @@ export class InitiateCliLoginUseCase
         });
 
         const frontendUrl =
-            process.env.API_FRONTEND_URL?.replace(/\/$/, '') ||
-            'https://app.kodus.io';
+            this.configService
+                .get<string>('API_FRONTEND_URL')
+                ?.replace(/\/$/, '') || 'https://app.kodus.io';
 
         const verificationUri = `${frontendUrl}/cli/authorize?state=${encodeURIComponent(state)}`;
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { FindOptionsSelect, LessThan, Repository } from 'typeorm';
 
 import { ICliAuthSessionRepository } from '@libs/identity/domain/cli-auth/contracts/cli-auth-session.repository';
 import {
@@ -10,6 +10,33 @@ import {
 } from '@libs/identity/domain/cli-auth/interfaces/cli-auth-session.interface';
 
 import { CliAuthSessionModel } from './schemas/cli-auth-session.model';
+
+/**
+ * Explicit projection for every read of `cli_auth_sessions` — keeps the
+ * SQL focused on what `toInterface` actually needs and, for the joined
+ * `user` relation, brings only `uuid` instead of the entire row. Without
+ * this, `findOne({ relations: ['user'] })` issues a `SELECT *` join that
+ * pulls password hashes and other heavy user columns we never read here.
+ */
+const SESSION_SELECT: FindOptionsSelect<CliAuthSessionModel> = {
+    uuid: true,
+    state: true,
+    deviceCode: true,
+    userCode: true,
+    redirectUri: true,
+    mode: true,
+    status: true,
+    accessToken: true,
+    refreshToken: true,
+    userEmail: true,
+    userAgent: true,
+    expiresAt: true,
+    consumedAt: true,
+    completedAt: true,
+    createdAt: true,
+    updatedAt: true,
+    user: { uuid: true },
+};
 
 @Injectable()
 export class CliAuthSessionRepository implements ICliAuthSessionRepository {
@@ -59,6 +86,7 @@ export class CliAuthSessionRepository implements ICliAuthSessionRepository {
         const model = await this.repo.findOne({
             where: { state },
             relations: ['user'],
+            select: SESSION_SELECT,
         });
         return model ? this.toInterface(model) : null;
     }
@@ -69,6 +97,7 @@ export class CliAuthSessionRepository implements ICliAuthSessionRepository {
         const model = await this.repo.findOne({
             where: { deviceCode },
             relations: ['user'],
+            select: SESSION_SELECT,
         });
         return model ? this.toInterface(model) : null;
     }
@@ -77,6 +106,7 @@ export class CliAuthSessionRepository implements ICliAuthSessionRepository {
         const model = await this.repo.findOne({
             where: { userCode, status: 'pending' },
             relations: ['user'],
+            select: SESSION_SELECT,
         });
         return model ? this.toInterface(model) : null;
     }
@@ -100,6 +130,7 @@ export class CliAuthSessionRepository implements ICliAuthSessionRepository {
         const updated = await this.repo.findOne({
             where: { uuid },
             relations: ['user'],
+            select: SESSION_SELECT,
         });
         return updated ? this.toInterface(updated) : null;
     }

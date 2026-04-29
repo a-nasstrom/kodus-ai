@@ -62,19 +62,15 @@ export class RealReviewApi implements IReviewApi {
             ? { 'X-Team-Key': accessToken }
             : { Authorization: `Bearer ${accessToken}` };
 
-        let endpoint = '/cli/review';
-        if (!isTeamKey) {
-            try {
-                const payload = JSON.parse(
-                    Buffer.from(accessToken.split('.')[1], 'base64').toString(),
-                );
-                if (payload.organizationId) {
-                    endpoint = `/cli/review?teamId=${encodeURIComponent(payload.organizationId)}`;
-                }
-            } catch {
-                // Ignore if cannot decode
-            }
-        }
+        // Personal tokens: do NOT pass `teamId` here. Earlier we forwarded
+        // the JWT's organizationId in this query param, which the backend's
+        // `resolveOrgAndTeamForReview` would feed to `teamService.findById`
+        // — that lookup obviously fails (org id is not a team id) and
+        // succeeded today only because of a downstream fallback to
+        // `findFirstCreatedTeam(orgId)`. Letting the backend take that
+        // fallback directly keeps the flow correct without lying about
+        // the parameter's meaning.
+        const endpoint = '/cli/review';
 
         // Enqueue: server returns 202 + jobId. We then poll for completion.
         const enqueueResponse = await this.requester<CliReviewEnqueueResponse>(
