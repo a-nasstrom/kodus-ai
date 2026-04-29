@@ -69,13 +69,21 @@ export async function loginViaBrowser({
             // manually. The callback server keeps waiting either way.
         }
 
-        const callback = await Promise.race([
-            callbackPromise,
-            timeout<CallbackResult>(
-                init.expiresIn * 1000,
-                'Authorization timed out. Run `kodus auth login` again.',
-            ),
-        ]);
+        // Race the callback against an expiry timeout. We MUST cancel the
+        // timer once the callback wins — without `cancel()` the underlying
+        // `setTimeout` keeps the Node event loop alive for the full
+        // `expiresIn` window (10 min by default), so the CLI hangs after a
+        // successful login until the timer naturally fires.
+        const expiry = timeout<CallbackResult>(
+            init.expiresIn * 1000,
+            'Authorization timed out. Run `kodus auth login` again.',
+        );
+        let callback: CallbackResult;
+        try {
+            callback = await Promise.race([callbackPromise, expiry.promise]);
+        } finally {
+            expiry.cancel();
+        }
 
         if (callback.state !== init.state) {
             throw new Error(
@@ -210,8 +218,25 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function timeout<T>(ms: number, message: string): Promise<T> {
-    return new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(message)), ms),
-    );
+/**
+ * Cancellable timeout: returns a promise that rejects after `ms`, plus a
+ * `cancel()` to clear the underlying timer when the caller no longer
+ * needs it (e.g. when racing against another promise that won). Without
+ * `cancel()`, the unref'd timer would keep the event loop alive for the
+ * full duration even after the race resolved.
+ */
+function timeout<T>(
+    ms: number,
+    message: string,
+): { promise: Promise<T>; cancel: () => void } {
+    let timer: NodeJS.Timeout | undefined;
+    const promise = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+    });
+    return {
+        promise,
+        cancel: () => {
+            if (timer) clearTimeout(timer);
+        },
+    };
 }
