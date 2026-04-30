@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { DM_Sans, Overpass_Mono } from "next/font/google";
-import Script from "next/script";
 import { Toaster } from "@components/ui/toaster/toaster";
 import { TooltipProvider } from "@components/ui/tooltip";
 import { GoogleTagManager } from "@next/third-parties/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import QueryProvider from "src/core/providers/query.provider";
+import { getApiPublicUrl } from "src/core/utils/api-public-url";
 import { cn } from "src/core/utils/components";
 
 import { ConfigProvider } from "@providers/ConfigProvider";
@@ -58,11 +58,7 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
         ruleFilesDocs: process.env.WEB_RULE_FILES_DOCS ?? "",
         releaseVersion: process.env.RELEASE_VERSION ?? "",
         nodeEnv: process.env.WEB_NODE_ENV ?? "",
-        // Same env the API uses to build the SAML ACS callback in
-        // libs/ee/sso/strategies/saml-auth.strategy.ts. Reusing it
-        // here guarantees the URL we display in the SSO settings is
-        // byte-for-byte the URL the API will accept on callback.
-        apiPublicUrl: process.env.API_URL ?? "",
+        apiPublicUrl: getApiPublicUrl(),
     };
 
     // Expose publicConfig as window.__KODUS_PUBLIC_CONFIG__ so module-scope

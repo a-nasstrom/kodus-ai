@@ -145,8 +145,8 @@ export const ssoLogin = async (organizationId: string) => {
     const apiPublicUrl = getApiPublicUrl();
     if (!apiPublicUrl) {
         throw new Error(
-            "API_URL is not configured. SSO login requires the API's " +
-                "public, browser-reachable URL.",
+            "SSO is not configured on this instance. Contact your " +
+                "administrator.",
         );
     }
     window.location.href = `${apiPublicUrl}${API_ROUTES.ssoLogin}/${organizationId}`;

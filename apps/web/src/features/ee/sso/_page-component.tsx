@@ -690,9 +690,7 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                             onClick={handleConnectionTest}
                             loading={isTestingConnection}
                             disabled={
-                                isLoadingSubmitButton ||
-                                isTestingConnection ||
-                                (isEnabled && !callbackUrl)
+                                isLoadingSubmitButton || isTestingConnection
                             }>
                             Test connection
                         </Button>
@@ -707,8 +705,7 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                 !isValid ||
                                 isLoadingSubmitButton ||
                                 (isEnabled && needsConnectionRetest) ||
-                                needsDomainVerification ||
-                                (isEnabled && !callbackUrl)
+                                needsDomainVerification
                             }
                             loading={isLoadingSubmitButton}>
                             Save settings
@@ -859,76 +856,50 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                                         <FormControl.Label>
                                                             Callback URL
                                                         </FormControl.Label>
-                                                        {callbackUrl ? (
-                                                            <>
-                                                                <div className="flex items-center space-x-2">
-                                                                    <Input
-                                                                        value={
-                                                                            callbackUrl
-                                                                        }
-                                                                        readOnly
-                                                                        className="flex-1 font-mono text-sm"
-                                                                        onClick={() => {
-                                                                            navigator.clipboard.writeText(
-                                                                                callbackUrl,
-                                                                            );
-                                                                            toast({
-                                                                                title: "Copied",
-                                                                                description:
-                                                                                    "Callback URL copied to clipboard",
-                                                                                variant:
-                                                                                    "success",
-                                                                            });
-                                                                        }}
-                                                                    />
-                                                                    <Button
-                                                                        type="button"
-                                                                        variant="secondary"
-                                                                        size="md"
-                                                                        onClick={() => {
-                                                                            navigator.clipboard.writeText(
-                                                                                callbackUrl,
-                                                                            );
-                                                                            toast({
-                                                                                title: "Copied",
-                                                                                variant:
-                                                                                    "success",
-                                                                                description:
-                                                                                    "Callback URL copied to clipboard",
-                                                                            });
-                                                                        }}>
-                                                                        Copy
-                                                                    </Button>
-                                                                </div>
-                                                                <FormControl.Helper>
-                                                                    Provide this
-                                                                    URL to your
-                                                                    identity
-                                                                    provider
-                                                                </FormControl.Helper>
-                                                            </>
-                                                        ) : (
-                                                            <Alert variant="danger">
-                                                                <AlertCircle />
-                                                                <AlertDescription>
-                                                                    SSO callback
-                                                                    URL is not
-                                                                    configured.
-                                                                    Set API_URL
-                                                                    to the
-                                                                    public,
-                                                                    browser-reachable
-                                                                    URL of the
-                                                                    API (e.g.
-                                                                    https://api.example.com)
-                                                                    so the IdP
-                                                                    can POST
-                                                                    SAMLResponse
-                                                                    to the API
-                                                                    directly.
-                                                                </AlertDescription>
-                                                            </Alert>
-                                                        )}
+                                                        <div className="flex items-center space-x-2">
+                                                            <Input
+                                                                value={
+                                                                    callbackUrl
+                                                                }
+                                                                readOnly
+                                                                className="flex-1 font-mono text-sm"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(
+                                                                        callbackUrl,
+                                                                    );
+                                                                    toast({
+                                                                        title: "Copied",
+                                                                        description:
+                                                                            "Callback URL copied to clipboard",
+                                                                        variant:
+                                                                            "success",
+                                                                    });
+                                                                }}
+                                                            />
+                                                            <Button
+                                                                type="button"
+                                                                variant="secondary"
+                                                                size="md"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(
+                                                                        callbackUrl,
+                                                                    );
+                                                                    toast({
+                                                                        title: "Copied",
+                                                                        variant:
+                                                                            "success",
+                                                                        description:
+                                                                            "Callback URL copied to clipboard",
+                                                                    });
+                                                                }}>
+                                                                Copy
+                                                            </Button>
+                                                        </div>
+                                                        <FormControl.Helper>
+                                                            Provide this URL to
+                                                            your identity
+                                                            provider
+                                                        </FormControl.Helper>
                                                     </FormControl.Root>
                                                 </div>
                                             </div>
@@ -1112,15 +1083,15 @@ export const ClientSsoOrganizationSettingsPage = (props: {
                                                                     (prev) => ({
                                                                         ...prev,
                                                                         [record.domain]:
-                                                                            {
-                                                                                domain: record.domain,
-                                                                                verified:
-                                                                                    true,
-                                                                                verifiedAt:
-                                                                                    record.verifiedAt,
-                                                                                verifiedByEmail:
-                                                                                    record.contactEmail,
-                                                                            },
+                                                                        {
+                                                                            domain: record.domain,
+                                                                            verified:
+                                                                                true,
+                                                                            verifiedAt:
+                                                                                record.verifiedAt,
+                                                                            verifiedByEmail:
+                                                                                record.contactEmail,
+                                                                        },
                                                                     }),
                                                                 )
                                                             }
