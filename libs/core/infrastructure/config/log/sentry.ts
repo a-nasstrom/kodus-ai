@@ -1,10 +1,22 @@
+import type { SpanProcessor } from '@opentelemetry/sdk-trace-base';
 import * as Sentry from '@sentry/nestjs';
 
 let sentryInitialized = false;
 
-export function setupSentry(componentType: 'api' | 'worker' | 'webhook'): void {
+/**
+ * Returns `true` when Sentry was actually initialized (DSN present and
+ * `Sentry.init` succeeded). Callers use this to decide whether they still
+ * need to register their own OTel TracerProvider — when Sentry initializes,
+ * it sets the global TracerProvider itself and any extra
+ * `openTelemetrySpanProcessors` are wired into it; when Sentry skips
+ * (no DSN), the caller must install its own provider.
+ */
+export function setupSentry(
+    componentType: 'api' | 'worker' | 'webhook',
+    openTelemetrySpanProcessors: SpanProcessor[] = [],
+): boolean {
     if (sentryInitialized) {
-        return;
+        return true;
     }
 
     const environment =
@@ -12,7 +24,7 @@ export function setupSentry(componentType: 'api' | 'worker' | 'webhook'): void {
 
     const dsn = process.env.API_BETTERSTACK_DSN;
     if (!dsn) {
-        return;
+        return false;
     }
 
     try {
@@ -28,9 +40,11 @@ export function setupSentry(componentType: 'api' | 'worker' | 'webhook'): void {
                     component: componentType,
                 },
             },
+            openTelemetrySpanProcessors,
         });
 
         sentryInitialized = true;
+        return true;
     } catch (error) {
         const message =
             error instanceof Error ? error.message : 'unknown error';
@@ -39,6 +53,7 @@ export function setupSentry(componentType: 'api' | 'worker' | 'webhook'): void {
             '[Sentry] initialization failed, continuing without error tracking:',
             message,
         );
+        return false;
     }
 }
 

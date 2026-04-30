@@ -1,7 +1,16 @@
 import 'dotenv/config';
 
 import { setupSentry } from '@libs/core/infrastructure/config/log/sentry';
-import { setupLangfuseTracing } from '@libs/core/log/langfuse';
+import {
+    createLangfuseSpanProcessor,
+    registerLangfuseStandalone,
+} from '@libs/core/log/langfuse';
 
-setupSentry('webhook');
-setupLangfuseTracing();
+const langfuseProcessor = createLangfuseSpanProcessor();
+const sentryStarted = setupSentry(
+    'webhook',
+    langfuseProcessor ? [langfuseProcessor] : [],
+);
+if (langfuseProcessor && !sentryStarted) {
+    registerLangfuseStandalone();
+}
