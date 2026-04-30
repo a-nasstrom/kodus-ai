@@ -1,4 +1,5 @@
-import { isServerSide } from "./server-side";
+import { createUrl } from './helpers';
+import { isServerSide } from './server-side';
 
 /**
  * Public, absolute URL of the API as seen from the user's browser.
@@ -17,12 +18,14 @@ import { isServerSide } from "./server-side";
  * without thinking about it.
  */
 export function getApiPublicUrl(): string {
-    // Server reads API_URL — the same env the API itself uses to
-    // build the SAML ACS callback URL (see saml-auth.strategy.ts).
-    // One source of truth: if the API and the value the user pastes
-    // into the IdP ever diverge, login silently breaks.
     const raw = isServerSide
-        ? (process.env.API_URL ?? "")
-        : ((globalThis as any).__KODUS_PUBLIC_CONFIG__?.apiPublicUrl ?? "");
-    return raw.replace(/\/$/, "");
+        ? process.env.WEB_HOSTNAME_API
+            ? createUrl(
+                  process.env.WEB_HOSTNAME_API,
+                  process.env.WEB_PORT_API,
+                  '',
+              )
+            : ''
+        : ((globalThis as any).__KODUS_PUBLIC_CONFIG__?.apiPublicUrl ?? '');
+    return raw.replace(/\/$/, '');
 }
