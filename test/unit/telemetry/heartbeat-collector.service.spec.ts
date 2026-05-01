@@ -80,13 +80,15 @@ describe('HeartbeatCollectorService.collect', () => {
 
     it('returns real values for runtime / version metadata', async () => {
         const { service } = build({ dsHandler: dsRouter({}) });
-        process.env.KODUS_VERSION = '0.4.15';
 
         const metrics = await service.collect({
             firstSeenAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
         });
 
-        expect(metrics.kodus.version).toBe('0.4.15');
+        // Reads from package.json — must look like a semver string and not
+        // be the placeholder fallback.
+        expect(metrics.kodus.version).toMatch(/^\d+\.\d+\.\d+/);
+        expect(metrics.kodus.version).not.toBe('0.0.0');
         expect(metrics.kodus.uptime_hours).toBe(5);
         expect(metrics.runtime.node_version).toBe(process.version);
         expect(metrics.runtime.cpu_count).toBeGreaterThan(0);
@@ -189,19 +191,19 @@ describe('HeartbeatCollectorService.collect', () => {
     it('detects k8s deployment via KUBERNETES_SERVICE_HOST', async () => {
         const { service } = build({ dsHandler: dsRouter({}) });
         process.env.KUBERNETES_SERVICE_HOST = '10.0.0.1';
-        delete process.env.KODUS_DEPLOYMENT;
 
         const metrics = await service.collect({ firstSeenAt: new Date() });
 
         expect(metrics.kodus.deployment).toBe('k8s');
     });
 
-    it('honours explicit KODUS_DEPLOYMENT override', async () => {
+    it('falls back to "unknown" when no deployment hint is present', async () => {
         const { service } = build({ dsHandler: dsRouter({}) });
-        process.env.KODUS_DEPLOYMENT = 'docker-compose';
+        delete process.env.KUBERNETES_SERVICE_HOST;
+        // Tests run on the host filesystem — `/.dockerenv` should not exist.
 
         const metrics = await service.collect({ firstSeenAt: new Date() });
 
-        expect(metrics.kodus.deployment).toBe('docker-compose');
+        expect(metrics.kodus.deployment).toBe('unknown');
     });
 });

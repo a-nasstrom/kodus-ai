@@ -1,4 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
 import * as os from 'node:os';
+import { join } from 'node:path';
 
 import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
@@ -242,27 +244,30 @@ export class HeartbeatCollectorService {
     }
 }
 
-function detectKodusVersion(): string {
-    if (process.env.KODUS_VERSION && process.env.KODUS_VERSION.length > 0) {
-        return process.env.KODUS_VERSION;
+// Read once at module load — package.json doesn't change at runtime, and we
+// avoid hitting the disk on every heartbeat.
+const KODUS_VERSION = readKodusVersion();
+
+function readKodusVersion(): string {
+    try {
+        const pkg = JSON.parse(
+            readFileSync(join(process.cwd(), 'package.json'), 'utf8'),
+        ) as { version?: string };
+        return pkg.version ?? '0.0.0';
+    } catch {
+        return '0.0.0';
     }
-    return process.env.npm_package_version ?? '0.0.0';
+}
+
+function detectKodusVersion(): string {
+    return KODUS_VERSION;
 }
 
 function detectDeployment(): HeartbeatMetrics['kodus']['deployment'] {
-    const explicit = process.env.KODUS_DEPLOYMENT;
-    if (
-        explicit === 'docker' ||
-        explicit === 'docker-compose' ||
-        explicit === 'k8s' ||
-        explicit === 'bare'
-    ) {
-        return explicit;
-    }
     if (process.env.KUBERNETES_SERVICE_HOST) {
         return 'k8s';
     }
-    if (process.env.DOCKER_CONTAINER === 'true') {
+    if (existsSync('/.dockerenv')) {
         return 'docker';
     }
     return 'unknown';
