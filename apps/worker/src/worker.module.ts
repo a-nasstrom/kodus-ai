@@ -29,6 +29,7 @@ import { TelemetryModule } from '@libs/telemetry/modules/telemetry.module';
 
 import { AnalyticsClassifierCron } from './cron/analytics-classifier.cron';
 import { AnalyticsIngestionCron } from './cron/analytics-ingestion.cron';
+import { SelfHostedBeaconCron } from './cron/self-hosted-beacon.cron';
 import { WeeklyRecapCron } from './cron/weekly-recap.cron';
 import { resolveWorkerRole, type WorkerRole } from './worker-role';
 import { WorkerDrainService } from './worker-drain.service';
@@ -121,6 +122,7 @@ export class WorkerModule {
                 AnalyticsIngestionCron,
                 AnalyticsClassifierCron,
                 WeeklyRecapCron,
+                SelfHostedBeaconCron,
                 LangfuseShutdownProvider,
             ] satisfies Provider[],
         };
