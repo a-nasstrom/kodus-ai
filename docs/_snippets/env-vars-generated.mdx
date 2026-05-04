@@ -117,7 +117,7 @@
 | `API_GROQ_API_KEY` | – | secret | ☁️ Cloud |  |
 | `API_CEREBRAS_BASE_URL` | – | url | ☁️ Cloud |  |
 | `API_CEREBRAS_API_KEY` | – | secret | ☁️ Cloud |  |
-| `API_OPEN_ROUTER_API_KEY` | – | secret | ⚙️ Both (opt-in) | OpenRouter API key. Used by BYOK provider in libs/organization/.../get-models-by-provider.use-case.ts. |
+| `API_OPEN_ROUTER_API_KEY` | – | secret | ☁️ Cloud | OpenRouter API key. Used by BYOK provider in libs/organization/.../get-models-by-provider.use-case.ts. |
 | `API_MORPHLLM_API_KEY` | – | secret | ⚙️ Both (opt-in) | MorphLLM (fast-apply model). When set, the review pipeline uses MorphLLM to apply LLM-suggested code edits automatically and reliably (better than letting the main LLM rewrite files). Used in libs/code-review/pipeline/stages/validate-suggestions.stage.ts. Without it, the "apply suggested fix" feature falls back to the main LLM with lower accuracy. |
 | `API_EXA_KEY` | – | secret | ⚙️ Both (opt-in) | Exa (semantic web search). When set, code-review agents can search external documentation during review (e.g. fetch docs about a library API the PR uses). Used in libs/code-review/infrastructure/adapters/services/documentation- search-exa.service.ts and the agent providers. Without it, agents skip the documentation-fetching loop and review using only repo context. |
 
@@ -216,17 +216,18 @@
 | `ANALYTICS_PG_DB_USERNAME` | – | string | 🏢 ☁️ Cloud |  |
 | `ANALYTICS_PG_DB_PASSWORD` | – | secret | 🏢 ☁️ Cloud |  |
 | `ANALYTICS_PG_DB_DATABASE` | – | string | 🏢 ☁️ Cloud |  |
+| `ANALYTICS_PG_DB_SCHEMA` | – | string | 🏢 ☁️ Cloud | Schema name in the analytics Postgres (default: analytics). Legacy alias of API_PG_ANALYTICS_SCHEMA — both work; loader prefers ANALYTICS_PG_DB_* when set, then falls back to API_PG_ANALYTICS_*. |
 | `ANALYTICS_PG_POOL_MAX` | – | string | 🏢 ☁️ Cloud | Upper bound on the analytics Postgres pool. |
 | `ANALYTICS_INGESTION_CRON` | – | cron | 🏢 ☁️ Cloud | Cron expression — analytics ingestion. Default = every 30 min. |
 | `ANALYTICS_INGESTION_DISABLED` | – | boolean | ☁️ Cloud | Kill switch for the ingestion cron regardless of role. |
 | `ANALYTICS_CLASSIFIER_CRON` | – | cron | 🏢 ☁️ Cloud | Cron — LLM-based PR type classifier (analytics worker role). |
 | `ANALYTICS_CLASSIFIER_DISABLED` | – | boolean | ☁️ Cloud | Kill switch for the classifier. |
-| `API_PG_ANALYTICS_HOST` | – | string | 🏢 Self-hosted Enterprise | Alternative naming used by some loaders. Verify if duplicate of ANALYTICS_PG_DB_*. |
-| `API_PG_ANALYTICS_PORT` | – | port | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_USERNAME` | – | string | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_PASSWORD` | – | secret | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_DATABASE` | – | string | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_SCHEMA` | – | string | 🏢 Self-hosted Enterprise | Schema name for analytics tables (default: "analytics"). |
+| `API_PG_ANALYTICS_HOST` | – | string | 🏢 ☁️ Cloud | Alternative naming used by some loaders. Verify if duplicate of ANALYTICS_PG_DB_*. |
+| `API_PG_ANALYTICS_PORT` | – | port | 🏢 ☁️ Cloud |  |
+| `API_PG_ANALYTICS_USERNAME` | – | string | 🏢 ☁️ Cloud |  |
+| `API_PG_ANALYTICS_PASSWORD` | – | secret | 🏢 ☁️ Cloud |  |
+| `API_PG_ANALYTICS_DATABASE` | – | string | 🏢 ☁️ Cloud |  |
+| `API_PG_ANALYTICS_SCHEMA` | – | string | 🏢 ☁️ Cloud | Schema name for analytics tables (default: "analytics"). |
 
 ## BetterStack heartbeats (cloud-only)
 
@@ -279,10 +280,10 @@
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
-| `GLOBAL_ANALYTICS_CONTAINER_NAME` | – | string | 🏢 Self-hosted Enterprise |  |
-| `WEB_ANALYTICS_HOSTNAME` | – | string | 🏢 Self-hosted Enterprise |  |
-| `WEB_ANALYTICS_SECRET` | – | secret | 🏢 Self-hosted Enterprise |  |
-| `WEB_PORT_ANALYTICS` | – | port | 🏢 Self-hosted Enterprise |  |
+| `GLOBAL_ANALYTICS_CONTAINER_NAME` | – | string | 🏢 ☁️ Cloud |  |
+| `WEB_ANALYTICS_HOSTNAME` | – | string | 🏢 ☁️ Cloud |  |
+| `WEB_ANALYTICS_SECRET` | – | secret | 🏢 ☁️ Cloud |  |
+| `WEB_PORT_ANALYTICS` | – | port | 🏢 ☁️ Cloud |  |
 | `API_MCP_SERVER_ENABLED` | – | boolean | ⚙️ Both | Enables the MCP integration in kodus-ai (calls into the MCP Manager service). When false, MCP-related code paths are skipped entirely. |
 | `API_KODUS_SERVICE_MCP_MANAGER` | – | url | ⚙️ Both | Address of the kodus-mcp-manager service (sibling container). kodus-ai calls this URL to provision MCP servers per organization. |
 | `API_KODUS_MCP_SERVER_URL` | – | url | ⚙️ Both | Public URL where MCP clients (e.g. Cursor/Claude Desktop) connect to consume MCP tools exposed by kodus-ai itself. |
@@ -297,7 +298,7 @@
 | `API_MCP_MANAGER_MCP_PROVIDERS` | – | string | 🏠 Self-hosted | Comma-separated list of MCP providers to enable: kodusmcp,composio,custom. |
 | `API_MCP_MANAGER_REDIRECT_URI` | – | url | 🏠 Self-hosted | OAuth redirect URI used by MCP Manager when wiring providers via the web UI. |
 | `API_MCP_MANAGER_PG_DB_SCHEMA` | – | string | 🏠 Self-hosted | Postgres schema name used by MCP Manager (shares the main DB). |
-| `API_MCP_MANAGER_ENCRYPTION_SECRET` | – | secret | 🏠 Self-hosted | Symmetric key used by MCP Manager to encrypt tokens at rest. Generate with: openssl rand -base64 32 |
+| `API_MCP_MANAGER_ENCRYPTION_SECRET` | – | secret | ⚙️ Both | Symmetric key used by MCP Manager to encrypt tokens at rest. Generate with: openssl rand -base64 32 |
 
 ## Auth — additional libs that read their own env keys
 
@@ -322,7 +323,7 @@
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
-| `API_CRON_CLASSIFY_ORPHANED_SESSIONS` | – | cron | ☁️ Cloud | Reclassifies orphaned (no-PR) review sessions every 15 minutes. Cloud-only feature. |
+| `API_CRON_CLASSIFY_ORPHANED_SESSIONS` | – | cron | ⚙️ Both | Reclassifies orphaned (no-PR) review sessions every 15 minutes. Cloud-only feature. |
 | `API_CRON_SSO_TEST_SESSION_CLEANUP` | – | cron | ☁️ Cloud | Daily cleanup of expired SSO test sessions (1 AM UTC). |
 | `WORKFLOW_QUEUE_CHECK_IMPLEMENTATION_PREFETCH` | – | number | ⚙️ Both (opt-in) | Per-handler prefetch (in-flight messages) for the check-implementation workflow handler. |
 | `WORKFLOW_QUEUE_CHECK_IMPLEMENTATION_TIMEOUT_MS` | – | number | ⚙️ Both (opt-in) | Hard timeout (ms) for a check-implementation handler invocation. |
@@ -336,19 +337,12 @@
 | `WORKFLOW_QUEUE_AUTO_SCALE_QUEUE_THRESHOLD` | – | number | ⚙️ Both (opt-in) | Auto-scale: spin up another worker when queue depth exceeds this. |
 | `WORKFLOW_QUEUE_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | – | number | ⚙️ Both (opt-in) | Circuit breaker: open after N consecutive handler failures. |
 | `WORKFLOW_QUEUE_CIRCUIT_BREAKER_TIMEOUT_MS` | – | number | ⚙️ Both (opt-in) | Circuit breaker: hold open for this long (ms) before half-open probe. |
-| `ANALYTICS_PG_DB_SCHEMA` | – | string | 🏢 Self-hosted Enterprise | Schema name (legacy alias of API_PG_ANALYTICS_SCHEMA). |
-| `API_PG_ANALYTICS_HOST` | – | string | 🏢 Self-hosted Enterprise | Current naming convention for the analytics warehouse Postgres. Mirrors API_PG_DB_* style. Loader cascades: ANALYTICS_PG_DB_* → API_PG_ANALYTICS_* → API_PG_DB_* (self-hosted reuse). |
-| `API_PG_ANALYTICS_PORT` | – | port | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_USERNAME` | – | string | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_PASSWORD` | – | secret | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_DATABASE` | – | string | 🏢 Self-hosted Enterprise |  |
-| `API_PG_ANALYTICS_SCHEMA` | – | string | 🏢 Self-hosted Enterprise |  |
 
 ## Misc runtime flags
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
-| `API_AGENT_REVIEW_ENABLED` | – | boolean | ⚙️ Both | Force the new agent-based code review engine on for ALL orgs in this instance (bypasses the PostHog feature flag). Set "true" to enable. |
+| `API_AGENT_REVIEW_ENABLED` | – | boolean | 🏢 ☁️ Cloud | Force the new agent-based code review engine on for ALL orgs in this instance (bypasses the PostHog feature flag). Set "true" to enable. Read by libs/core/providers/code-review-pipeline.provider.ee.ts — .ee.ts file means it only takes effect in EE contexts. |
 | `API_RABBITMQ_WAIT` | – | boolean | ⚙️ Both | Wait for RabbitMQ to become reachable before completing app boot. |
 | `API_WORKER_DRAIN_TIMEOUT_MS` | – | number | ⚙️ Both | Worker drain timeout (ms) — how long to keep accepting in-flight jobs during graceful shutdown before forcing exit. |
 
