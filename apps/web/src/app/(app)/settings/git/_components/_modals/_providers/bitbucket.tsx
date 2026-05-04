@@ -2,8 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { GitTokenDocs } from "@components/system/git-token-docs";
-import { Button } from "@components/ui/button";
 import { Badge } from "@components/ui/badge";
+import { Button } from "@components/ui/button";
 import { Card, CardHeader } from "@components/ui/card";
 import {
     Collapsible,

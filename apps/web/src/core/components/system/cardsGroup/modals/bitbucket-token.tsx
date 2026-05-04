@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button } from "@components/ui/button";
 import { Badge } from "@components/ui/badge";
+import { Button } from "@components/ui/button";
 import { Card, CardHeader } from "@components/ui/card";
 import {
     Collapsible,
@@ -89,11 +89,11 @@ export const BitbucketModal = (props: Props) => {
                             error={error.message}
                             id="bitbucket-username-input"
                             onChange={(e) => setUsername(e.target.value)}
-                                placeholder={
-                                    selfhosted
-                                        ? "Enter your Data Center username"
-                                        : "Paste your username"
-                                }
+                            placeholder={
+                                selfhosted
+                                    ? "Enter your Data Center username"
+                                    : "Paste your username"
+                            }
                         />
                     </FormControl.Input>
                 </FormControl.Root>
@@ -132,9 +132,7 @@ export const BitbucketModal = (props: Props) => {
                             />
                         </FormControl.Input>
 
-                        <FormControl.Error>
-                            {error.message}
-                        </FormControl.Error>
+                        <FormControl.Error>{error.message}</FormControl.Error>
                     </FormControl.Root>
                 )}
 

@@ -13,6 +13,7 @@ import { magicModal } from "@components/ui/magic-modal";
 import { toast } from "@components/ui/toaster/use-toast";
 import { INTEGRATIONS_KEY, type INTEGRATIONS_TYPES } from "@enums";
 import { useReactQueryInvalidateQueries } from "@hooks/use-invalidate-queries";
+import { useConfig } from "@providers/ConfigProvider";
 import {
     createCodeManagementIntegration,
     deleteIntegration,
@@ -26,7 +27,6 @@ import { getTeamsWithIntegrations } from "@services/teams/fetch";
 import { deleteCookie, setCookie } from "cookies-next";
 import integrationFactory from "src/core/integrations/integrationFactory";
 import { useAllTeams } from "src/core/providers/all-teams-context";
-import { useConfig } from "@providers/ConfigProvider";
 import { AuthMode, IntegrationCategory, PlatformType } from "src/core/types";
 import { useOrganizationContext } from "src/features/organization/_providers/organization-context";
 

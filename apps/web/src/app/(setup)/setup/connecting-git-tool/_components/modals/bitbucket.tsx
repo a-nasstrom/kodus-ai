@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@components/ui/button";
 import { Badge } from "@components/ui/badge";
+import { Button } from "@components/ui/button";
 import { Card, CardHeader } from "@components/ui/card";
 import {
     Collapsible,
@@ -76,9 +76,7 @@ export const BitbucketTokenModal = (props: {
             const integrationResponse = await createCodeManagementIntegration({
                 integrationType: PlatformType.BITBUCKET,
                 authMode: selfhosted ? AuthMode.BASIC : AuthMode.TOKEN,
-                token: selfhosted
-                    ? data.dataCenterPassword
-                    : data.token,
+                token: selfhosted ? data.dataCenterPassword : data.token,
                 organizationAndTeamData: {
                     teamId: props.teamId,
                 },
@@ -128,13 +126,13 @@ export const BitbucketTokenModal = (props: {
     const displayName =
         watchedUsername || getUsernameFromEmail(props.userEmail);
 
-        const hasRequiredFields = selfhosted
-                ? !!watchedUsername?.trim() &&
-                    !!watchedHost?.trim() &&
-                    !!watchedPassword?.trim()
-                : !!watchedUsername?.trim() &&
-                    !!watchedEmail?.trim() &&
-                    !!watchedToken?.trim();
+    const hasRequiredFields = selfhosted
+        ? !!watchedUsername?.trim() &&
+          !!watchedHost?.trim() &&
+          !!watchedPassword?.trim()
+        : !!watchedUsername?.trim() &&
+          !!watchedEmail?.trim() &&
+          !!watchedToken?.trim();
 
     return (
         <Dialog open onOpenChange={() => magicModal.hide()}>
@@ -296,7 +294,8 @@ export const BitbucketTokenModal = (props: {
                                                 <FormControl.Root>
                                                     <FormControl.Label
                                                         htmlFor={field.name}>
-                                                        Bitbucket Data Center Base URL
+                                                        Bitbucket Data Center
+                                                        Base URL
                                                     </FormControl.Label>
 
                                                     <FormControl.Input>
