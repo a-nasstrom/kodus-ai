@@ -25,6 +25,7 @@ import { SharedPostgresModule } from '@libs/shared/database/shared-postgres.modu
 import { SharedConfigModule } from '@libs/shared/infrastructure/shared-config.module';
 import { SharedLogModule } from '@libs/shared/infrastructure/shared-log.module';
 import { SharedObservabilityModule } from '@libs/shared/infrastructure/shared-observability.module';
+import { SelfHostedBeaconModule } from '@libs/telemetry/modules/self-hosted-beacon.module';
 import { TelemetryModule } from '@libs/telemetry/modules/telemetry.module';
 
 import { AnalyticsClassifierCron } from './cron/analytics-classifier.cron';
@@ -115,6 +116,7 @@ export class WorkerModule {
                 // and CockpitModule doesn't re-export that token.
                 CockpitModule,
                 OrganizationModule,
+                SelfHostedBeaconModule,
             ],
             providers: [
                 WorkerDrainService,

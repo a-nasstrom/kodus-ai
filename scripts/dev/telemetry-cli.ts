@@ -28,6 +28,7 @@ import { SharedPostgresModule } from '@libs/shared/database/shared-postgres.modu
 import { SharedConfigModule } from '@libs/shared/infrastructure/shared-config.module';
 import { SharedLogModule } from '@libs/shared/infrastructure/shared-log.module';
 import { SelfHostedBeaconService } from '@libs/telemetry/application/services/self-hosted-beacon.service';
+import { SelfHostedBeaconModule } from '@libs/telemetry/modules/self-hosted-beacon.module';
 import { TelemetryModule } from '@libs/telemetry/modules/telemetry.module';
 import { GLOBAL_PARAMETERS_SERVICE_TOKEN } from '@libs/organization/domain/global-parameters/contracts/global-parameters.service.contract';
 import type { IGlobalParametersService } from '@libs/organization/domain/global-parameters/contracts/global-parameters.service.contract';
@@ -40,6 +41,7 @@ import type { IGlobalParametersService } from '@libs/organization/domain/global-
         SharedPostgresModule.forRoot({ poolSize: 4 }),
         SharedMongoModule.forRoot(),
         TelemetryModule,
+        SelfHostedBeaconModule,
     ],
 })
 class TelemetryCliModule {}
