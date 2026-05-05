@@ -36,6 +36,7 @@ import {
     CoverageSummary,
     CoverageTier,
     formatCoverageTargetsForPrompt,
+    normalizeRepoPath,
 } from './llm/coverage-ledger';
 
 /** Rough token estimate: 1 token ≈ 4 characters */
@@ -870,7 +871,7 @@ export abstract class BaseCodeReviewAgentProvider {
 
             // Map findings to CodeSuggestion format
             const validFiles = new Set(
-                input.changedFiles.map((f) => f.filename),
+                input.changedFiles.map((f) => normalizeRepoPath(f.filename)),
             );
             const isKodyRules = this.getCategoryLabel() === 'kody_rules';
             const kodyRulesByUuid = new Map(
@@ -915,10 +916,10 @@ export abstract class BaseCodeReviewAgentProvider {
                         return false;
                     }
                     // PR-level kody_rules omit relevantFile by design.
-                    return !s.relevantFile || validFiles.has(s.relevantFile);
+                    return !s.relevantFile || validFiles.has(normalizeRepoPath(s.relevantFile));
                 }
 
-                return !!s.relevantFile && validFiles.has(s.relevantFile);
+                return !!s.relevantFile && validFiles.has(normalizeRepoPath(s.relevantFile));
             });
 
             const suggestions = rawSuggestions.map((s) => {
