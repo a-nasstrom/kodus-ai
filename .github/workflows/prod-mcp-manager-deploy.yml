@@ -39,6 +39,11 @@ jobs:
              startsWith(github.event.release.tag_name, 'mcp-manager-'))
         outputs:
             image_tag: ${{ steps.tag.outputs.image_tag }}
+        permissions:
+            contents: read
+            # Required by github/codeql-action/upload-sarif to publish
+            # Trivy findings to the repo's Security tab.
+            security-events: write
 
         steps:
             - name: Checkout code
@@ -75,16 +80,38 @@ jobs:
               env:
                   ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
                   ECR_REPOSITORY: kodus-mcp-manager-prod
-                  IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
+                  IMAGE_TAG_VERSION: ${{ steps.tag.outputs.image_tag }}
+                  IMAGE_TAG_SHA: ${{ github.sha }}
               run: |
                   docker buildx build \
                       --file docker/Dockerfile \
                       --target mcp-manager \
-                      --tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                      --tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_VERSION \
+                      --tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG_SHA \
                       --cache-from type=gha,scope=mcp-manager-prod \
                       --cache-to type=gha,scope=mcp-manager-prod,mode=max \
                       --push \
                       .
+
+            # ---- CVE scan -----------------------------------------------------
+            # Mirrors web-build-push-production.yml. Advisory-only (exit-code:0)
+            # to match the existing posture; flip to "1" once CVE backlog is
+            # triaged to block on CRITICAL/HIGH.
+            - name: Trivy scan — kodus-mcp-manager
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ steps.login-ecr.outputs.registry }}/kodus-mcp-manager-prod:${{ steps.tag.outputs.image_tag }}
+                  format: "sarif"
+                  output: "trivy-mcp-manager.sarif"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  exit-code: "0"
+
+            - name: Upload Trivy SARIF reports
+              uses: github/codeql-action/upload-sarif@v4
+              with:
+                  sarif_file: "trivy-mcp-manager.sarif"
+                  category: "trivy-prod-mcp-manager"
 
             - name: Log out of Amazon ECR
               if: always()
