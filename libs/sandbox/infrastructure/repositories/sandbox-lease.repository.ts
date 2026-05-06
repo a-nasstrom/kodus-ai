@@ -157,4 +157,47 @@ export class SandboxLeaseRepository {
     async delete(prKey: string): Promise<void> {
         await this.leaseModel.deleteOne({ _id: prKey });
     }
+
+    /**
+     * Atomically set the `killAt` timestamp on a lease document. Used by
+     * release() to schedule an idle-kill that any worker (in a multi-worker
+     * deployment) can pick up via findReadyToKill().
+     *
+     * Only sets killAt when the lease has a real sandboxId — there's no
+     * point scheduling a kill for a NullSandbox or a CREATING-only lease.
+     */
+    async setKillAt(prKey: string, killAt: Date): Promise<void> {
+        await this.leaseModel.updateOne(
+            {
+                _id: prKey,
+                sandboxId: { $exists: true, $ne: '' },
+            },
+            { $set: { killAt } },
+        );
+    }
+
+    /**
+     * Atomically clear `killAt`. Called by acquire() when a new caller
+     * joins before the idle window expires — keeps the warm sandbox alive
+     * even if the worker that scheduled the kill is a different process.
+     */
+    async clearKillAt(prKey: string): Promise<void> {
+        await this.leaseModel.updateOne(
+            { _id: prKey },
+            { $unset: { killAt: '' } },
+        );
+    }
+
+    /**
+     * Find leases whose idle-kill timestamp has elapsed. Drives the
+     * `killIdleSandboxes` cron — runs against the sparse compound index
+     * `{ killAt: 1, sandboxId: 1 }` so it only scans docs that are actually
+     * waiting to be killed.
+     */
+    async findReadyToKill(now: Date): Promise<SandboxLeaseModel[]> {
+        return this.leaseModel.find({
+            killAt: { $lte: now },
+            sandboxId: { $exists: true, $ne: '' },
+        });
+    }
 }
