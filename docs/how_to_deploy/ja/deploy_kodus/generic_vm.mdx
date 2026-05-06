@@ -146,67 +146,6 @@ API_MCP_MANAGER_PG_DB_SCHEMA=mcp-manager
 API_MCP_MANAGER_ENCRYPTION_SECRET=
 ```
 
-### ASTコードレビューの設定
-
-<Info>
-  AST搭載のコードレビューを有効にしたい場合のみ必要です。
-</Info>
-
-ASTサービスは、レビューパイプラインに到達する前にコードファイルを解析、トリミング、操作します。これによりレビューの品質が向上し、トークンの消費量が削減されます。インストーラーに含まれており、別個のコンテナとして実行されます。
-
-```env
-API_ENABLE_CODE_REVIEW_AST=false  # AST搭載のコードレビューを有効にするにはtrueに設定
-API_SERVICE_AST_URL=              # ASTサービスの内部URL
-```
-
-ASTサービスには独自の設定ブロックもあります。これらの値はインストーラーによって事前設定されますが、環境に合わせて調整できます：
-
-```env
-# KODUS_SERVICE_AST
-NODE_ENV=development
-API_NODE_ENV=development
-API_LOG_PRETTY=true
-API_LOG_LEVEL=info
-
-CONTAINER_NAME=kodus-service-ast
-API_PORT=3002
-
-# PostgreSQL — メインデータベース設定と同期させてください
-API_DATABASE_ENV="development"
-API_PG_DB_HOST=postgres
-API_PG_DB_PORT=5432
-API_PG_DB_USERNAME=                # API_PG_DB_USERNAMEと同じ
-API_PG_DB_PASSWORD=                # API_PG_DB_PASSWORDと同じ
-API_PG_DB_DATABASE=kodus_db
-API_PG_DB_SCHEMA=kodus_workflow
-
-# RabbitMQ — メインのRabbitMQ設定と同期させてください
-RABBIT_URL=                        # 例: amqp://user:pass@rabbitmq:5672/vhost
-RABBIT_RETRY_QUEUE=ast.jobs.retry.q
-RABBIT_RETRY_TTL_MS=60000
-RABBIT_PREFETCH=1
-RABBIT_PUBLISH_TIMEOUT_MS=5000
-RABBIT_SAC=false
-
-# LangChain（オプション — トレース用）
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=kodus-service-ast
-
-# 共有ストレージ
-SHARED_STORAGE_PATH=/shared
-
-# S3（オプション）
-S3_ENABLED=false
-S3_BUCKET_NAME=
-AWS_REGION=
-
-# グラフビルドオプション
-ENABLE_INCREMENTAL_GRAPH=false
-ENABLE_GRAPH_BENCHMARK=false
-ENABLE_LIGHTWEIGHT_GRAPH=false
-```
-
 ### 外部サービスの設定（オプション）
 
 これらのサービスはオプションですが、KodusのコードレビューBIG品質を大幅に向上させます。それぞれのサービスでアカウントを作成してAPIキーを生成する必要があります。

@@ -2,23 +2,60 @@
 
 <AccordionGroup>
   <Accordion title="推奨ハードウェア">
-    - CPU: 2コア以上 - RAM: 8GB以上 - ストレージ: 60GB以上の空き容量
+    デフォルトの `local` サンドボックスモード（kodus-graph + cross-file
+    コンテキストが worker コンテナ内で実行される）を想定したサイジング。
+
+    - **CPU**: 2 コア以上（~100k LOC を超えるリポジトリでは 4 コア以上を推奨）
+    - **RAM**: 8GB 以上（大規模リポジトリで `local` サンドボックスを使う場合は 16GB を推奨）
+    - **ストレージ**: 60GB 以上の空き容量（Postgres が AST グラフのキャッシュを保持。
+      リポジトリ数と PR 量に応じて増加）
   </Accordion>
   <Accordion title="必要なソフトウェア">
-    - Docker（最新の安定版） 
-    - Node.js（最新のLTSバージョン） 
-    - YarnまたはNPM（最新の安定版） 
-    - ドメイン名または固定IP（外部デプロイの場合）
+    - **Docker**（最新の安定版）と Compose プラグイン
+    - **ドメイン名または固定 IP** — クラウド Git プロバイダー
+      （GitHub.com、GitLab.com など）から webhook を受信したい場合
   </Accordion>
   <Accordion title="必要なポート">
-    - 3000: Kodus Web App 
-    - 3001: API 
-    - 3332: Webhooks 
-    - 5672, 15672, 15692: RabbitMQ（AMQP、管理、メトリクス） 
-    - 3101: MCP Manager（API、メトリクス） 
-    - 5432: PostgreSQL - 27017: MongoDB
+    デフォルトのホストポートマッピング — 競合する場合は `.env` で調整。
+
+    - **3000** — Kodus Web App
+    - **3001** — API
+    - **3332** — Webhooks
+    - **5432** — PostgreSQL
+    - **27017** — MongoDB
+    - **5672, 15672, 15692** — RabbitMQ（AMQP、管理 UI、メトリクス）
+    - **3101** — MCP Manager _（`API_MCP_SERVER_ENABLED=true` の場合のみ）_
+  </Accordion>
+  <Accordion title="サービス">
+    `./scripts/install.sh` が `.env` に基づいて起動するサービス。
+
+    **コア（常時起動）:**
+    - `api` — メインバックエンド
+    - `worker` — code review ジョブ
+    - `webhooks` — Git プロバイダー webhook レシーバー
+    - `kodus-web` — Next.js フロントエンド
+    - `db_kodus_postgres`、`db_kodus_mongodb`、`rabbitmq` —
+      ローカルインフラ。マネージドインスタンスを指す場合は
+      `USE_LOCAL_DB=false` / `USE_LOCAL_RABBITMQ=false` でスキップ。
+
+    **オプション:**
+    - `kodus-mcp-manager` — Model Context Protocol ブローカー。
+      `API_MCP_SERVER_ENABLED=true` で有効化。
+      [MCP Manager](/how_to_deploy/ja/deploy_kodus/mcp_manager) を参照。
+    - `worker-analytics` — Cockpit 取り込み（DORA メトリクス、PR
+      classifier）。**セルフホスト Enterprise 専用**、デフォルトでは
+      組み込まれません。
+      [Analytics Worker](/how_to_deploy/ja/deploy_kodus/analytics_worker) を参照。
   </Accordion>
 </AccordionGroup>
+
+<Note>
+  Code review はサンドボックス内で実行される AST グラフ + cross-file
+  コンテキストを使用します — `local`（デフォルト、worker 内で実行）または
+  `e2b`（有料リモートサンドボックス）。モード、キャッシュの動作、各モードの
+  選択基準については [Sandbox & AST Graph](/how_to_deploy/ja/deploy_kodus/sandbox)
+  を参照してください。
+</Note>
 
 <Note>
   **クラウドベースのGitサービス（GitHub、GitLab、Bitbucket）やクラウドLLMプロバイダー（OpenAI、Anthropicなど）に接続する場合は、インターネットアクセスが必要です。** ネットワーク内の自己ホスト型GitツールやオンプレミスLLMを使用する場合、外部インターネットアクセスはオプションです。

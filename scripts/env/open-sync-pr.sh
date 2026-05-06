@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
-# Opens a PR with the regenerated env file. Called from env-sync-release.yml.
+# Opens a PR with the regenerated env files. Called from env-sync-release.yml.
 #
-# Usage: open-sync-pr.sh <repo-name> <file-path>
-# Env:   TAG  — release tag (e.g. v2.1.8)
+# Usage: open-sync-pr.sh <repo-name> <file-path> [<file-path>...]
+# Env:   TAG  — release tag (e.g. selfhosted-2.1.9)
 #        SHA  — kodus-ai commit sha
 #        GH_TOKEN — PAT with PR-create on the target repo
 #
-# Exits 0 (no-op) when there is no drift, so the workflow stays green.
+# Exits 0 (no-op) when there is no drift on any file, so the workflow stays green.
 
 set -euo pipefail
 
 repo="$1"
-file="$2"
+shift
+files=("$@")
 branch="env-sync/${TAG}"
 
 git config user.name  "kodus-env-sync[bot]"
 git config user.email "kodus-env-sync@users.noreply.github.com"
 
-if git diff --quiet -- "$file"; then
+if git diff --quiet -- "${files[@]}"; then
     echo "No drift in $repo. Skipping PR."
     exit 0
 fi
@@ -25,7 +26,7 @@ fi
 # -B (force) so reruns of the same tag (workflow_dispatch, retries) reset
 # the branch instead of erroring "branch already exists".
 git checkout -B "$branch"
-git add "$file"
+git add -- "${files[@]}"
 git commit -m "chore(env): sync from kodus-ai@${TAG}
 
 Auto-generated from kodus-ai/.env.schema at ${SHA}.

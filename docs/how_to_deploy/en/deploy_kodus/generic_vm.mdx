@@ -152,67 +152,6 @@ API_MCP_MANAGER_PG_DB_SCHEMA=mcp-manager
 API_MCP_MANAGER_ENCRYPTION_SECRET=
 ```
 
-### AST Code Review Configuration
-
-<Info>
-  Only needed if you want to enable AST-powered code review.
-</Info>
-
-The AST service parses, trims, and manipulates code files before they reach the review pipeline. This improves review quality and reduces token consumption. It is included in the installer and runs as a separate container.
-
-```env
-API_ENABLE_CODE_REVIEW_AST=false  # Set to true to enable AST-powered code review
-API_SERVICE_AST_URL=              # Internal URL of the AST service
-```
-
-The AST service also has its own configuration block. These values are pre-configured by the installer but can be adjusted to match your environment:
-
-```env
-# KODUS_SERVICE_AST
-NODE_ENV=development
-API_NODE_ENV=development
-API_LOG_PRETTY=true
-API_LOG_LEVEL=info
-
-CONTAINER_NAME=kodus-service-ast
-API_PORT=3002
-
-# PostgreSQL — keep in sync with your main database settings
-API_DATABASE_ENV="development"
-API_PG_DB_HOST=postgres
-API_PG_DB_PORT=5432
-API_PG_DB_USERNAME=                # Same as API_PG_DB_USERNAME
-API_PG_DB_PASSWORD=                # Same as API_PG_DB_PASSWORD
-API_PG_DB_DATABASE=kodus_db
-API_PG_DB_SCHEMA=kodus_workflow
-
-# RabbitMQ — keep in sync with your main RabbitMQ settings
-RABBIT_URL=                        # e.g. amqp://user:pass@rabbitmq:5672/vhost
-RABBIT_RETRY_QUEUE=ast.jobs.retry.q
-RABBIT_RETRY_TTL_MS=60000
-RABBIT_PREFETCH=1
-RABBIT_PUBLISH_TIMEOUT_MS=5000
-RABBIT_SAC=false
-
-# LangChain (optional — for tracing)
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=kodus-service-ast
-
-# Shared storage
-SHARED_STORAGE_PATH=/shared
-
-# S3 (optional)
-S3_ENABLED=false
-S3_BUCKET_NAME=
-AWS_REGION=
-
-# Graph build options
-ENABLE_INCREMENTAL_GRAPH=false
-ENABLE_GRAPH_BENCHMARK=false
-ENABLE_LIGHTWEIGHT_GRAPH=false
-```
-
 ### External Services Configuration (Optional)
 
 These services are optional but significantly improve Kodus's code review quality. Each requires you to create an account and generate an API key.

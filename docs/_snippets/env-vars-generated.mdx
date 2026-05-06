@@ -198,7 +198,7 @@
 | `WEB_HOSTNAME_API` | – | string | ⚙️ Both |  |
 | `WEB_PORT_API` | – | port | ⚙️ Both |  |
 | `WEB_PORT` | – | port | ⚙️ Both |  |
-| `WEB_NEXTAUTH_SECRET` | ✅ | secret | ⚙️ Both | Generate with: openssl rand -base64 32 |
+| `WEB_NEXTAUTH_SECRET` | ✅ | secret | ⚙️ Both | Generate with: openssl rand -base64 32. Must equal NEXTAUTH_SECRET — the installer's generate-secrets.sh mirrors them automatically. |
 | `NEXTAUTH_URL` | – | url | ⚙️ Both |  |
 | `WEB_GITHUB_INSTALL_URL` | – | url | ☁️ Cloud |  |
 | `WEB_OAUTH_GITHUB_CLIENT_ID` | – | string | ☁️ Cloud |  |
@@ -304,7 +304,7 @@
 
 | Variable | Required | Type | Scope | Description |
 | --- | --- | --- | --- | --- |
-| `NEXTAUTH_SECRET` | ✅ | secret | ⚙️ Both | NextAuth.js secret — separate from WEB_NEXTAUTH_SECRET. Some NextAuth code paths (server-side session, JWT signing) read NEXTAUTH_SECRET directly even when the rest of the app uses WEB_NEXTAUTH_SECRET. Set both to the same value to keep them aligned. |
+| `NEXTAUTH_SECRET` | ✅ | secret | ⚙️ Both | NextAuth.js secret — separate from WEB_NEXTAUTH_SECRET. Some NextAuth code paths (server-side session, JWT signing) read NEXTAUTH_SECRET directly even when the rest of the app uses WEB_NEXTAUTH_SECRET. Set both to the same value to keep them aligned (the installer's generate-secrets.sh does the mirroring automatically). |
 
 ## Postgres — extra flags
 

@@ -159,6 +159,8 @@
                                 "pages": [
                                     "how_to_deploy/en/deploy_kodus/generic_vm",
                                     "how_to_deploy/en/deploy_kodus/mcp_manager",
+                                    "how_to_deploy/en/deploy_kodus/sandbox",
+                                    "how_to_deploy/en/deploy_kodus/analytics_worker",
                                     "how_to_deploy/en/deploy_kodus/reverse_proxy",
                                     "how_to_deploy/en/deploy_kodus/telemetry",
                                     "how_to_deploy/en/deploy_kodus/troubleshooting",
@@ -444,6 +446,8 @@
                                 "pages": [
                                     "how_to_deploy/es/deploy_kodus/generic_vm",
                                     "how_to_deploy/es/deploy_kodus/mcp_manager",
+                                    "how_to_deploy/es/deploy_kodus/sandbox",
+                                    "how_to_deploy/es/deploy_kodus/analytics_worker",
                                     "how_to_deploy/es/deploy_kodus/reverse_proxy",
                                     "how_to_deploy/es/deploy_kodus/telemetry",
                                     "how_to_deploy/es/deploy_kodus/troubleshooting",
@@ -729,6 +733,8 @@
                                 "pages": [
                                     "how_to_deploy/pt-br/deploy_kodus/generic_vm",
                                     "how_to_deploy/pt-br/deploy_kodus/mcp_manager",
+                                    "how_to_deploy/pt-br/deploy_kodus/sandbox",
+                                    "how_to_deploy/pt-br/deploy_kodus/analytics_worker",
                                     "how_to_deploy/pt-br/deploy_kodus/reverse_proxy",
                                     "how_to_deploy/pt-br/deploy_kodus/telemetry",
                                     "how_to_deploy/pt-br/deploy_kodus/troubleshooting",
@@ -1014,6 +1020,8 @@
                                 "pages": [
                                     "how_to_deploy/ja/deploy_kodus/generic_vm",
                                     "how_to_deploy/ja/deploy_kodus/mcp_manager",
+                                    "how_to_deploy/ja/deploy_kodus/sandbox",
+                                    "how_to_deploy/ja/deploy_kodus/analytics_worker",
                                     "how_to_deploy/ja/deploy_kodus/reverse_proxy",
                                     "how_to_deploy/ja/deploy_kodus/telemetry",
                                     "how_to_deploy/ja/deploy_kodus/troubleshooting",
@@ -1299,6 +1307,8 @@
                                 "pages": [
                                     "how_to_deploy/zh/deploy_kodus/generic_vm",
                                     "how_to_deploy/zh/deploy_kodus/mcp_manager",
+                                    "how_to_deploy/zh/deploy_kodus/sandbox",
+                                    "how_to_deploy/zh/deploy_kodus/analytics_worker",
                                     "how_to_deploy/zh/deploy_kodus/reverse_proxy",
                                     "how_to_deploy/zh/deploy_kodus/telemetry",
                                     "how_to_deploy/zh/deploy_kodus/troubleshooting",

@@ -2,23 +2,57 @@
 
 <AccordionGroup>
   <Accordion title="Hardware Recomendado">
-    - CPU: 2+ núcleos - RAM: 8GB+ - Armazenamento: 60GB+ de espaço livre
+    Dimensionado para o modo de sandbox `local` padrão (kodus-graph +
+    contexto cross-file rodam dentro do container worker).
+
+    - **CPU**: 2+ núcleos (4+ recomendado para repos acima de ~100k LOC)
+    - **RAM**: 8GB+ (16GB recomendado ao rodar o sandbox `local` em repos grandes)
+    - **Armazenamento**: 60GB+ de espaço livre (Postgres guarda o cache do AST graph;
+      cresce com a quantidade de repos e volume de PRs)
   </Accordion>
   <Accordion title="Software Necessário">
-    - Docker (última versão estável) 
-    - Node.js (última versão LTS) 
-    - Yarn ou NPM (última versão estável) 
-    - Nome de domínio ou IP fixo (para implantações externas)
+    - **Docker** (última versão estável) com plugin Compose
+    - **Nome de domínio ou IP fixo** se você quer receber webhooks de
+      provedores Git na nuvem (GitHub.com, GitLab.com, etc.)
   </Accordion>
   <Accordion title="Portas Necessárias">
-    - 3000: Kodus Web App 
-    - 3001: API 
-    - 3332: Webhooks 
-    - 5672, 15672, 15692: RabbitMQ (AMQP, gerenciamento, métricas) 
-    - 3101: MCP Manager (API, métricas) 
-    - 5432: PostgreSQL - 27017: MongoDB
+    Mapeamentos padrão de porta no host — ajuste no `.env` em caso de conflito.
+
+    - **3000** — Kodus Web App
+    - **3001** — API
+    - **3332** — Webhooks
+    - **5432** — PostgreSQL
+    - **27017** — MongoDB
+    - **5672, 15672, 15692** — RabbitMQ (AMQP, painel, métricas)
+    - **3101** — MCP Manager _(só se `API_MCP_SERVER_ENABLED=true`)_
+  </Accordion>
+  <Accordion title="Serviços">
+    O que `./scripts/install.sh` sobe, baseado no seu `.env`.
+
+    **Core (sempre ligados):**
+    - `api` — backend principal
+    - `worker` — jobs de code review
+    - `webhooks` — receptor de webhooks de provedores Git
+    - `kodus-web` — frontend Next.js
+    - `db_kodus_postgres`, `db_kodus_mongodb`, `rabbitmq` —
+      infraestrutura local. Pule com `USE_LOCAL_DB=false` /
+      `USE_LOCAL_RABBITMQ=false` pra apontar pra instâncias gerenciadas.
+
+    **Opcionais:**
+    - `kodus-mcp-manager` — broker do Model Context Protocol. Habilite
+      com `API_MCP_SERVER_ENABLED=true`. Veja [MCP Manager](/how_to_deploy/pt-br/deploy_kodus/mcp_manager).
+    - `worker-analytics` — ingestão do Cockpit (métricas DORA, PR
+      classifier). **Exclusivo do self-hosted Enterprise**, não vem por padrão.
+      Veja [Analytics Worker](/how_to_deploy/pt-br/deploy_kodus/analytics_worker).
   </Accordion>
 </AccordionGroup>
+
+<Note>
+  Code review usa um AST graph + contexto cross-file que roda em um
+  sandbox — `local` (default, dentro do worker) ou `e2b` (sandbox remoto
+  pago). Veja [Sandbox & AST Graph](/how_to_deploy/pt-br/deploy_kodus/sandbox)
+  pra entender os modos, comportamento de cache, e quando escolher cada um.
+</Note>
 
 <Note>
   **Acesso à internet é necessário se você planeja conectar a serviços Git na nuvem (GitHub, GitLab, Bitbucket) ou provedores de LLM na nuvem (OpenAI, Anthropic, etc.).** Para ferramentas Git auto-hospedadas e LLMs on-premise dentro da sua rede, o acesso externo à internet é opcional.

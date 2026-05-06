@@ -24,6 +24,12 @@ export type SchemaItem = {
     category: string;
     installerDefault?: string;
     installerComment: boolean;
+    // Method the installer's generate-secrets.sh should use to produce a
+    // value for this key. Set via `kodus: autogen=hex32|base64-32|base64url-32|
+    // mirror:OTHER_VAR`. Read by generate.ts → schema-vars.sh →
+    // generate-secrets.sh. Only set on keys the installer can produce
+    // unattended (NOT DB passwords / API keys, which the operator owns).
+    autogen?: string;
     section: string;
 };
 
@@ -118,6 +124,7 @@ export function parseSchema(path: string): SchemaSection[] {
                 installerComment:
                     (pendingKodus['installer-comment'] ?? '').toLowerCase() ===
                     'true',
+                autogen: pendingKodus.autogen,
                 section: currentSection.title,
             };
             currentSection.items.push(item);

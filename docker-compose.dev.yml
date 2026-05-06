@@ -204,7 +204,11 @@ services:
         ports:
             - '${API_MCP_MANAGER_PORT:-3101}:${API_MCP_MANAGER_PORT:-3101}'
             - '9230:9230'
-        command: yarn start:dev:mcp-manager
+        # mcp-manager owns its own schema. ensure-schema + migration
+        # run inline before the dev server boots (see fix(mcp-manager):
+        # isolate migration ownership from API entrypoint). The api
+        # service's dev-entrypoint.sh no longer touches it.
+        command: sh -c 'yarn mcp-manager:ensure-schema && yarn mcp-manager:migration:run:internal && yarn start:dev:mcp-manager'
         deploy:
             resources:
                 limits:
@@ -222,6 +226,13 @@ services:
             retries: 3
             start_period: 60s
         environment:
+            # mcp-manager always runs its own ensure-schema + migration
+            # via the `command:` above (and via prod-entrypoint-mcp-manager
+            # in prod). We force RUN_MIGRATIONS=false here so the shared
+            # dev-entrypoint.sh doesn't ALSO run the API/analytics
+            # migrations from inside this container — those belong to the
+            # api/worker services, not here.
+            - RUN_MIGRATIONS=false
             - NODE_OPTIONS=--max-old-space-size=1024 --max-semi-space-size=64
             - DEBUG_PORT=9230
             - API_MCP_MANAGER_PORT=${API_MCP_MANAGER_PORT:-3101}

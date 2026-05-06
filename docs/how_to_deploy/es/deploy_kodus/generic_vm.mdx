@@ -153,67 +153,6 @@ API_MCP_MANAGER_PG_DB_SCHEMA=mcp-manager
 API_MCP_MANAGER_ENCRYPTION_SECRET=
 ```
 
-### Configuración de revisión de código AST
-
-<Info>
-  Solo necesario si deseas habilitar la revisión de código basada en AST.
-</Info>
-
-El servicio AST analiza, recorta y manipula archivos de código antes de que lleguen al pipeline de revisión. Esto mejora la calidad de la revisión y reduce el consumo de tokens. Está incluido en el instalador y se ejecuta como un contenedor separado.
-
-```env
-API_ENABLE_CODE_REVIEW_AST=false  # Establecer en true para habilitar la revisión de código basada en AST
-API_SERVICE_AST_URL=              # URL interna del servicio AST
-```
-
-El servicio AST también tiene su propio bloque de configuración. Estos valores están preconfigurados por el instalador, pero se pueden ajustar para que coincidan con tu entorno:
-
-```env
-# KODUS_SERVICE_AST
-NODE_ENV=development
-API_NODE_ENV=development
-API_LOG_PRETTY=true
-API_LOG_LEVEL=info
-
-CONTAINER_NAME=kodus-service-ast
-API_PORT=3002
-
-# PostgreSQL — mantener sincronizado con la configuración principal de la base de datos
-API_DATABASE_ENV="development"
-API_PG_DB_HOST=postgres
-API_PG_DB_PORT=5432
-API_PG_DB_USERNAME=                # Igual que API_PG_DB_USERNAME
-API_PG_DB_PASSWORD=                # Igual que API_PG_DB_PASSWORD
-API_PG_DB_DATABASE=kodus_db
-API_PG_DB_SCHEMA=kodus_workflow
-
-# RabbitMQ — mantener sincronizado con la configuración principal de RabbitMQ
-RABBIT_URL=                        # ej. amqp://user:pass@rabbitmq:5672/vhost
-RABBIT_RETRY_QUEUE=ast.jobs.retry.q
-RABBIT_RETRY_TTL_MS=60000
-RABBIT_PREFETCH=1
-RABBIT_PUBLISH_TIMEOUT_MS=5000
-RABBIT_SAC=false
-
-# LangChain (opcional — para trazado)
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=kodus-service-ast
-
-# Almacenamiento compartido
-SHARED_STORAGE_PATH=/shared
-
-# S3 (opcional)
-S3_ENABLED=false
-S3_BUCKET_NAME=
-AWS_REGION=
-
-# Opciones de construcción de grafos
-ENABLE_INCREMENTAL_GRAPH=false
-ENABLE_GRAPH_BENCHMARK=false
-ENABLE_LIGHTWEIGHT_GRAPH=false
-```
-
 ### Configuración de servicios externos (opcional)
 
 Estos servicios son opcionales pero mejoran significativamente la calidad de la revisión de código de Kodus. Cada uno requiere crear una cuenta y generar una clave de API.

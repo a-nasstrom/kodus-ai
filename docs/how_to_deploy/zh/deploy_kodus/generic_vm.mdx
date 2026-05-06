@@ -145,67 +145,6 @@ API_MCP_MANAGER_PG_DB_SCHEMA=mcp-manager
 API_MCP_MANAGER_ENCRYPTION_SECRET=
 ```
 
-### AST 代码审查配置
-
-<Info>
-  仅在您想启用基于 AST 的代码审查时需要。
-</Info>
-
-AST 服务在代码进入审查流程前对其进行解析、裁剪和处理，从而提升审查质量并降低 token 消耗。它已包含在安装包中，作为独立容器运行。
-
-```env
-API_ENABLE_CODE_REVIEW_AST=false  # 设为 true 以启用基于 AST 的代码审查
-API_SERVICE_AST_URL=              # AST 服务的内部 URL
-```
-
-AST 服务本身也有自己的配置块。这些值由安装程序预配置，但可以根据您的环境进行调整：
-
-```env
-# KODUS_SERVICE_AST
-NODE_ENV=development
-API_NODE_ENV=development
-API_LOG_PRETTY=true
-API_LOG_LEVEL=info
-
-CONTAINER_NAME=kodus-service-ast
-API_PORT=3002
-
-# PostgreSQL — 与主数据库设置保持同步
-API_DATABASE_ENV="development"
-API_PG_DB_HOST=postgres
-API_PG_DB_PORT=5432
-API_PG_DB_USERNAME=                # 与 API_PG_DB_USERNAME 相同
-API_PG_DB_PASSWORD=                # 与 API_PG_DB_PASSWORD 相同
-API_PG_DB_DATABASE=kodus_db
-API_PG_DB_SCHEMA=kodus_workflow
-
-# RabbitMQ — 与主 RabbitMQ 设置保持同步
-RABBIT_URL=                        # 例如 amqp://user:pass@rabbitmq:5672/vhost
-RABBIT_RETRY_QUEUE=ast.jobs.retry.q
-RABBIT_RETRY_TTL_MS=60000
-RABBIT_PREFETCH=1
-RABBIT_PUBLISH_TIMEOUT_MS=5000
-RABBIT_SAC=false
-
-# LangChain（可选 — 用于追踪）
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=kodus-service-ast
-
-# 共享存储
-SHARED_STORAGE_PATH=/shared
-
-# S3（可选）
-S3_ENABLED=false
-S3_BUCKET_NAME=
-AWS_REGION=
-
-# 图构建选项
-ENABLE_INCREMENTAL_GRAPH=false
-ENABLE_GRAPH_BENCHMARK=false
-ENABLE_LIGHTWEIGHT_GRAPH=false
-```
-
 ### 外部服务配置（可选）
 
 这些服务是可选的，但能显著提升 Kodus 的代码审查质量。每个服务都需要您创建账号并生成 API 密钥。

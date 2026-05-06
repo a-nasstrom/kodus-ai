@@ -8,6 +8,7 @@
  * Targets:
  *   kodus-ai/.env.example
  *   kodus-installer/.env.example
+ *   kodus-installer/scripts/schema-vars.sh   ← required-vars list, sourced by install.sh/doctor.sh
  *   kodus/docs/_snippets/env-vars-generated.mdx
  */
 
@@ -37,6 +38,14 @@ const INSTALLER_OUT_ARG = process.argv.find((a) =>
 const INSTALLER_OUT = INSTALLER_OUT_ARG
     ? INSTALLER_OUT_ARG.replace('--installer-out=', '')
     : join(REPO_ROOT, '..', 'kodus-installer', '.env.example');
+const INSTALLER_SCHEMA_VARS_OUT_ARG = process.argv.find((a) =>
+    a.startsWith('--installer-schema-vars-out='),
+);
+// Default the schema-vars path next to the installer-out, so the two
+// generated artifacts ship together. CI passes both explicitly.
+const INSTALLER_SCHEMA_VARS_OUT = INSTALLER_SCHEMA_VARS_OUT_ARG
+    ? INSTALLER_SCHEMA_VARS_OUT_ARG.replace('--installer-schema-vars-out=', '')
+    : join(REPO_ROOT, '..', 'kodus-installer', 'scripts', 'schema-vars.sh');
 const POC_DIR = join(REPO_ROOT, '.env-preview');
 
 const TARGETS = APPLY
@@ -48,6 +57,9 @@ const TARGETS = APPLY
           installerEnv: APPLY_INSTALLER
               ? INSTALLER_OUT
               : join(POC_DIR, 'kodus-installer.env.example'),
+          installerSchemaVars: APPLY_INSTALLER
+              ? INSTALLER_SCHEMA_VARS_OUT
+              : join(POC_DIR, 'kodus-installer.schema-vars.sh'),
           // docs lives inside this repo now (was a sister repo before).
           docsSnippet: join(
               REPO_ROOT,
@@ -59,6 +71,7 @@ const TARGETS = APPLY
     : {
           envExample: join(POC_DIR, 'kodus-ai.env.example'),
           installerEnv: join(POC_DIR, 'kodus-installer.env.example'),
+          installerSchemaVars: join(POC_DIR, 'kodus-installer.schema-vars.sh'),
           docsSnippet: join(POC_DIR, 'env-vars-generated.mdx'),
       };
 
@@ -154,6 +167,50 @@ function audienceBadge(item: SchemaItem): string {
     return eePrefix + base;
 }
 
+function renderInstallerSchemaVars(sections: SchemaSection[]): string {
+    const items = flatten(sections);
+    const selfHosted = items.filter((it) => includesAudience(it, 'self-hosted'));
+
+    // @required && audience self-hosted, EXCLUDING installer-comment=true
+    // (those are opt-in commented in the template — the installer shouldn't
+    // hard-fail when they're absent).
+    const required = selfHosted
+        .filter((it) => it.required && !it.installerComment)
+        .map((it) => it.name);
+
+    // Anything with a `kodus: autogen=<method>` annotation. The installer's
+    // generate-secrets.sh iterates this list and produces a value via the
+    // method when the var is empty.
+    const autogen = selfHosted
+        .filter((it) => it.autogen)
+        .map((it) => `${it.name}=${it.autogen}`);
+
+    const lines: string[] = [];
+    lines.push('#!/usr/bin/env bash');
+    lines.push('# AUTO-GENERATED from kodus-ai/.env.schema. Do NOT edit by hand.');
+    lines.push('# Sourced by scripts/install.sh, scripts/doctor.sh, scripts/generate-secrets.sh');
+    lines.push('# Run `yarn env:generate --apply --installer` in kodus-ai to regenerate.');
+    lines.push('');
+    lines.push('# Vars the installer must see set before booting the stack.');
+    lines.push('# Derived from `@required` in the schema (self-hosted audience).');
+    lines.push('KODUS_REQUIRED_VARS=(');
+    for (const name of required) {
+        lines.push(`    ${name}`);
+    }
+    lines.push(')');
+    lines.push('');
+    lines.push('# Secrets the installer can mint unattended.');
+    lines.push('# Format: VAR=method  (hex32 | base64-32 | base64url-32 | mirror:OTHER_VAR)');
+    lines.push('# Derived from `kodus: autogen=...` in the schema.');
+    lines.push('KODUS_AUTOGEN_SECRETS=(');
+    for (const entry of autogen) {
+        lines.push(`    "${entry}"`);
+    }
+    lines.push(')');
+    lines.push('');
+    return lines.join('\n');
+}
+
 function renderDocsSnippet(sections: SchemaSection[]): string {
     const out: string[] = [];
     out.push('{/* AUTO-GENERATED from kodus-ai/.env.schema. Do NOT edit. */}');
@@ -196,14 +253,17 @@ function main(): void {
 
     const envExample = renderEnvExample(sections);
     const installerEnv = renderInstallerEnv(sections);
+    const installerSchemaVars = renderInstallerSchemaVars(sections);
     const docs = renderDocsSnippet(sections);
 
     ensureDir(TARGETS.envExample);
     ensureDir(TARGETS.installerEnv);
+    ensureDir(TARGETS.installerSchemaVars);
     ensureDir(TARGETS.docsSnippet);
 
     writeFileSync(TARGETS.envExample, envExample);
     writeFileSync(TARGETS.installerEnv, installerEnv);
+    writeFileSync(TARGETS.installerSchemaVars, installerSchemaVars);
     writeFileSync(TARGETS.docsSnippet, docs);
 
     const cloudCount = items.filter((it) => includesAudience(it, 'cloud')).length;
@@ -221,6 +281,7 @@ function main(): void {
     console.log(`Wrote:`);
     console.log(`  ${TARGETS.envExample}`);
     console.log(`  ${TARGETS.installerEnv}`);
+    console.log(`  ${TARGETS.installerSchemaVars}`);
     console.log(`  ${TARGETS.docsSnippet}`);
 }
 
