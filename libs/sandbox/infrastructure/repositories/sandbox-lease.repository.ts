@@ -145,9 +145,18 @@ export class SandboxLeaseRepository {
     /**
      * Find all leases past their expiry date. Used by the reaper regardless
      * of leaseCount — crashed-worker leases stay at leaseCount > 0 forever.
+     *
+     * Read-only: projection keeps the response narrow and `.lean()` skips
+     * Mongoose hydration since the reaper only reads the values, never
+     * mutates the docs.
      */
-    async findExpired(now: Date): Promise<SandboxLeaseModel[]> {
-        return this.leaseModel.find({ expiresAt: { $lt: now } });
+    async findExpired(
+        now: Date,
+    ): Promise<Pick<SandboxLeaseModel, '_id' | 'sandboxId' | 'state'>[]> {
+        return this.leaseModel
+            .find({ expiresAt: { $lt: now } })
+            .select('_id sandboxId state')
+            .lean();
     }
 
     /**
@@ -193,11 +202,19 @@ export class SandboxLeaseRepository {
      * `killIdleSandboxes` cron — runs against the sparse compound index
      * `{ killAt: 1, sandboxId: 1 }` so it only scans docs that are actually
      * waiting to be killed.
+     *
+     * Read-only: projection + `.lean()` since the cron only reads the
+     * values to issue the kill, never writes back through the Mongoose doc.
      */
-    async findReadyToKill(now: Date): Promise<SandboxLeaseModel[]> {
-        return this.leaseModel.find({
-            killAt: { $lte: now },
-            sandboxId: { $exists: true, $ne: '' },
-        });
+    async findReadyToKill(
+        now: Date,
+    ): Promise<Pick<SandboxLeaseModel, '_id' | 'sandboxId' | 'killAt'>[]> {
+        return this.leaseModel
+            .find({
+                killAt: { $lte: now },
+                sandboxId: { $exists: true, $ne: '' },
+            })
+            .select('_id sandboxId killAt')
+            .lean();
     }
 }

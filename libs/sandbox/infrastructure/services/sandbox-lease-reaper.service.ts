@@ -29,40 +29,45 @@ export class SandboxLeaseReaperService {
 
         try {
             const expired = await this.leaseRepository.findExpired(new Date());
+            if (expired.length === 0) return;
 
-            for (const lease of expired) {
-                if (lease.sandboxId && lease.state !== 'INVALIDATED') {
-                    const apiKey =
-                        this.configService.get<string>('API_E2B_KEY');
-                    if (apiKey) {
-                        await Sandbox.kill(lease.sandboxId, {
-                            apiKey,
-                        }).catch((err) => {
-                            this.logger.warn({
-                                message:
-                                    '[SANDBOX-REAPER] Failed to kill sandbox — continuing',
-                                context: SandboxLeaseReaperService.name,
-                                metadata: {
-                                    sandboxId: lease.sandboxId,
-                                    error: String(err),
-                                },
-                            });
-                        });
+            const apiKey = this.configService.get<string>('API_E2B_KEY');
+
+            await Promise.allSettled(
+                expired.map(async (lease) => {
+                    if (
+                        lease.sandboxId &&
+                        lease.state !== 'INVALIDATED' &&
+                        apiKey
+                    ) {
+                        await Sandbox.kill(lease.sandboxId, { apiKey }).catch(
+                            (err) => {
+                                this.logger.warn({
+                                    message:
+                                        '[SANDBOX-REAPER] Failed to kill sandbox — continuing',
+                                    context: SandboxLeaseReaperService.name,
+                                    metadata: {
+                                        sandboxId: lease.sandboxId,
+                                        error: String(err),
+                                    },
+                                });
+                            },
+                        );
                     }
-                }
 
-                await this.leaseRepository.delete(lease._id);
+                    await this.leaseRepository.delete(lease._id);
 
-                this.logger.log({
-                    message: '[SANDBOX-REAPER] Reaped expired lease',
-                    context: SandboxLeaseReaperService.name,
-                    metadata: {
-                        prKey: lease._id,
-                        sandboxId: lease.sandboxId,
-                        state: lease.state,
-                    },
-                });
-            }
+                    this.logger.log({
+                        message: '[SANDBOX-REAPER] Reaped expired lease',
+                        context: SandboxLeaseReaperService.name,
+                        metadata: {
+                            prKey: lease._id,
+                            sandboxId: lease.sandboxId,
+                            state: lease.state,
+                        },
+                    });
+                }),
+            );
         } finally {
             await this.releaseCronLock(
                 lock,
@@ -96,35 +101,37 @@ export class SandboxLeaseReaperService {
 
             const apiKey = this.configService.get<string>('API_E2B_KEY');
 
-            for (const lease of ready) {
-                if (lease.sandboxId && apiKey) {
-                    await Sandbox.kill(lease.sandboxId, { apiKey }).catch(
-                        (err) => {
-                            this.logger.warn({
-                                message:
-                                    '[SANDBOX-IDLE-KILL] Failed to kill sandbox — Mongo doc still deleted; reaper will retry if E2B still has it',
-                                context: SandboxLeaseReaperService.name,
-                                metadata: {
-                                    sandboxId: lease.sandboxId,
-                                    error: String(err),
-                                },
-                            });
+            await Promise.allSettled(
+                ready.map(async (lease) => {
+                    if (lease.sandboxId && apiKey) {
+                        await Sandbox.kill(lease.sandboxId, { apiKey }).catch(
+                            (err) => {
+                                this.logger.warn({
+                                    message:
+                                        '[SANDBOX-IDLE-KILL] Failed to kill sandbox — Mongo doc still deleted; reaper will retry if E2B still has it',
+                                    context: SandboxLeaseReaperService.name,
+                                    metadata: {
+                                        sandboxId: lease.sandboxId,
+                                        error: String(err),
+                                    },
+                                });
+                            },
+                        );
+                    }
+
+                    await this.leaseRepository.delete(lease._id);
+
+                    this.logger.log({
+                        message: '[SANDBOX-IDLE-KILL] Killed idle sandbox',
+                        context: SandboxLeaseReaperService.name,
+                        metadata: {
+                            prKey: lease._id,
+                            sandboxId: lease.sandboxId,
+                            killAt: lease.killAt,
                         },
-                    );
-                }
-
-                await this.leaseRepository.delete(lease._id);
-
-                this.logger.log({
-                    message: '[SANDBOX-IDLE-KILL] Killed idle sandbox',
-                    context: SandboxLeaseReaperService.name,
-                    metadata: {
-                        prKey: lease._id,
-                        sandboxId: lease.sandboxId,
-                        killAt: lease.killAt,
-                    },
-                });
-            }
+                    });
+                }),
+            );
         } finally {
             await this.releaseCronLock(
                 lock,
