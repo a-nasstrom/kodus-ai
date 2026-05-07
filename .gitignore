@@ -124,9 +124,14 @@ specs
 .build_cache
 .opencode
 .cursor
-.claude
+# Ignore .claude/ contents by default (settings.local.json etc), but
+# allow versioned project-scoped agent runbooks (commands + skills) so
+# any dev / LLM agent gets the same trigger surface and steps.
+.claude/*
 !.claude/commands/
 !.claude/commands/**
+!.claude/skills/
+!.claude/skills/**
 .codex
 .agents
 skills-lock.json
