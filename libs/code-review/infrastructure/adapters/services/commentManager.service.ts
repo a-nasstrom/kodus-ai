@@ -11,6 +11,7 @@ import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfac
 import { LanguageValue } from '@libs/core/domain/enums/language-parameter.enum';
 import { ParametersKey } from '@libs/core/domain/enums/parameters-key.enum';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
+import { getPRDescriptionLimit } from '@libs/code-review/utils/fit-pr-description';
 import { buildCommentFromSuggestion } from '@libs/common/utils/comment-builder.utils';
 import {
     BehaviourForExistingDescription,
@@ -85,6 +86,7 @@ export class CommentManagerService implements ICommentManagerService {
         isCommitRun?: boolean,
         prPreview?: boolean,
         externalPromptContext?: any,
+        platformType?: PlatformType,
     ): Promise<string> {
         let byokConfigValue: BYOKConfig | null = byokConfig ?? null;
 
@@ -189,6 +191,24 @@ export class CommentManagerService implements ICommentManagerService {
                     - **Source Branch**: \`${pullRequest?.head?.ref}\`
                     - **Target Branch**: \`${pullRequest?.base?.ref}\`
                     - **Title**: ${pullRequest?.title || 'Untitled'}`;
+
+                if (platformType === PlatformType.AZURE_REPOS) {
+                    const azureLimit = getPRDescriptionLimit(
+                        PlatformType.AZURE_REPOS,
+                    );
+                    if (azureLimit) {
+                        const target = Math.floor(azureLimit * 0.8);
+                        // Pin formatting to en-US so the prompt stays
+                        // deterministic regardless of the server's locale
+                        // (default `toLocaleString()` would render `4.000`
+                        // on pt-BR machines and `4,000` on en-US, which
+                        // also broke the unit test on non-en-US dev boxes).
+                        promptBase += `\n\n**Length Constraint (Azure DevOps)**:
+                    - Azure DevOps rejects pull request descriptions longer than ${azureLimit.toLocaleString('en-US')} characters with HTTP 400.
+                    - Aim for AT MOST ${target.toLocaleString('en-US')} characters in your output. The remaining budget is reserved for the user's existing PR body, summary markers, and separators.
+                    - Be concise. Prioritise the most impactful changes; collapse trivial ones.`;
+                    }
+                }
 
                 const baseContext = {
                     changedFiles,
@@ -526,6 +546,21 @@ You must always respond in ${languageResultPrompt}.`;
                         summaryConfig?.behaviourForExistingDescription ===
                             BehaviourForExistingDescription.CONCATENATE
                     ) {
+                        // Re-runs of the same PR shouldn't keep stacking
+                        // `<!-- kody-pr-summary:start --> ... :end -->`
+                        // blocks (issue #1019). Strip any previous block
+                        // — and the `\n\n---\n\n` separator we emit
+                        // before it — from the existing body before
+                        // concatenating the freshly-generated one.
+                        const previousBlockWithSeparator =
+                            /\n*---\n*<!-- kody-pr-summary:start -->[\s\S]*?<!-- kody-pr-summary:end -->/g;
+                        const previousBlockStandalone =
+                            /<!-- kody-pr-summary:start -->[\s\S]*?<!-- kody-pr-summary:end -->/g;
+                        const cleanedBody = updatedPR.body
+                            .replace(previousBlockWithSeparator, '')
+                            .replace(previousBlockStandalone, '')
+                            .trimEnd();
+
                         // Log for debugging
                         this.logger.log({
                             message: `GenerateSummaryPR: Concatenate behavior for PR#${pullRequest?.number}. Before concatenate`,
@@ -536,10 +571,13 @@ You must always respond in ${languageResultPrompt}.`;
                                 repositoryId: repository?.id,
                                 summaryConfig,
                                 body: updatedPR?.body,
+                                cleanedBody,
                             },
                         });
 
-                        finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
+                        if (cleanedBody) {
+                            finalDescription = `${cleanedBody}\n\n---\n\n${finalDescription}`;
+                        }
                     }
                 }
 

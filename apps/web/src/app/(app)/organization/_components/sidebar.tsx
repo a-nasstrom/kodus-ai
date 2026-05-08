@@ -29,10 +29,7 @@ import {
 import { useSubscriptionContext } from "src/features/ee/subscription/_providers/subscription-context";
 import { useOrganizationContext } from "src/features/organization/_providers/organization-context";
 
-import { useFeatureFlags } from "../../settings/_components/context";
-
 export const ConfigsSidebar = () => {
-    const { sso, cliKeys } = useFeatureFlags();
     const { organizationName } = useOrganizationContext();
     const pathname = usePathname();
     const { license } = useSubscriptionContext();
@@ -51,7 +48,7 @@ export const ConfigsSidebar = () => {
             icon: ShieldIcon,
             label: "SSO",
             href: `/organization/sso`,
-            visible: (isEnterprise || isTrial) && (sso ?? false),
+            visible: isEnterprise || isTrial,
         },
         {
             icon: GaugeIcon,
@@ -69,7 +66,7 @@ export const ConfigsSidebar = () => {
             icon: KeyRoundIcon,
             label: "CLI keys",
             href: `/organization/cli-keys`,
-            visible: cliKeys ?? false,
+            visible: true,
         },
         {
             icon: BellIcon,

@@ -2,6 +2,7 @@ import { LLMModule } from '@kodus/kodus-common/llm';
 import { AgentsModule } from '@libs/agents/modules/agents.module';
 import { AIEngineModule } from '@libs/ai-engine/modules/ai-engine.module';
 import { AnalyticsModule } from '@libs/analytics/modules/analytics.module';
+import { FeatureGateModule } from '@libs/feature-gate/modules/feature-gate.module';
 import { TelemetryModule } from '@libs/telemetry/modules/telemetry.module';
 import { AnalyticsWarehouseModule } from '@libs/ee/analytics-warehouse';
 import { CockpitModule } from '@libs/cockpit/modules/cockpit.module';
@@ -128,6 +129,7 @@ import { NotificationController } from './controllers/notification.controller';
         AnalyticsModule,
         AnalyticsWarehouseModule.forRoot(),
         TelemetryModule,
+        FeatureGateModule,
         CockpitModule,
         CodeReviewSettingsLogModule,
         AutomationModule,
