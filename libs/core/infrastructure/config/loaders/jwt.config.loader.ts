@@ -10,5 +10,9 @@ export const jwtConfigLoader = registerAs(
         expiresIn: process.env.API_JWT_EXPIRES_IN as StringValue,
         refreshSecret: process.env.API_JWT_REFRESH_SECRET,
         refreshExpiresIn: process.env.API_JWT_REFRESH_EXPIRES_IN as StringValue,
+        helpdeskPrivateKey: process.env.API_JWT_PRIVATE_KEY?.replace(
+            /\\n/g,
+            '\n',
+        ),
     }),
 );

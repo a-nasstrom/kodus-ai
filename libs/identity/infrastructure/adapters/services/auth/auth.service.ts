@@ -277,6 +277,26 @@ export class AuthService implements IAuthService {
         }
     }
 
+    async createHelpdeskToken(user: Partial<IUser>): Promise<string> {
+        const privateKey = this.jwtConfig.helpdeskPrivateKey;
+
+        if (!privateKey) {
+            throw new InternalServerErrorException(
+                'API_JWT_PRIVATE_KEY is not configured',
+            );
+        }
+
+        const payload = { sub: user.uuid };
+
+        return this.jwtService.sign(payload, {
+            algorithm: 'RS256',
+            secret: privateKey,
+            issuer: 'kodus-ai',
+            audience: 'kodus-helpdesk',
+            expiresIn: '5m',
+        } as any);
+    }
+
     private async createAuth(
         userEntity: Partial<IUser>,
         tokens: TokenResponse,

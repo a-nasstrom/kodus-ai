@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "src/core/providers/auth.provider";
-import { createUrl } from "src/core/utils/helpers";
+import { axiosAuthorized } from "src/core/utils/axios";
+import { createUrl, pathToApiUrl } from "src/core/utils/helpers";
 
 function getHelpdeskUrl() {
     return createUrl(
@@ -13,6 +14,8 @@ function getHelpdeskUrl() {
     );
 }
 
+const HELPDESK_TOKEN_URL = pathToApiUrl("/auth/helpdesk-token");
+
 export default function HelpdeskPage() {
     const { accessToken } = useAuth();
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -21,15 +24,23 @@ export default function HelpdeskPage() {
     const helpdeskUrl = getHelpdeskUrl();
     const helpdeskOrigin = new URL(helpdeskUrl).origin;
 
-    const sendToken = useCallback(() => {
+    const sendToken = useCallback(async () => {
         if (tokenSentRef.current) return;
         if (!iframeRef.current?.contentWindow || !accessToken) return;
 
-        iframeRef.current.contentWindow.postMessage(
-            { type: "HELPDESK_CLOUD_AUTH", token: accessToken },
-            helpdeskOrigin,
-        );
-        tokenSentRef.current = true;
+        try {
+            const response = await axiosAuthorized.fetcher<{
+                data: { token: string };
+            }>(HELPDESK_TOKEN_URL);
+
+            iframeRef.current.contentWindow.postMessage(
+                { type: "HELPDESK_CLOUD_AUTH", token: response.data.token },
+                helpdeskOrigin,
+            );
+            tokenSentRef.current = true;
+        } catch {
+            console.error("[helpdesk] Failed to fetch helpdesk token");
+        }
     }, [accessToken, helpdeskOrigin]);
 
     useEffect(() => {

@@ -186,3 +186,5 @@ parity-report.json
 
 # GSD planning workspace (local-only)
 .planning/
+
+.secrets/
