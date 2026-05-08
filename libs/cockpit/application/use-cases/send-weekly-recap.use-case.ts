@@ -137,16 +137,15 @@ export class SendWeeklyRecapUseCase {
             const chunk = recipients.slice(i, i + CHUNK_SIZE);
             const results = await Promise.allSettled(
                 chunk.map((r) =>
-                    this.notificationService.emit(
-                        NotificationEvent.WEEKLY_RECAP,
-                        {
+                    this.notificationService.emit({
+                        event: NotificationEvent.WEEKLY_RECAP,
+                        payload: {
                             recipient: { email: r.email, name: r.name },
                             props,
                         },
-                        {
-                            organizationId,
-                        },
-                    ),
+                        organizationId,
+                        recipients: { kind: 'email', email: r.email },
+                    }),
                 ),
             );
 

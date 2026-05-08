@@ -28,13 +28,15 @@ import {
     IRoutingRuleRepository,
     ROUTING_RULE_REPOSITORY_TOKEN,
 } from '../domain/contracts/routing-rule.repository.contract';
+import { NotificationRecipient } from '../domain/recipient';
 import { NotificationSseService } from './notification-sse.service';
 
-interface NotificationMessage {
+export interface NotificationMessage {
     event: NotificationEvent;
     payload: Record<string, unknown>;
     organizationId: string;
-    userId?: string;
+    /** Explicit recipients chosen by the emitter. Always an array on the wire. */
+    recipients: NotificationRecipient[];
     correlationId: string;
 }
 
@@ -114,12 +116,16 @@ export class NotificationDispatcherService {
         organizationId: string,
         correlationId: string,
     ): Promise<void> {
-        // System events are hardcoded to email-only and bypass routing
-        // rules entirely. Critical events are forced to fan out across all
-        // active channels regardless of stored configuration.
+        // System events use the catalog defaults verbatim (admins cannot
+        // configure routing rules for them — see RoutingRuleService).
+        // Critical events fan out across every active channel regardless
+        // of stored configuration. Everything else respects the
+        // per-role / wildcard / catalog-default chain.
         let enabledChannels: NotificationChannel[];
         if (defaults.criticality === Criticality.SYSTEM) {
-            enabledChannels = [NotificationChannel.EMAIL];
+            enabledChannels = [...defaults.defaultChannels].filter((ch) =>
+                ACTIVE_CHANNELS.has(ch),
+            );
         } else if (defaults.criticality === Criticality.CRITICAL) {
             enabledChannels = [...ACTIVE_CHANNELS];
         } else {
@@ -138,6 +144,29 @@ export class NotificationDispatcherService {
         for (const channel of enabledChannels) {
             const adapter = this.adapterMap.get(channel);
             if (!adapter) continue;
+
+            // The in-app channel writes a `user_notifications` row keyed
+            // on a real user uuid. When the recipient is an email-only
+            // fallback (e.g. signup confirmation to a not-yet-registered
+            // address), there is no user to attach to — skip in-app and
+            // let the email channel handle it.
+            if (
+                channel === NotificationChannel.IN_APP &&
+                !recipient.userId
+            ) {
+                this.logger.warn({
+                    message:
+                        'Skipping in-app delivery: recipient has no user uuid',
+                    context: NotificationDispatcherService.name,
+                    metadata: {
+                        event,
+                        recipientEmail: recipient.email,
+                        organizationId,
+                        correlationId,
+                    },
+                });
+                continue;
+            }
 
             // Create delivery record (pending)
             const delivery = await this.deliveryRepo.create({
@@ -221,88 +250,94 @@ export class NotificationDispatcherService {
         }
     }
 
+    /**
+     * Resolves the explicit recipients on the message envelope into the
+     * shape the rest of the dispatcher needs. The emitter is required to
+     * have set them — we do not try to infer recipients from payload
+     * fields anymore.
+     */
     private async resolveRecipients(
         message: NotificationMessage,
         organizationId: string,
     ): Promise<ResolvedRecipient[]> {
-        const { payload, userId } = message;
-
-        // If specific user ID provided, resolve just that user
-        if (userId) {
-            const users = await this.usersService.find(
-                { uuid: userId },
-                [STATUS.ACTIVE],
-            );
-            if (users?.length) {
-                const u = users[0];
-                return [
-                    {
-                        userId: u.uuid,
-                        email: u.email,
-                        role: u.role ?? 'contributor',
-                    },
-                ];
-            }
+        if (!message.recipients?.length) {
+            this.logger.warn({
+                message:
+                    'Notification message has no recipients — nothing to dispatch',
+                context: NotificationDispatcherService.name,
+                metadata: {
+                    event: message.event,
+                    correlationId: message.correlationId,
+                },
+            });
             return [];
         }
 
-        // For events with explicit user list (e.g. KODY_RULES_GENERATED)
-        if (payload.users && Array.isArray(payload.users)) {
-            // These are email-only users — no userId. Look them up by email.
-            const userEntries = payload.users as Array<{
-                email: string;
-                name?: string;
-            }>;
-            const resolved: ResolvedRecipient[] = [];
-            for (const entry of userEntries) {
-                const users = await this.usersService.find(
-                    {
-                        email: entry.email,
-                        organization: { uuid: organizationId },
-                    },
-                    [STATUS.ACTIVE],
-                );
-                if (users?.length) {
-                    resolved.push({
-                        userId: users[0].uuid,
-                        email: users[0].email,
-                        role: users[0].role ?? 'contributor',
-                    });
-                }
-            }
-            return resolved;
+        const resolved: ResolvedRecipient[] = [];
+        for (const r of message.recipients) {
+            const entry =
+                r.kind === 'user'
+                    ? await this.resolveByUserId(r.userId)
+                    : await this.resolveByEmail(r.email, organizationId);
+            if (entry) resolved.push(entry);
         }
+        return resolved;
+    }
 
-        // For events like WEEKLY_RECAP with a single recipient
-        if (payload.recipient) {
-            const r = payload.recipient as { email: string; name?: string };
-            const users = await this.usersService.find(
-                {
-                    email: r.email,
-                    organization: { uuid: organizationId },
-                },
-                [STATUS.ACTIVE],
-            );
-            if (users?.length) {
-                return [
-                    {
-                        userId: users[0].uuid,
-                        email: users[0].email,
-                        role: users[0].role ?? 'contributor',
-                    },
-                ];
-            }
-            // Fallback — user not found, still send email
-            return [
-                {
-                    userId: '',
-                    email: r.email,
-                    role: 'contributor',
-                },
-            ];
+    private async resolveByUserId(
+        userId: string,
+    ): Promise<ResolvedRecipient | null> {
+        const users = await this.usersService.find(
+            { uuid: userId },
+            [STATUS.ACTIVE],
+        );
+        if (!users?.length) {
+            this.logger.warn({
+                message:
+                    'Notification recipient userId did not resolve to an active user — skipping',
+                context: NotificationDispatcherService.name,
+                metadata: { userId },
+            });
+            return null;
         }
+        const u = users[0];
+        return {
+            userId: u.uuid,
+            email: u.email,
+            role: u.role ?? 'contributor',
+        };
+    }
 
-        return [];
+    private async resolveByEmail(
+        email: string,
+        organizationId: string,
+    ): Promise<ResolvedRecipient> {
+        const users = await this.usersService.find(
+            { email, organization: { uuid: organizationId } },
+            [STATUS.ACTIVE],
+        );
+        if (users?.length) {
+            return {
+                userId: users[0].uuid,
+                email: users[0].email,
+                role: users[0].role ?? 'contributor',
+            };
+        }
+        // No matching user — still emit on the email channel so flows
+        // that target a not-yet-registered address (sign-up confirmation,
+        // password reset, SSO verification) work. The in-app channel
+        // will be skipped because there is no user uuid to attach to.
+        this.logger.warn({
+            message:
+                'Notification recipient resolved by email-only fallback (no active user matched) — in-app channel will be skipped',
+            context: NotificationDispatcherService.name,
+            metadata: { email, organizationId },
+        });
+        return {
+            userId: '',
+            email,
+            role: 'contributor',
+        };
     }
 
     /**

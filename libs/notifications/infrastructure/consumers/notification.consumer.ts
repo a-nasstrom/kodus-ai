@@ -4,16 +4,10 @@ import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 
 import { MessagePayload } from '@libs/core/domain/contracts/message-broker.service.contracts';
 
-import { NotificationDispatcherService } from '../../application/notification-dispatcher.service';
-import { NotificationEvent } from '../../domain/catalog/events';
-
-interface NotificationMessage {
-    event: NotificationEvent;
-    payload: Record<string, unknown>;
-    organizationId: string;
-    userId?: string;
-    correlationId: string;
-}
+import {
+    NotificationDispatcherService,
+    NotificationMessage,
+} from '../../application/notification-dispatcher.service';
 
 /**
  * RabbitMQ consumer that picks up notification messages from the

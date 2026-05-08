@@ -33,18 +33,16 @@ export class ForgotPasswordUseCase implements IUseCase {
                 user.uuid,
                 email,
             );
-            await this.notificationService.emit(
-                NotificationEvent.AUTH_FORGOT_PASSWORD,
-                {
+            await this.notificationService.emit({
+                event: NotificationEvent.AUTH_FORGOT_PASSWORD,
+                payload: {
                     email: user.email,
                     name: user.organization.name,
                     token,
                 },
-                {
-                    organizationId: user.organization.uuid,
-                    userId: user.uuid,
-                },
-            );
+                organizationId: user.organization.uuid,
+                recipients: { kind: 'user', userId: user.uuid },
+            });
             return { message: 'Reset link sent.' };
         } catch {
             throw new InternalServerErrorException(

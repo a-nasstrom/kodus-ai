@@ -77,10 +77,11 @@ export class RoutingRuleService {
                 EVENT_DEFAULTS[rule.event as NotificationEvent];
             if (!eventDefaults) continue;
 
-            // System events are non-configurable: always email-only.
+            // System events are non-configurable: their channels come
+            // from the catalog defaults and cannot be overridden.
             if (eventDefaults.criticality === Criticality.SYSTEM) {
                 throw new BadRequestException(
-                    `Cannot configure routing for system event "${rule.event}". System notifications are always delivered via email.`,
+                    `Cannot configure routing for system event "${rule.event}". System notifications use catalog defaults.`,
                 );
             }
 

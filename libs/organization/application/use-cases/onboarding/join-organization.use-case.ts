@@ -158,9 +158,9 @@ export class JoinOrganizationUseCase implements IUseCase {
                     user.email,
                 );
 
-                await this.notificationService.emit(
-                    NotificationEvent.AUTH_EMAIL_CONFIRMATION,
-                    {
+                await this.notificationService.emit({
+                    event: NotificationEvent.AUTH_EMAIL_CONFIRMATION,
+                    payload: {
                         token,
                         email: user.email,
                         organizationName: organization.name,
@@ -169,11 +169,9 @@ export class JoinOrganizationUseCase implements IUseCase {
                             teamId: team.uuid,
                         },
                     },
-                    {
-                        organizationId,
-                        userId: user.uuid,
-                    },
-                );
+                    organizationId,
+                    recipients: { kind: 'user', userId: user.uuid },
+                });
             }
 
             this.logger.log({

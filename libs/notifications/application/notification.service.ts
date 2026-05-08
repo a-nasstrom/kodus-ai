@@ -15,19 +15,43 @@ import {
     NotificationEvent,
     NotificationPayloadMap,
 } from '../domain/catalog/events';
+import { NotificationRecipient } from '../domain/recipient';
+
+/**
+ * Standardized input for emitting a notification.
+ *
+ * The dispatcher used to guess recipients by introspecting payload
+ * fields (`payload.users`, `payload.recipient`, `payload.email`, etc.).
+ * That worked accidentally and broke whenever a new event used a new
+ * shape. Recipients are now explicit on the envelope, separate from
+ * payload data the email/in-app templates need.
+ */
+export interface EmitNotificationInput<E extends NotificationEvent> {
+    event: E;
+    payload: NotificationPayloadMap[E];
+    organizationId: string;
+    /** One or more recipients. A bare object is normalized to an array. */
+    recipients: NotificationRecipient | NotificationRecipient[];
+    /** Optional correlation id for tracing. Generated if absent. */
+    correlationId?: string;
+}
 
 /**
  * The one-liner entry point for emitting notifications.
  *
  * ```ts
- * await this.notificationService.emit(NotificationEvent.AUTH_FORGOT_PASSWORD, {
- *   email: user.email, name: org.name, token,
- * }, { organizationId: org.uuid, userId: user.uuid });
+ * await this.notificationService.emit({
+ *     event: NotificationEvent.AUTH_FORGOT_PASSWORD,
+ *     payload: { email: user.email, name: org.name, token },
+ *     organizationId: org.uuid,
+ *     recipients: recipientByUser(user.uuid),
+ * });
  * ```
  *
  * Creates an outbox message which the OutboxRelayService picks up and
  * publishes to RabbitMQ. The worker's NotificationConsumer then handles
- * routing, preference resolution, and multi-channel delivery.
+ * channel routing, preference resolution, and multi-channel delivery
+ * for each recipient.
  */
 @Injectable()
 export class NotificationService {
@@ -41,44 +65,56 @@ export class NotificationService {
     ) {}
 
     async emit<E extends NotificationEvent>(
-        event: E,
-        payload: NotificationPayloadMap[E],
-        context: {
-            organizationId: string;
-            userId?: string;
-            correlationId?: string;
-        },
+        input: EmitNotificationInput<E>,
     ): Promise<void> {
-        const correlationId = context.correlationId ?? uuid();
+        const recipients = Array.isArray(input.recipients)
+            ? input.recipients
+            : [input.recipients];
+
+        if (recipients.length === 0) {
+            this.logger.warn({
+                message: `emit called with no recipients — skipping ${input.event}`,
+                context: NotificationService.name,
+                metadata: {
+                    event: input.event,
+                    organizationId: input.organizationId,
+                },
+            });
+            return;
+        }
+
+        const correlationId = input.correlationId ?? uuid();
         const exchange = 'notification.exchange';
-        const routingKey = `notification.${event}`;
+        const routingKey = `notification.${input.event}`;
 
         const messagePayload =
             this.messageBroker.transformMessageToMessageBroker({
-                eventName: event,
+                eventName: input.event,
                 message: {
-                    event,
-                    payload,
-                    organizationId: context.organizationId,
-                    userId: context.userId,
+                    event: input.event,
+                    payload: input.payload,
+                    organizationId: input.organizationId,
+                    recipients,
                     correlationId,
                 },
             });
 
+        // Notifications are not tied to a workflow_jobs row — leave jobId
+        // unset so the outbox FK column stays NULL. The correlationId is
+        // carried inside the payload for tracing.
         await this.outboxRepository.create({
-            jobId: correlationId,
             exchange,
             routingKey,
             payload: messagePayload as unknown as Record<string, unknown>,
         });
 
         this.logger.log({
-            message: `Notification emitted: ${event}`,
+            message: `Notification emitted: ${input.event}`,
             context: NotificationService.name,
             metadata: {
-                event,
-                organizationId: context.organizationId,
-                userId: context.userId,
+                event: input.event,
+                organizationId: input.organizationId,
+                recipientCount: recipients.length,
                 correlationId,
             },
         });

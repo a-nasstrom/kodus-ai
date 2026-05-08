@@ -160,18 +160,20 @@ export class SSODomainVerificationService {
             DOMAIN_VERIFICATION_TOKEN_TTL_MS,
         );
 
-        await this.notificationService.emit(
-            NotificationEvent.SSO_DOMAIN_VERIFICATION,
-            {
+        await this.notificationService.emit({
+            event: NotificationEvent.SSO_DOMAIN_VERIFICATION,
+            payload: {
                 token,
                 email: normalizedEmail,
                 organizationName: params.organizationName,
                 domain: normalizedDomain,
             },
-            {
-                organizationId: params.organizationId,
-            },
-        );
+            organizationId: params.organizationId,
+            // The contact email may not yet be a registered user (the
+            // whole point of the flow), so address by email and let the
+            // dispatcher fall back to email-only delivery if needed.
+            recipients: { kind: 'email', email: normalizedEmail },
+        });
 
         return {
             domain: normalizedDomain,

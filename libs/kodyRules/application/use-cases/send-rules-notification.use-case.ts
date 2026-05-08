@@ -93,17 +93,23 @@ export class SendRulesNotificationUseCase {
                 },
             });
 
-            // Emit via the centralized notification engine
-            // The dispatcher handles per-user fanout and channel routing
-            await this.notificationService.emit(
-                NotificationEvent.KODY_RULES_GENERATED,
-                {
+            // Emit via the centralized notification engine. The
+            // dispatcher fans out to each recipient and routes per
+            // channel. `users` stays in the payload for the email
+            // template (the recap lists everyone who got it).
+            await this.notificationService.emit({
+                event: NotificationEvent.KODY_RULES_GENERATED,
+                payload: {
                     users: emailUsers,
                     rules,
                     organizationName: organization.name,
                 },
-                { organizationId },
-            );
+                organizationId,
+                recipients: users.map((u) => ({
+                    kind: 'user',
+                    userId: u.uuid,
+                })),
+            });
 
             this.logger.log({
                 message: 'Kody Rules notification emitted successfully',

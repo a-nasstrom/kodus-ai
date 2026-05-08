@@ -44,9 +44,9 @@ export class ResendEmailUseCase implements IUseCase {
                 user.email,
             );
 
-            await this.notificationService.emit(
-                NotificationEvent.AUTH_EMAIL_CONFIRMATION,
-                {
+            await this.notificationService.emit({
+                event: NotificationEvent.AUTH_EMAIL_CONFIRMATION,
+                payload: {
                     token,
                     email: user.email,
                     organizationName: user.organization.name,
@@ -54,11 +54,9 @@ export class ResendEmailUseCase implements IUseCase {
                         organizationId: user.organization.uuid,
                     },
                 },
-                {
-                    organizationId: user.organization.uuid,
-                    userId: user.uuid,
-                },
-            );
+                organizationId: user.organization.uuid,
+                recipients: { kind: 'user', userId: user.uuid },
+            });
 
             return { message: 'Email sent successfully' };
         } catch (error) {

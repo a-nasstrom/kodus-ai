@@ -492,18 +492,16 @@ export class TeamMemberService implements ITeamMemberService {
                 return;
             }
 
-            await this.notificationService.emit(
-                NotificationEvent.TEAM_MEMBER_INVITED,
-                {
+            await this.notificationService.emit({
+                event: NotificationEvent.TEAM_MEMBER_INVITED,
+                payload: {
                     user,
                     inviterEmail: senderEmail,
                     inviteLink,
                 },
-                {
-                    organizationId: organizationAndTeamData.organizationId,
-                    userId: user.uuid,
-                },
-            );
+                organizationId: organizationAndTeamData.organizationId,
+                recipients: { kind: 'user', userId: user.uuid },
+            });
         }
     }
 
