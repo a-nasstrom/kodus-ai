@@ -3,6 +3,7 @@ import {
     formatFailOnExitMessage,
     formatTrialCompletionMessage,
     shouldFailReview,
+    shouldUseHunkViewer,
     shouldUseInteractiveReview,
 } from '../result.js';
 import type { ReviewResult, TrialReviewResult } from '../../../types/review.js';
@@ -75,6 +76,35 @@ describe('review result helpers', () => {
             'Exiting with code 1 because 2 issues meet or exceed `--fail-on warning`.',
         );
         expect(formatFailOnExitMessage(result, 'critical')).toBeNull();
+    });
+
+    it('routes to hunk viewer only for fully interactive humans on supported scopes', () => {
+        const baseline = {
+            isAgent: false,
+            interactive: undefined,
+            noHunk: false,
+            output: undefined,
+            format: 'terminal',
+            ttyOut: true,
+            scopeSupported: true,
+        } as const;
+
+        expect(shouldUseHunkViewer(baseline)).toBe(true);
+        expect(shouldUseHunkViewer({ ...baseline, isAgent: true })).toBe(false);
+        expect(shouldUseHunkViewer({ ...baseline, noHunk: true })).toBe(false);
+        expect(shouldUseHunkViewer({ ...baseline, interactive: true })).toBe(
+            false,
+        );
+        expect(
+            shouldUseHunkViewer({ ...baseline, output: '/tmp/out.json' }),
+        ).toBe(false);
+        expect(shouldUseHunkViewer({ ...baseline, format: 'json' })).toBe(
+            false,
+        );
+        expect(shouldUseHunkViewer({ ...baseline, ttyOut: false })).toBe(false);
+        expect(
+            shouldUseHunkViewer({ ...baseline, scopeSupported: false }),
+        ).toBe(false);
     });
 
     it('formats trial completion message from trial info or rate limit', () => {

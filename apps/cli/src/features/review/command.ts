@@ -34,8 +34,14 @@ import {
     formatFailOnExitMessage,
     formatTrialCompletionMessage,
     shouldFailReview,
+    shouldUseHunkViewer,
     shouldUseInteractiveReview,
 } from './result.js';
+import { canRenderScopeInHunk, openReviewInHunk } from './hunk-viewer.js';
+import {
+    convertReviewToHunkContext,
+    countHunkAnnotations,
+} from './hunk-context.js';
 import { ApiError } from '../../types/errors.js';
 import type { GlobalOptions } from '../../types/cli.js';
 import type { ReviewResult, TrialReviewResult } from '../../types/review.js';
@@ -53,6 +59,7 @@ type ReviewCommandOptions = {
     failOn?: string;
     fields?: string;
     githubPat?: string;
+    hunk?: boolean;
 };
 
 /**
@@ -61,7 +68,9 @@ type ReviewCommandOptions = {
  * developer convenience. Returns undefined when none are set so the
  * sandbox falls back to anonymous clone (works for public repos).
  */
-function resolveTrialGithubPat(options: ReviewCommandOptions): string | undefined {
+function resolveTrialGithubPat(
+    options: ReviewCommandOptions,
+): string | undefined {
     return (
         options.githubPat?.trim() ||
         process.env.KODUS_GITHUB_PAT?.trim() ||
@@ -73,14 +82,16 @@ function resolveTrialGithubPat(options: ReviewCommandOptions): string | undefine
 
 export function createReviewCommand(): Command {
     return new Command('review')
-        .description(`Analyze modified files for code review
+        .description(
+            `Analyze modified files for code review
 
 Examples:
   kodus review
   kodus review --staged
   kodus review --branch main
   kodus review src/auth.ts src/config.ts
-  kodus review --fail-on error`)
+  kodus review --fail-on error`,
+        )
         .argument('[files...]', 'Specific files to analyze')
         .option('-s, --staged', 'Analyze only staged files')
         .option('-c, --commit <sha>', 'Analyze diff from a specific commit')
@@ -114,6 +125,10 @@ Examples:
         .option(
             '--github-pat <token>',
             'GitHub Personal Access Token (read:repo). Trial users only — needed to clone private repos. Can also be set via KODUS_GITHUB_PAT env var. Held in memory only, never persisted.',
+        )
+        .option(
+            '--no-hunk',
+            'Skip the hunk TUI viewer and use the legacy interactive list (interactive sessions only)',
         )
         .action(reviewAction);
 }
@@ -176,7 +191,9 @@ async function reviewAction(
             }
 
             if (globalOpts.verbose) {
-                cliDebug(chalk.dim('[verbose] Reading project context files...'));
+                cliDebug(
+                    chalk.dim('[verbose] Reading project context files...'),
+                );
             }
 
             diff = await contextService.enrichDiffWithContext(
@@ -205,7 +222,7 @@ async function reviewAction(
                         branch: options.branch,
                         quiet: globalOpts.quiet,
                         onProgress: (status) => {
-                            if (globalOpts.quiet || ctx.isAgent) return;
+                            if (globalOpts.quiet || ctx.isAgent) {return;}
                             if (status === 'PENDING') {
                                 spinner.text = chalk.cyan(
                                     'Queued for review...',
@@ -228,10 +245,7 @@ async function reviewAction(
                 // setup doesn't block a one-off review. We only fall back on
                 // 401 — other errors (rate limit, server error, network)
                 // bubble up unchanged.
-                if (
-                    !(error instanceof ApiError) ||
-                    error.statusCode !== 401
-                ) {
+                if (!(error instanceof ApiError) || error.statusCode !== 401) {
                     throw error;
                 }
 
@@ -293,7 +307,9 @@ async function reviewAction(
             }
 
             if (globalOpts.verbose) {
-                cliDebug(chalk.dim('[verbose] Reading project context files...'));
+                cliDebug(
+                    chalk.dim('[verbose] Reading project context files...'),
+                );
             }
 
             diff = await contextService.enrichDiffWithContext(
@@ -338,6 +354,110 @@ async function reviewAction(
         }
 
         const selectedResult = fields ? applyFieldMask(result, fields) : result;
+        const ttyOut = Boolean(process.stdout.isTTY);
+        const scopeSupported = canRenderScopeInHunk({
+            files,
+            commit: options.commit,
+            branch: options.branch,
+        });
+        const wouldUseHunkButForScope =
+            !ctx.isAgent &&
+            options.hunk !== false &&
+            options.interactive !== true &&
+            !globalOpts.output &&
+            (!globalOpts.format || globalOpts.format === 'terminal') &&
+            ttyOut &&
+            !scopeSupported;
+
+        if (wouldUseHunkButForScope) {
+            cliInfo(
+                chalk.dim(
+                    'ℹ Hunk viewer skipped: --branch / --commit / explicit files have no direct hunk scope yet. Showing the interactive list instead. Pass --no-hunk to silence this hint.',
+                ),
+            );
+        }
+
+        const useHunkViewer = shouldUseHunkViewer({
+            isAgent: ctx.isAgent,
+            interactive: options.interactive,
+            noHunk: options.hunk === false,
+            output: globalOpts.output,
+            format: globalOpts.format,
+            ttyOut,
+            scopeSupported,
+        });
+
+        if (globalOpts.verbose) {
+            cliDebug(
+                chalk.dim(
+                    `[verbose] hunk routing: useHunkViewer=${useHunkViewer} ttyOut=${ttyOut} scopeSupported=${scopeSupported} format=${globalOpts.format} output=${globalOpts.output ?? '∅'} agent=${ctx.isAgent} interactive=${options.interactive ?? false} hunkOpt=${options.hunk}`,
+                ),
+            );
+        }
+
+        if (useHunkViewer) {
+            const reviewResult = result as ReviewResult;
+            const issues = reviewResult.issues ?? [];
+
+            if (globalOpts.verbose) {
+                cliDebug(
+                    chalk.dim(
+                        `[verbose] hunk: feeding ${issues.length} issue(s) to converter`,
+                    ),
+                );
+                for (const [idx, issue] of issues.entries()) {
+                    const preview = issue.message
+                        ? issue.message.slice(0, 80).replace(/\s+/g, ' ')
+                        : '∅';
+                    cliDebug(
+                        chalk.dim(
+                            `[verbose]   #${idx + 1} file=${JSON.stringify(issue.file)} line=${issue.line} endLine=${issue.endLine ?? '∅'} severity=${issue.severity} msg=${JSON.stringify(preview)}`,
+                        ),
+                    );
+                }
+            }
+
+            const hunkContext = convertReviewToHunkContext(reviewResult);
+            const annotationCount = countHunkAnnotations(hunkContext);
+
+            // PR-level findings have no file/line anchor and can't be inlined
+            // into a hunk panel. If every finding is unanchored, hunk would
+            // open empty. Bail out so the legacy interactive list (which does
+            // surface those findings) takes over.
+            const allUnanchored = annotationCount === 0 && issues.length > 0;
+
+            if (allUnanchored) {
+                cliInfo(
+                    chalk.dim(
+                        'ℹ Hunk viewer skipped: findings have no file/line anchor (likely PR-level). Showing the interactive list instead. Pass --no-hunk to silence this hint.',
+                    ),
+                );
+                // Fall through to the legacy interactive UI / formatter below.
+            } else {
+                const { exitCode } = await openReviewInHunk({
+                    result: reviewResult,
+                    scope: { staged: Boolean(options.staged) },
+                    keepContextOnExit: Boolean(globalOpts.verbose),
+                });
+
+                if (shouldFailReview(result, options.failOn)) {
+                    const failMessage = formatFailOnExitMessage(
+                        result,
+                        options.failOn,
+                    );
+                    if (failMessage) {
+                        cliInfo(chalk.yellow(failMessage));
+                    }
+                    exitWithCode(1);
+                }
+
+                if (exitCode !== 0) {
+                    exitWithCode(exitCode);
+                }
+                return;
+            }
+        }
+
         const shouldUseInteractive = shouldUseInteractiveReview({
             isAgent: ctx.isAgent,
             interactive: options.interactive,
@@ -460,9 +580,7 @@ async function runTrialFallback({
     const trialResult = await reviewService.trialAnalyze(diff, { githubPat });
 
     if (!globalOpts.quiet && !ctx.isAgent) {
-        spinner.succeed(
-            chalk.green(formatTrialCompletionMessage(trialResult)),
-        );
+        spinner.succeed(chalk.green(formatTrialCompletionMessage(trialResult)));
     }
 
     return trialResult;

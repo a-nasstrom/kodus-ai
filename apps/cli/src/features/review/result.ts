@@ -8,10 +8,37 @@ export function shouldUseInteractiveReview(params: {
 }): boolean {
     return (
         (!params.isAgent && params.interactive === true) ||
-        (!params.isAgent &&
-            !params.output &&
-            params.format === 'terminal')
+        (!params.isAgent && !params.output && params.format === 'terminal')
     );
+}
+
+/**
+ * Whether `kodus review` should hand the result off to the hunk TUI viewer
+ * instead of the legacy inquirer menu / flat formatter. We only auto-promote
+ * when every signal points to "interactive human": real TTY, no agent envelope,
+ * no file output, default terminal format, and the review scope maps cleanly
+ * onto something hunk can render (working tree or staged index).
+ *
+ * `--no-hunk` is the explicit escape hatch; `--interactive` keeps the legacy
+ * navigation+fix UI for users who rely on it.
+ */
+export function shouldUseHunkViewer(params: {
+    isAgent: boolean;
+    interactive?: boolean;
+    noHunk?: boolean;
+    output?: string;
+    format?: string;
+    ttyOut: boolean;
+    scopeSupported: boolean;
+}): boolean {
+    if (params.isAgent) {return false;}
+    if (params.noHunk) {return false;}
+    if (params.interactive === true) {return false;}
+    if (params.output) {return false;}
+    if (params.format && params.format !== 'terminal') {return false;}
+    if (!params.ttyOut) {return false;}
+    if (!params.scopeSupported) {return false;}
+    return true;
 }
 
 export function shouldFailReview(
@@ -60,7 +87,8 @@ export function formatFailOnExitMessage(
     }
 
     const issueLabel = blockingCount > 1 ? 'issues' : 'issue';
-    const verbPhrase = blockingCount > 1 ? 'meet or exceed' : 'meets or exceeds';
+    const verbPhrase =
+        blockingCount > 1 ? 'meet or exceed' : 'meets or exceeds';
 
     return `Exiting with code 1 because ${blockingCount} ${issueLabel} ${verbPhrase} \`--fail-on ${failOn}\`.`;
 }
