@@ -77,8 +77,8 @@ target "web" {
   # Unified Dockerfile for cloud and self-hosted — env values come from
   # ConfigProvider/useConfig() at runtime now (see
   # web-runtime-config-migration plan).
-  context = "./apps/web"
-  dockerfile = "../../docker/Dockerfile.web"
+  context = "."
+  dockerfile = "./docker/Dockerfile.web"
   args = {
     RELEASE_VERSION = "${RELEASE_VERSION}"
   }
