@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { createRequire } from 'node:module';
 import { authCommand } from './commands/auth/index.js';
 import { configCommand } from './commands/config.js';
+import { diffCommand } from './commands/diff.js';
 import { hookCommand } from './commands/hook/index.js';
 import { decisionsCommand } from './commands/memory/index.js';
 import { prCommand } from './commands/pr.js';
@@ -37,6 +38,7 @@ program
     .option('--agent', 'Agent mode: deterministic machine-readable output');
 
 program.addCommand(reviewCommand);
+program.addCommand(diffCommand);
 program.addCommand(authCommand);
 program.addCommand(subscribeCommand);
 program.addCommand(updateCommand);
