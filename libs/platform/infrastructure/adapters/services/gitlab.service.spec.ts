@@ -1,10 +1,14 @@
 import { ConfigService } from '@nestjs/config';
+import { Gitlab } from '@gitbeaker/rest';
 import axios from 'axios';
 
 import { AuthMode } from '@libs/platform/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { GitlabService } from './gitlab.service';
 
 jest.mock('axios');
+jest.mock('@gitbeaker/rest', () => ({
+    Gitlab: jest.fn(),
+}));
 jest.mock('@libs/mcp-server/services/mcp-manager.service', () => ({
     MCPManagerService: jest.fn(),
 }));
@@ -23,6 +27,7 @@ describe('GitlabService', () => {
     let cacheService: Record<string, never>;
 
     const mockedAxios = axios as jest.Mocked<typeof axios>;
+    const mockedGitlab = Gitlab as unknown as jest.Mock;
 
     beforeEach(() => {
         integrationService = {
@@ -44,6 +49,21 @@ describe('GitlabService', () => {
         );
 
         jest.clearAllMocks();
+    });
+
+    it('normalizes bare stored hosts before creating the GitLab API client', () => {
+        (service as any).instanceGitlabApi({
+            accessToken: 'oauth-token',
+            authMode: AuthMode.OAUTH,
+            host: 'gitlab.example.com/',
+        });
+
+        expect(mockedGitlab).toHaveBeenCalledWith({
+            oauthToken: 'oauth-token',
+            host: 'https://gitlab.example.com',
+            queryTimeout: 600000,
+            camelize: false,
+        });
     });
 
     it('normalizes bare self-hosted GitLab hosts when authenticating with a token', async () => {

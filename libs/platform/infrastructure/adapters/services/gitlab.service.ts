@@ -292,7 +292,9 @@ export class GitlabService implements Omit<
                 gitlabAuthDetail.authMode === AuthMode.OAUTH
                     ? gitlabAuthDetail.accessToken
                     : decrypt(gitlabAuthDetail.accessToken),
-            ...(gitlabAuthDetail.host && { host: gitlabAuthDetail.host }),
+            ...(gitlabAuthDetail.host && {
+                host: this.getGitlabWebBaseUrl(gitlabAuthDetail.host),
+            }),
             queryTimeout: 600000,
             camelize: false,
         });
@@ -308,7 +310,7 @@ export class GitlabService implements Omit<
             ? normalized
             : `https://${normalized}`;
 
-        return withProtocol.replace(/\/+$/, '');
+        return withProtocol;
     }
 
     private getGitlabWebBaseUrl(host?: string): string {
