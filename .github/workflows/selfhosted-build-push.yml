@@ -285,7 +285,16 @@ jobs:
         needs:
             - create-release
             - build-and-push
-        if: needs.build-and-push.result == 'success'
+            # Serialize against `changelog-publish`, which may push a
+            # `docs(changelog)` commit to main. If both jobs raced, the
+            # loser would hit a non-fast-forward and either drop the
+            # changelog commit or abort the CLI release. Checking out
+            # main after `changelog-publish` finishes guarantees we
+            # bump on top of its commit when there is one.
+            - changelog-publish
+        # `always()` so a `changelog-publish` failure (e.g. Gemini
+        # outage) doesn't gate the independent CLI release path.
+        if: always() && needs.build-and-push.result == 'success'
         runs-on: ubuntu-latest
         permissions:
             contents: write
