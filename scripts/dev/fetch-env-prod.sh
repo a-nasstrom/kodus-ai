@@ -172,6 +172,7 @@ KEYS=(
 
     "/prod/kodus-orchestrator/WEB_HOSTNAME_HELPDESK"
     "/prod/kodus-orchestrator/WEB_PORT_HELPDESK" 
+    "/prod/kodus-orchestrator/API_JWT_PRIVATE_KEY" 
 )
 
 # Lista de todas as chaves que você precisa

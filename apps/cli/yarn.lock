@@ -1207,6 +1207,36 @@ human-signals@^8.0.1:
   resolved "https://registry.npmjs.org/human-signals/-/human-signals-8.0.1.tgz"
   integrity sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==
 
+hunkdiff-darwin-arm64@0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/hunkdiff-darwin-arm64/-/hunkdiff-darwin-arm64-0.10.0.tgz#886c0dbbe3f328fe3d09e80ac01d1863eb055b53"
+  integrity sha512-oJALanUcIFp19LQbTTNKEk/RA0QIeeqwXzUciTzBlze1IA5GPe+rq+OLy66fFUA5tiO6qj6sXf1UqK9cL8o0Mw==
+
+hunkdiff-darwin-x64@0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/hunkdiff-darwin-x64/-/hunkdiff-darwin-x64-0.10.0.tgz#9500719e6c110580a975aafcc06b47e502e8c638"
+  integrity sha512-5sVwIN7OQ4x6/K1TfP4n0wUZinL9nPKmbZ/oHJWhMD6FScGuOOYYZQtN+q2j3ahzlu36Iio7OXajuyQZulwU4A==
+
+hunkdiff-linux-arm64@0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/hunkdiff-linux-arm64/-/hunkdiff-linux-arm64-0.10.0.tgz#cd758f357bd95f440489580330164b120c677f0d"
+  integrity sha512-h3yY1cxEmer3StCppvQ4kZyK10971t6dMO76jMnWNhREWML2H2hCiPrNw5Yjx0tI0AyI1P4D3guNCcvylLmO4A==
+
+hunkdiff-linux-x64@0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/hunkdiff-linux-x64/-/hunkdiff-linux-x64-0.10.0.tgz#906bbee2a6c259b66ce7ab0d67688ec8b0b9a0b2"
+  integrity sha512-me3Pl6Tqb46yoZP930iCUdE3pE5lDOtfsWUcCZXqEpsg0WPbW6PjO6tjX7MRnkLFPacPDrqfPZpEHr2bxK0X9A==
+
+hunkdiff@0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/hunkdiff/-/hunkdiff-0.10.0.tgz#e587b17f692834a47cd86e6a9ad16d2cff64a8f5"
+  integrity sha512-GfUYNCzEnZ0OTdg340YRFbW1SvvwgRMyQmn44t2GKoSjYqiXGaDCeOG66fpIzU8WRdbUi2uzdGIVkEsCps8TeA==
+  optionalDependencies:
+    hunkdiff-darwin-arm64 "0.10.0"
+    hunkdiff-darwin-x64 "0.10.0"
+    hunkdiff-linux-arm64 "0.10.0"
+    hunkdiff-linux-x64 "0.10.0"
+
 iconv-lite@^0.7.2:
   version "0.7.2"
   resolved "https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.7.2.tgz"

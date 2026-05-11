@@ -14,6 +14,8 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
     - Fetch PR suggestions and apply fixes with judgment.
 - `kodus-centralized-config`
     - Manage centralized config from CLI (status, init, sync, disable, download).
+- `hunk-review` (vendored from [`hunkdiff`](https://github.com/modem-dev/hunk))
+    - Drive a live Hunk diff review session: inspect, navigate, reload, and add inline comments via `hunk session ...`. Pairs with `kodus diff` and the hunk-backed `kodus review` viewer.
 
 ## Trigger Map (recommended)
 
@@ -30,6 +32,8 @@ This directory contains the agent skills shipped with the Kodus CLI repository.
     - Use `kodus-business-rules-validation`.
 - User asks to enable/disable/sync/download centralized config or choose centralized config source repository
     - Use `kodus-centralized-config`.
+- User has a Hunk session open or asks to navigate / comment / reload a live Hunk diff
+    - Use `hunk-review`. Triggers also include "abrir hunk", "hunk session", "comentar no hunk".
 
 ## Notes
 

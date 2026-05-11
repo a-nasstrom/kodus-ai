@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
 RUN bun install -g @kodus/kodus-graph
 
-RUN npm i -g yalc chokidar-cli nodemon @ast-grep/cli
+RUN npm i -g yalc nodemon @ast-grep/cli
 
 COPY package.json yarn.lock ./
 COPY nest-cli.json tsconfig*.json ./
@@ -45,18 +45,30 @@ COPY packages/kodus-flow ./packages/kodus-flow
 
 # Build local packages first. Shared yarn cache mount survives across
 # rebuilds so dependency changes don't trigger a full re-download.
-RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
+#
+# `sharing=shared` (vs the historical `sharing=locked`) lets the parallel
+# service builds (api/worker/webhooks/worker-analytics/mcp-manager) all
+# read the cache concurrently — observed `yarn install` ballooning past
+# 30min during cold-cache rebuilds purely from lock waits when the mount
+# was `sharing=locked`.
+#
+# Yarn 1's in-process write lock does NOT span containers, so concurrent
+# extracts from a shared cache can race (EEXIST on the same package tgz,
+# partial writes leaving the cache inconsistent). `--mutex file:<path>`
+# inside the cache mount creates a cross-process file lock that serializes
+# the brief write windows without re-introducing global contention.
+RUN --mount=type=cache,target=/yarn-cache,sharing=shared \
     cd packages/kodus-common \
-  && YARN_CACHE_FOLDER=/yarn-cache yarn install \
+  && YARN_CACHE_FOLDER=/yarn-cache yarn install --mutex file:/yarn-cache/.yarn-mutex \
   && YARN_CACHE_FOLDER=/yarn-cache yarn prepack
-RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
+RUN --mount=type=cache,target=/yarn-cache,sharing=shared \
     cd packages/kodus-flow \
-  && YARN_CACHE_FOLDER=/yarn-cache yarn install \
+  && YARN_CACHE_FOLDER=/yarn-cache yarn install --mutex file:/yarn-cache/.yarn-mutex \
   && YARN_CACHE_FOLDER=/yarn-cache yarn build
 
 # Install dependencies and link local packages
-RUN --mount=type=cache,target=/yarn-cache,sharing=locked \
-    YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile
+RUN --mount=type=cache,target=/yarn-cache,sharing=shared \
+    YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile --mutex file:/yarn-cache/.yarn-mutex
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 

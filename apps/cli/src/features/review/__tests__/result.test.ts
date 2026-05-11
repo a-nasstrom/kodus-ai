@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
     formatFailOnExitMessage,
     formatTrialCompletionMessage,
+    isHunkPlatformSupported,
     shouldFailReview,
+    shouldUseHunkViewer,
     shouldUseInteractiveReview,
 } from '../result.js';
 import type { ReviewResult, TrialReviewResult } from '../../../types/review.js';
@@ -75,6 +77,46 @@ describe('review result helpers', () => {
             'Exiting with code 1 because 2 issues meet or exceed `--fail-on warning`.',
         );
         expect(formatFailOnExitMessage(result, 'critical')).toBeNull();
+    });
+
+    it('routes to hunk viewer only for fully interactive humans on supported scopes and platforms', () => {
+        const baseline = {
+            isAgent: false,
+            interactive: undefined,
+            noHunk: false,
+            output: undefined,
+            format: 'terminal',
+            ttyOut: true,
+            scopeSupported: true,
+            platformSupported: true,
+        } as const;
+
+        expect(shouldUseHunkViewer(baseline)).toBe(true);
+        expect(shouldUseHunkViewer({ ...baseline, isAgent: true })).toBe(false);
+        expect(shouldUseHunkViewer({ ...baseline, noHunk: true })).toBe(false);
+        expect(shouldUseHunkViewer({ ...baseline, interactive: true })).toBe(
+            false,
+        );
+        expect(
+            shouldUseHunkViewer({ ...baseline, output: '/tmp/out.json' }),
+        ).toBe(false);
+        expect(shouldUseHunkViewer({ ...baseline, format: 'json' })).toBe(
+            false,
+        );
+        expect(shouldUseHunkViewer({ ...baseline, ttyOut: false })).toBe(false);
+        expect(
+            shouldUseHunkViewer({ ...baseline, scopeSupported: false }),
+        ).toBe(false);
+        expect(
+            shouldUseHunkViewer({ ...baseline, platformSupported: false }),
+        ).toBe(false);
+    });
+
+    it('treats Windows as an unsupported hunk platform', () => {
+        // hunkdiff currently ships prebuilt binaries for darwin/linux only.
+        expect(isHunkPlatformSupported('win32')).toBe(false);
+        expect(isHunkPlatformSupported('darwin')).toBe(true);
+        expect(isHunkPlatformSupported('linux')).toBe(true);
     });
 
     it('formats trial completion message from trial info or rate limit', () => {
