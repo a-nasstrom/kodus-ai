@@ -25,9 +25,13 @@ case "$ENVIRONMENT" in
   local)
     export ENV_FILE=${ENV_FILE:-.env}
     export API_DATABASE_ENV=${API_DATABASE_ENV:-development}
-    # profiling=on por padrao em dev; desative com ENABLE_PROFILING=false
+    # profiling=opt-in. Most dev flows don't need Pyroscope running and
+    # it's another ~150 MiB of headroom in the OrbStack VM. To bring it
+    # up: `ENABLE_PROFILING=true yarn docker:start`, or use the
+    # `yarn docker:start:profiling` shortcut, or `yarn docker:start:full`
+    # (which activates the `extras` profile that includes Pyroscope).
     PROFILE_ARGS=(--profile local-db)
-    if [ "${ENABLE_PROFILING:-true}" != "false" ]; then
+    if [ "${ENABLE_PROFILING:-false}" = "true" ]; then
       PROFILE_ARGS+=(--profile profiling)
     fi
     # Opt-in extras: webhooks, mcp, analytics, or `extras` (all three).

@@ -370,8 +370,14 @@ services:
     # Observability & Profiling
     #----------------------------------------------------------------
     pyroscope:
+        # `profiling` is the historic, explicit profile (activated by
+        # `ENABLE_PROFILING=true` or `yarn docker:start:profiling`).
+        # `extras` is the new umbrella alongside mcp-manager and
+        # worker-analytics — `yarn docker:start:full` brings everything
+        # up in one command.
         profiles:
             - profiling
+            - extras
             - infra
         image: docker.io/grafana/pyroscope:latest
         container_name: pyroscope
