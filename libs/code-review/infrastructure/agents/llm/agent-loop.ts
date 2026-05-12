@@ -239,6 +239,25 @@ import { createLogger } from '@kodus/flow';
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 
+/**
+ * Wrap a system prompt string with Anthropic cache_control when the model
+ * is Claude-based. Returns the string unchanged for other providers.
+ */
+function withAnthropicCacheControl(
+    systemPrompt: string,
+    model: any,
+): string | { role: 'system'; content: string; providerOptions: Record<string, any> } {
+    const modelId: string = model?.modelId ?? '';
+    if (/claude|anthropic/i.test(modelId)) {
+        return {
+            role: 'system' as const,
+            content: systemPrompt,
+            providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+        };
+    }
+    return systemPrompt;
+}
+
 export const EFFORT_TO_BUDGET: Record<ReasoningEffort, number> = {
     none: 0,
     low: 5_000,
@@ -274,13 +293,14 @@ export function buildReasoningProviderOptions(
 
     switch (provider) {
         case BYOKProvider.ANTHROPIC: {
-            // Newer models (Sonnet 4.6, Opus 4.6+) use adaptive thinking +
-            // effort parameter (low/medium/high). budget_tokens is deprecated.
-            // Older models (Sonnet 3.7, Opus 4.5) use enabled + budget_tokens.
+            // Models that support adaptive thinking (type: "adaptive" + effort):
+            //   - Opus 4.6+, Opus 4.7+, Sonnet 4.6+, Sonnet 4.7+, mythos
+            // Models that use enabled thinking (type: "enabled" + budget_tokens):
+            //   - Sonnet 4.5, Sonnet 4.0, Opus 4.0, Sonnet 3.7
             const isAdaptiveCapable =
                 modelName &&
-                (modelName.includes('sonnet-4') ||
-                    modelName.includes('opus-4') ||
+                (/claude-(opus|sonnet)-4-[6-9]/i.test(modelName) ||
+                    /claude-(opus|sonnet)-4-\d{2,}/i.test(modelName) ||
                     modelName.includes('mythos'));
 
             if (isAdaptiveCapable) {
@@ -935,7 +955,7 @@ export async function runAgentLoop(
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
                     abortSignal: abortController.signal,
-                    system: input.systemPrompt,
+                    system: withAnthropicCacheControl(input.systemPrompt, input.model) as any,
                     prompt: input.userPrompt,
                     experimental_telemetry: _buildLangfuseTelemetry(
                         input.agentName ?? 'agent-loop',
@@ -1249,6 +1269,7 @@ export async function runAgentLoop(
                             totalCacheWriteTokens += u.cacheWriteTokens;
                             totalOutputTokens += u.outputTokens;
                             totalReasoningTokens += u.reasoningTokens;
+
                         }
 
                         input.onStepFinish?.(event);
@@ -1415,7 +1436,7 @@ export async function runAgentLoop(
                     generateText({
                         abortSignal: secondChanceSignal,
                         model: input.model,
-                        system: input.systemPrompt,
+                        system: withAnthropicCacheControl(input.systemPrompt, input.model) as any,
                         experimental_telemetry: _buildLangfuseTelemetry(
                             `${input.agentName ?? 'agent-loop'}-second-chance`,
                             input.telemetryMetadata,
