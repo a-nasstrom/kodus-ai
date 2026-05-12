@@ -99,39 +99,6 @@ export class NotificationEngine1778536701342 implements MigrationInterface {
             CREATE INDEX "IDX_nrr_org" ON "notification_routing_rules" ("organization_id")
         `);
         await queryRunner.query(`
-            ALTER TABLE "cli_auth_sessions"
-            ALTER COLUMN "createdAt"
-            SET DEFAULT ('now'::text)::timestamp(6) with time zone
-        `);
-        await queryRunner.query(`
-            ALTER TABLE "cli_auth_sessions"
-            ALTER COLUMN "updatedAt"
-            SET DEFAULT ('now'::text)::timestamp(6) with time zone
-        `);
-        await queryRunner.query(`
-            CREATE INDEX "idx_automation_exec_inprogress_lookup" ON "automation_execution" (
-                "team_automation_id",
-                "status",
-                "repositoryId",
-                "pullRequestNumber"
-            )
-            WHERE "repositoryId" IS NOT NULL
-                AND "pullRequestNumber" IS NOT NULL
-        `);
-        await queryRunner.query(`
-            CREATE INDEX "idx_team_automations_team_auto" ON "team_automations" ("teamUuid", "automationUuid")
-        `);
-        await queryRunner.query(`
-            CREATE INDEX "idx_integration_configs_key_team_int" ON "integration_configs" ("configKey", "team_id", "integration_id")
-        `);
-        await queryRunner.query(`
-            CREATE INDEX "idx_workflow_jobs_type_updated" ON "kodus_workflow"."workflow_jobs" ("workflowType", "updatedAt")
-        `);
-        await queryRunner.query(`
-            ALTER TABLE "cli_auth_sessions"
-            ADD CONSTRAINT "FK_3689de00b6f9a4bcc3870dfdc20" FOREIGN KEY ("user_id") REFERENCES "users"("uuid") ON DELETE NO ACTION ON UPDATE NO ACTION
-        `);
-        await queryRunner.query(`
             ALTER TABLE "notification_deliveries"
             ADD CONSTRAINT "FK_fc17814bb38d81b288294bd8f90" FOREIGN KEY ("organization_id") REFERENCES "organizations"("uuid") ON DELETE NO ACTION ON UPDATE NO ACTION
         `);
@@ -168,31 +135,6 @@ export class NotificationEngine1778536701342 implements MigrationInterface {
         `);
         await queryRunner.query(`
             ALTER TABLE "notification_deliveries" DROP CONSTRAINT "FK_fc17814bb38d81b288294bd8f90"
-        `);
-        await queryRunner.query(`
-            ALTER TABLE "cli_auth_sessions" DROP CONSTRAINT "FK_3689de00b6f9a4bcc3870dfdc20"
-        `);
-        await queryRunner.query(`
-            DROP INDEX "kodus_workflow"."idx_workflow_jobs_type_updated"
-        `);
-        await queryRunner.query(`
-            DROP INDEX "public"."idx_integration_configs_key_team_int"
-        `);
-        await queryRunner.query(`
-            DROP INDEX "public"."idx_team_automations_team_auto"
-        `);
-        await queryRunner.query(`
-            DROP INDEX "public"."idx_automation_exec_inprogress_lookup"
-        `);
-        await queryRunner.query(`
-            ALTER TABLE "cli_auth_sessions"
-            ALTER COLUMN "updatedAt"
-            SET DEFAULT now()
-        `);
-        await queryRunner.query(`
-            ALTER TABLE "cli_auth_sessions"
-            ALTER COLUMN "createdAt"
-            SET DEFAULT now()
         `);
         await queryRunner.query(`
             DROP INDEX "public"."IDX_nrr_org"
