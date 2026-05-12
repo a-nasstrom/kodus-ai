@@ -64,7 +64,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         if (effortLevel) {
             (payload as any).modelKwargs = {
                 ...((payload as any).modelKwargs ?? {}),
-                outputConfig: { effort: effortLevel },
+                output_config: { effort: effortLevel },
             };
         }
 
