@@ -18,6 +18,7 @@ import { NotificationRecipient } from '@libs/notifications/domain/recipient';
 import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { ByokConcurrencyGateService } from './byok-concurrency-gate.service';
 import { DistributedLock } from '@libs/core/workflow/infrastructure/distributed-lock.service';
+import { raceWithAbortSignal } from '@libs/core/workflow/infrastructure/abort-signal-race';
 
 @Injectable()
 export class CodeReviewJobProcessorService implements IJobProcessorService {
@@ -94,16 +95,27 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
                 metadata: this.removeByokConcurrencyGateMetadata(job.metadata),
             });
 
-            await this.runCodeReviewAutomationUseCase.execute(
-                {
-                    codeManagementPayload,
-                    event,
-                    platformType,
-                    correlationId,
-                    organizationAndTeamData,
-                    teamAutomationId,
-                    workflowJobId: jobId,
-                },
+            // Race the use-case against the parent's AbortSignal. The use
+            // case already receives `signal` (PR #1 wired it down to the
+            // LLM agent loop), but any link of the chain that does NOT
+            // honor it — an octokit sleep, a downstream service stuck on
+            // retry-after, a synchronous CPU section — keeps the promise
+            // pending past the 1h45min router timeout, holding the worker
+            // slot zombie. The race guarantees the processor unblocks
+            // when the signal fires regardless of how deep the stall is.
+            await raceWithAbortSignal(
+                this.runCodeReviewAutomationUseCase.execute(
+                    {
+                        codeManagementPayload,
+                        event,
+                        platformType,
+                        correlationId,
+                        organizationAndTeamData,
+                        teamAutomationId,
+                        workflowJobId: jobId,
+                    },
+                    signal,
+                ),
                 signal,
             );
 

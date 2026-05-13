@@ -11,6 +11,7 @@ import { ErrorClassification } from '@libs/core/workflow/domain/enums/error-clas
 
 import { ExecuteCliReviewUseCase } from '@libs/cli-review/application/use-cases/execute-cli-review.use-case';
 import { CliReviewJobPayload } from './cli-review-job.types';
+import { raceWithAbortSignal } from '@libs/core/workflow/infrastructure/abort-signal-race';
 
 @Injectable()
 export class CliReviewJobProcessorService implements IJobProcessorService {
@@ -48,14 +49,17 @@ export class CliReviewJobProcessorService implements IJobProcessorService {
         });
 
         try {
-            const result = await this.executeCliReviewUseCase.execute({
-                organizationAndTeamData: payload.organizationAndTeamData,
-                input: payload.input,
-                isTrialMode: payload.isTrialMode,
-                userEmail: payload.userEmail,
-                gitContext: payload.gitContext,
-                cliAuth: payload.cliAuth,
-            });
+            const result = await raceWithAbortSignal(
+                this.executeCliReviewUseCase.execute({
+                    organizationAndTeamData: payload.organizationAndTeamData,
+                    input: payload.input,
+                    isTrialMode: payload.isTrialMode,
+                    userEmail: payload.userEmail,
+                    gitContext: payload.gitContext,
+                    cliAuth: payload.cliAuth,
+                }),
+                signal,
+            );
 
             await this.markCompleted(jobId, result);
         } catch (error) {
