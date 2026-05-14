@@ -21,6 +21,7 @@ import { FetchChangedFilesStage } from '../stages/fetch-changed-files.stage';
 import { FileContextGateStage } from '../stages/file-context-gate.stage';
 import { UpdateCommentsAndGenerateSummaryStage } from '../stages/finish-comments.stage';
 import { RequestChangesOrApproveStage } from '../stages/finish-process-review.stage';
+import { GatherDocumentationContextStage } from '../stages/gather-documentation-context.stage';
 import { InitialCommentStage } from '../stages/initial-comment.stage';
 import { ProcessFilesPrLevelReviewStage } from '../stages/process-files-pr-level-review.stage';
 import { ProcessFilesReview } from '../stages/process-files-review.stage';
@@ -38,6 +39,7 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
         private readonly validateConfigStage: ValidateConfigStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
         private readonly createSandboxStage: CreateSandboxStage,
+        private readonly gatherDocumentationContextStage: GatherDocumentationContextStage,
         @Inject(LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN)
         private readonly loadExternalContextStage: ILoadExternalContextStage,
         private readonly fileContextGateStage: FileContextGateStage,
@@ -61,12 +63,7 @@ export class CodeReviewPipelineStrategy implements IPipelineStrategy<CodeReviewP
             this.validateConfigStage,
             this.fetchChangedFilesStage,
             this.createSandboxStage,
-            // GatherDocumentationContextStage retired 2026-05-13: the v5
-            // agent never used it, and on v4 the manifest discovery did
-            // many /contents fetches that contributed to the rate-limit
-            // saturation incidents. Downstream readers
-            // (`context.documentationByFile`) already defaulted to empty
-            // — leaving the stage out simply removes the pre-fetch.
+            this.gatherDocumentationContextStage,
             this.loadExternalContextStage,
             this.fileContextGateStage,
             this.initialCommentStage,
