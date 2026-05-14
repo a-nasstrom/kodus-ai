@@ -80,12 +80,16 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
                         },
                     );
             } else {
-                // Retrieve all files changed in the pull request
+                // Retrieve all files changed in the pull request. Pass
+                // `headSha` so the GitHub adapter can memoize by (PR, SHA)
+                // — `getChangedFilesMetadata` will hit the same key in the
+                // same job, halving the GitHub fan-out.
                 changedFiles =
                     await this.codeManagementService.getFilesByPullRequestId({
                         organizationAndTeamData,
                         repository,
                         prNumber: pullRequest?.number,
+                        headSha: pullRequest?.head?.sha,
                     });
             }
 
@@ -236,6 +240,10 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
                         organizationAndTeamData,
                         repository,
                         prNumber: pullRequest?.number,
+                        // Memoize by (PR, SHA) — CommentManagerService hits
+                        // the same call during comment threading, so this
+                        // dedups the second fetch in the same pipeline.
+                        headSha: pullRequest?.head?.sha,
                     },
                 )) as Commit[];
 
@@ -309,6 +317,11 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
                         organizationAndTeamData,
                         repository,
                         prNumber: pullRequest?.number,
+                        // Memoization key (see GithubService.getFilesByPullRequestId).
+                        // The same call lands in `getChangedFiles` earlier in
+                        // the pipeline; same (PR, SHA) → cache hit, no extra
+                        // GitHub round-trip on this second hop.
+                        headSha: pullRequest?.head?.sha,
                     });
             }
 

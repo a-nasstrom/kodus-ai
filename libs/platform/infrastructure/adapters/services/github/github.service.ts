@@ -3254,7 +3254,28 @@ export class GithubService
     }
 
     async getFilesByPullRequestId(params: any): Promise<any[] | null> {
-        const { organizationAndTeamData, repository, prNumber } = params;
+        const { organizationAndTeamData, repository, prNumber, headSha } =
+            params;
+
+        // Cache: the list of changed files for a PR at a specific HEAD
+        // SHA is immutable — pushing a new commit produces a new SHA.
+        // The pipeline calls this twice per job (PullRequestManagerService
+        // `getChangedFiles` + `getChangedFilesMetadata`), and a paginated
+        // PR can fan out into 5-15+ subrequests. Caching by (prNumber,
+        // headSha) cuts the second call to a memory lookup.
+        //
+        // Callers that don't pass `headSha` (legacy paths, cron jobs that
+        // don't have the head SHA handy) skip the cache and pay the
+        // original cost — same behavior as before.
+        const cacheKey = headSha
+            ? `gh:pr-files:${organizationAndTeamData?.organizationId ?? 'no-org'}:${repository?.id ?? repository?.name}:${prNumber}:${headSha}`
+            : null;
+        if (cacheKey) {
+            const cached = await this.cacheService.getFromCache<any[]>(
+                cacheKey,
+            );
+            if (cached) return cached;
+        }
 
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -3267,7 +3288,7 @@ export class GithubService
             pull_number: prNumber,
         });
 
-        return files.map((file) => ({
+        const result = files.map((file) => ({
             filename: file.filename,
             sha: file?.sha ?? null,
             status: file.status,
@@ -3276,6 +3297,17 @@ export class GithubService
             changes: file.changes,
             patch: file.patch,
         }));
+
+        if (cacheKey && result.length > 0) {
+            await this.cacheService.addToCache(
+                cacheKey,
+                result,
+                10 * 60 * 1000, // 10min — short enough that a stale read after
+                // a fast force-push is unlikely, but long enough that the two
+                // calls in the same pipeline always hit.
+            );
+        }
+        return result;
     }
 
     formatCodeBlock(language: string, code: string) {
@@ -4144,7 +4176,24 @@ This is an experimental feature that generates committable changes. Review the d
     async getCommitsForPullRequestForCodeReview(
         params: any,
     ): Promise<any[] | null> {
-        const { organizationAndTeamData, repository, prNumber } = params;
+        const { organizationAndTeamData, repository, prNumber, headSha } =
+            params;
+
+        // Cache: the commit list of a PR at a given HEAD SHA is immutable.
+        // Two callers in the same job hit this — PullRequestManagerService
+        // `getNewCommitsSinceLastExecution` and CommentManagerService
+        // (during comment threading) — so caching by (prNumber, headSha)
+        // halves the calls for the common path. Callers without a SHA
+        // (legacy/cron) skip the cache, same behavior as before.
+        const cacheKey = headSha
+            ? `gh:pr-commits:${organizationAndTeamData?.organizationId ?? 'no-org'}:${repository?.id ?? repository?.name}:${prNumber}:${headSha}`
+            : null;
+        if (cacheKey) {
+            const cached = await this.cacheService.getFromCache<any[]>(
+                cacheKey,
+            );
+            if (cached) return cached;
+        }
 
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -4160,7 +4209,7 @@ This is an experimental feature that generates committable changes. Review the d
             pull_number: prNumber,
         });
 
-        return commits
+        const result = commits
             ?.map((commit) => ({
                 sha: commit?.sha,
                 created_at: commit?.commit?.author?.date,
@@ -4181,6 +4230,15 @@ This is an experimental feature that generates committable changes. Review the d
                     new Date(b?.author?.date).getTime()
                 );
             });
+
+        if (cacheKey && result && result.length > 0) {
+            await this.cacheService.addToCache(
+                cacheKey,
+                result,
+                10 * 60 * 1000, // 10min, same rationale as getFilesByPullRequestId.
+            );
+        }
+        return result;
     }
 
     async createIssueComment(params: any): Promise<any | null> {
@@ -4388,6 +4446,19 @@ This is an experimental feature that generates committable changes. Review the d
     async getDefaultBranch(params: any): Promise<string> {
         const { organizationAndTeamData, repository } = params;
 
+        // Cache: default branch changes very rarely (renaming main/master
+        // is a manual operation done once per repo lifecycle). Each ECS
+        // worker keeps the result for 1h; this kills the ~500+ rate-limit
+        // hits/48h we observed on `GET /repos/{owner}/{repo}` while a
+        // single worker serves many PRs from the same repo. Memory store,
+        // so caches are independent per container — that's fine here, the
+        // worst case is each container does one fetch per repo per hour.
+        const cacheKey = `gh:default-branch:${organizationAndTeamData?.organizationId ?? 'no-org'}:${repository?.id ?? repository?.name ?? 'no-repo'}`;
+        const cached = await this.cacheService.getFromCache<string>(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
         );
@@ -4399,7 +4470,15 @@ This is an experimental feature that generates committable changes. Review the d
             repo: repository?.name,
         });
 
-        return response?.data?.default_branch;
+        const defaultBranch = response?.data?.default_branch;
+        if (defaultBranch) {
+            await this.cacheService.addToCache(
+                cacheKey,
+                defaultBranch,
+                60 * 60 * 1000, // 1h
+            );
+        }
+        return defaultBranch;
     }
 
     async getPullRequestReviewComment(params: any): Promise<any[]> {
