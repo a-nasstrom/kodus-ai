@@ -16,7 +16,6 @@ import { CreatePrLevelCommentsStage } from '@libs/code-review/pipeline/stages/cr
 import { FetchChangedFilesStage } from '@libs/code-review/pipeline/stages/fetch-changed-files.stage';
 import { UpdateCommentsAndGenerateSummaryStage } from '@libs/code-review/pipeline/stages/finish-comments.stage';
 import { RequestChangesOrApproveStage } from '@libs/code-review/pipeline/stages/finish-process-review.stage';
-import { GatherDocumentationContextStage } from '@libs/code-review/pipeline/stages/gather-documentation-context.stage';
 import { InitialCommentStage } from '@libs/code-review/pipeline/stages/initial-comment.stage';
 import { ProcessFilesReview } from '@libs/code-review/pipeline/stages/process-files-review.stage';
 import { ValidateConfigStage } from '@libs/code-review/pipeline/stages/validate-config.stage';
@@ -40,7 +39,6 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
         private readonly resolveConfigStage: ResolveConfigStage,
         private readonly validateConfigStage: ValidateConfigStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
-        private readonly gatherDocumentationContextStage: GatherDocumentationContextStage,
         @Inject(LOAD_EXTERNAL_CONTEXT_STAGE_TOKEN)
         private readonly loadExternalContextStage: ILoadExternalContextStage,
         private readonly fileContextGateStage: FileContextGateStage,
@@ -68,7 +66,8 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
             this.resolveConfigStage,
             this.validateConfigStage,
             this.fetchChangedFilesStage,
-            this.gatherDocumentationContextStage,
+            // GatherDocumentationContextStage retired 2026-05-13 — see
+            // CodeReviewPipelineStrategy for rationale.
             this.loadExternalContextStage,
             this.fileContextGateStage,
             this.initialCommentStage,
