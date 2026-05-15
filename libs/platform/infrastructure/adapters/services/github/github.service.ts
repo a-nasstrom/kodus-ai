@@ -4406,28 +4406,23 @@ This is an experimental feature that generates committable changes. Review the d
                         // 15s+ stall on the FetchChangedFiles stage.
                         // Same concurrency cap as the original
                         // pullRequestManager `enrichFilesWithContent`.
+                        // allSettled lets individual file failures
+                        // reject without aborting the rest of the batch.
                         const limit = pLimit(30);
-                        await Promise.all(
+                        await Promise.allSettled(
                             batch.map(({ file }) =>
                                 limit(async () => {
-                                    try {
-                                        const fallback =
-                                            await this.getRepositoryContentFile(
-                                                {
-                                                    organizationAndTeamData,
-                                                    repository,
-                                                    file,
-                                                    pullRequest,
-                                                },
-                                            );
-                                        if (fallback)
-                                            result.set(
-                                                file.filename,
-                                                fallback,
-                                            );
-                                    } catch {
-                                        /* skip */
-                                    }
+                                    const fallback =
+                                        await this.getRepositoryContentFile(
+                                            {
+                                                organizationAndTeamData,
+                                                repository,
+                                                file,
+                                                pullRequest,
+                                            },
+                                        );
+                                    if (fallback)
+                                        result.set(file.filename, fallback);
                                 }),
                             ),
                         );
@@ -4439,24 +4434,20 @@ This is an experimental feature that generates committable changes. Review the d
         // 4. Files without usable blob sha — REST fallback only.
         //    Concurrent with pLimit, same rationale as the in-batch
         //    catch above: avoid serializing N round-trips when GraphQL
-        //    isn't usable for these entries.
+        //    isn't usable for these entries. allSettled keeps a
+        //    single-file failure from aborting the rest.
         if (pullRequest && restOnly.length > 0) {
             const limit = pLimit(30);
-            await Promise.all(
+            await Promise.allSettled(
                 restOnly.map(({ file }) =>
                     limit(async () => {
-                        try {
-                            const fallback =
-                                await this.getRepositoryContentFile({
-                                    organizationAndTeamData,
-                                    repository,
-                                    file,
-                                    pullRequest,
-                                });
-                            if (fallback) result.set(file.filename, fallback);
-                        } catch {
-                            /* skip */
-                        }
+                        const fallback = await this.getRepositoryContentFile({
+                            organizationAndTeamData,
+                            repository,
+                            file,
+                            pullRequest,
+                        });
+                        if (fallback) result.set(file.filename, fallback);
                     }),
                 ),
             );
