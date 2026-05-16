@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Destroys a persistent self-hosted dev stack provisioned via up.sh.
+# Destroys a persistent self-hosted dev stack provisioned via provision.sh.
 #
 # Usage:
-#   yarn selfhosted:down                   # destroys default instance
-#   yarn selfhosted:down --name wellington # named instance
+#   yarn selfhosted:destroy                   # destroys default instance
+#   yarn selfhosted:destroy --name wellington # named instance
 
 set -euo pipefail
 
@@ -58,10 +58,29 @@ if [ "$ASSUME_YES" != "1" ]; then
     fi
 fi
 
+# Cleaner error if the provider token isn't around — better than the generic
+# "Required env X is not set" because we know exactly what the user can do
+# about it.
+require_provider_token() {
+    local var="$1"
+    if [ -n "${!var:-}" ]; then return 0; fi
+    err "$var is not set — needed to destroy '$NAME' on $PROVIDER."
+    err ""
+    err "Fix options:"
+    err "  1) Save it once in your global config:"
+    err "       yarn selfhosted:setup"
+    err "  2) Or pass it inline for this run:"
+    err "       $var=<your-token> yarn selfhosted:destroy${NAME:+ --name $NAME}"
+    err ""
+    err "The droplet (id=$SERVER_ID, ip=$SERVER_IP) is still alive."
+    err "You can also delete it manually at the provider's console."
+    exit 1
+}
+
 # ---------- destroy server ----------
 case "$PROVIDER" in
     digitalocean)
-        require_env DIGITALOCEAN_TOKEN
+        require_provider_token DIGITALOCEAN_TOKEN
         curl -sS -X DELETE \
             -H "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
             "https://api.digitalocean.com/v2/droplets/$SERVER_ID" >/dev/null \
@@ -69,7 +88,7 @@ case "$PROVIDER" in
             || warn "Could not destroy droplet $SERVER_ID — check at cloud.digitalocean.com"
         ;;
     hetzner)
-        require_env HCLOUD_TOKEN
+        require_provider_token HCLOUD_TOKEN
         curl -sS -X DELETE \
             -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
             "https://api.hetzner.cloud/v1/servers/$SERVER_ID" >/dev/null \

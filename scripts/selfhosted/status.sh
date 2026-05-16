@@ -74,7 +74,7 @@ if [ -n "$NAME_RAW" ]; then
 else
     INSTANCES=$(list_instances)
     if [ -z "$INSTANCES" ]; then
-        dim "No active instances. Run 'yarn selfhosted:up' to provision one."
+        dim "No active instances. Run 'yarn selfhosted:provision' to provision one."
         exit 0
     fi
     log "Active instances:"

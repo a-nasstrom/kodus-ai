@@ -1,94 +1,140 @@
 # Self-hosted dev VM
 
-Provisions a real self-hosted Kodus stack on a cloud VM, leaves it alive for you (and the team) to test manually, destroys it when you say so. Unrelated to the automated E2E suite in `tests/e2e/` — this is for manual work.
+Provisions a real self-hosted Kodus stack on a cloud VM, leaves it alive for you (and the team) to test against, destroys it when you say so. Unrelated to the automated E2E suite in `tests/e2e/` — this is for manual work.
 
-## Quick start
+## Mental model
+
+Three commands, in this order:
+
+```text
+provision   ─►   deploy   ─►   destroy
+   (1x)         (N times)        (1x)
+```
+
+- **`provision`**: creates a fresh cloud VM with the latest published image. Slow (~10 min). Run once per session.
+- **`deploy`**: builds your local code and ships it to the alive VM. Fast (~3 min). Run after every code change you want to validate.
+- **`destroy`**: kills the VM, removes resources. Run when done.
+
+## Quick start — test your local branch
 
 ```bash
 # 1) Bootstrap (once per machine — saves to ~/.kodus-dev/config)
 yarn selfhosted:setup
 
-# (prompts: DO token, license, GH dev token, installer path)
-# (offers to create .envrc if you have direnv installed)
+# 2) Provision a droplet (~10 min, runs published :latest image)
+yarn selfhosted:provision
 
-# 2) Provision
-yarn selfhosted:up
+# 3) Deploy YOUR branch onto the droplet (~3 min)
+yarn selfhosted:deploy
 
-# (~8-10 min — provision droplet + install + signup)
-# Output prints Dashboard / Login / Password.
-# First run uses pre-built images from GHCR (great for repro / demo,
-# not your local code yet — see "Test your local code" below).
+# 4) Iterate — edit code, deploy again as needed
+yarn selfhosted:deploy
 
-# 3) Inspect
-yarn selfhosted:status
-yarn selfhosted:ssh                        # open shell on the VM
-yarn selfhosted:ssh -- 'docker compose ps' # run a one-off remote command
-yarn selfhosted:logs                       # tail all service logs
-yarn selfhosted:logs -- api worker         # tail specific services
-
-# 4) Destroy
-yarn selfhosted:down
+# 5) Destroy when done
+yarn selfhosted:destroy
 ```
 
-## Test your local code (iterate without reprovisioning)
+After step 2, `provision` will print a `⚠️` warning reminding you that the running image is the published one, not your code. After step 3, you're running your branch.
 
-`selfhosted:up` is for testing published images. To test the code you're
-writing in this branch, use `selfhosted:redeploy`: build locally, push to
-your personal GHCR namespace, droplet pulls and restarts.
+## Quick start — test a published version (no local code)
+
+For repro-ing a customer bug, validating an RC, or running a demo:
 
 ```bash
-# After yarn selfhosted:up is done, edit code, then:
-yarn selfhosted:redeploy                   # rebuild all 5 services
-yarn selfhosted:redeploy -- api worker     # rebuild only these (faster)
-yarn selfhosted:redeploy --no-build        # skip build, just pull + restart
-                                           # (e.g. teammate already pushed)
+yarn selfhosted:setup
+IMAGE_TAG=selfhosted-2.1.11 yarn selfhosted:provision
+# poke the dashboard manually
+yarn selfhosted:destroy
 ```
 
-Iteration time:
-- First redeploy: ~5-8 min (cold build + push all layers)
-- Subsequent: ~1-3 min (only changed layers push)
+Skip the `deploy` step entirely — you want exactly the published image.
 
-Requirements:
-- `gh auth login` completed (we read your GHCR token from `gh` CLI)
-- Docker with buildx
+## Inspecting and debugging
 
-Images are pushed to `ghcr.io/<your-gh-user>/kodus-ai-{api,worker,webhook,web,mcp-manager}:dev-<instance-name>` — each dev has their own namespace, no conflict with org-published images.
-
-On the droplet, a `docker-compose.override.yml` is generated that pins all
-services to your dev tag. Subsequent `selfhosted:up` runs from scratch will
-ignore the override (since it's tied to one specific droplet).
+```bash
+yarn selfhosted:status                       # health + URLs of all instances
+yarn selfhosted:ssh                          # open shell on the VM
+yarn selfhosted:ssh -- 'docker compose ps'   # run a one-off remote command
+yarn selfhosted:logs                         # tail all service logs
+yarn selfhosted:logs -- api worker           # tail specific services
+```
 
 ## Where secrets live
 
 In priority order (higher wins):
 
-1. **Inline-exported env** — `IMAGE_TAG=foo yarn selfhosted:up`
+1. **Inline-exported env** — `IMAGE_TAG=foo yarn selfhosted:provision`
 2. **`scripts/selfhosted/.env`** — per-repo override (gitignored)
 3. **`~/.kodus-dev/config`** — global per-machine (managed by `yarn selfhosted:setup`)
 
 `~/.kodus-dev/config` is the recommended path: set it up once and forget. Works across every clone of the repo, survives project reinstalls.
 
 ```bash
-yarn selfhosted:setup         # interactive
+yarn selfhosted:setup         # interactive (auto-runs on first provision)
 yarn selfhosted:setup --show  # show current config (masked)
 yarn selfhosted:setup --path  # print config file path
 ```
 
 If `direnv` is installed, the setup script offers to create a `.envrc` in the repo that auto-loads the config when you `cd` into the directory. Without direnv, the scripts read `~/.kodus-dev/config` directly anyway.
 
+### 1Password CLI (internal team)
+
+Each value in `~/.kodus-dev/config` can be either a plain value or a 1Password reference (`op://Vault/Item/field`). Internal Kodus engineers use refs so secrets stay in the team vault — rotation is automatic. External contributors just paste plain values.
+
+```bash
+# Example config mixing both:
+DIGITALOCEAN_TOKEN=op://Engineering/kodus-dev/do-token   # team ref
+SH_LICENSE_KEY=lic-paid-plain-value                      # plain
+API_OPEN_AI_API_KEY=op://Engineering/kodus-dev/openai-key # team ref
+```
+
+See [`op-references.md`](./op-references.md) for the team's standard paths and setup. The `op` CLI is auto-detected; if not installed, plain-value prompts are used.
+
 ## Multi-instance
 
 You and a teammate can have stacks alive at the same time:
 
 ```bash
-yarn selfhosted:up --name junior
-yarn selfhosted:up --name wellington
-yarn selfhosted:status                          # lists both
-yarn selfhosted:down --name junior
-yarn selfhosted:down --name wellington
+yarn selfhosted:provision --name junior
+yarn selfhosted:provision --name wellington
+yarn selfhosted:status                       # lists both
+yarn selfhosted:deploy --name junior         # only deploys to junior's VM
+yarn selfhosted:destroy --name junior
+yarn selfhosted:destroy --name wellington
 ```
 
-Each `--name` becomes a suffix on the droplet name (`kodus-selfhosted-junior`) and on the local state file (`.kodus-dev/selfhosted-vm-junior.json`).
+Each `--name` becomes a suffix on the droplet (`kodus-selfhosted-junior`) and the local state file (`.kodus-dev/selfhosted-vm-junior.json`). The Docker image tag pushed by `deploy` is also per-name (`dev-junior`), so deploys don't collide.
+
+## How `deploy` works
+
+```text
+1. docker buildx bake -f docker-bake.hcl --push   # builds locally, pushes layers diff to YOUR GHCR namespace
+2. write docker-compose.override.yml on droplet   # pins all 5 services to your dev tag
+3. ssh droplet: docker compose pull + up -d       # pulls the new images, restarts
+4. healthcheck web/api/webhooks                   # waits until responsive
+```
+
+Iteration cost:
+
+| | Time | Why |
+|---|---|---|
+| First deploy | 5-8 min | Cold buildx, all layers push fresh |
+| Subsequent deploys (small diff) | 1-2 min | Only changed layers push |
+| Whole stack rebuild after changing shared code | 2-4 min | Several services rebuild but cache helps |
+| `--no-build` (teammate already pushed) | 30-60s | Skip build, just pull + restart |
+
+Variants:
+
+```bash
+yarn selfhosted:deploy -- api worker    # only rebuild these (faster)
+yarn selfhosted:deploy --no-build       # skip build, just pull + restart
+```
+
+Requirements:
+- `gh auth login` completed (we read your GHCR token from `gh` CLI)
+- Docker with buildx
+
+Images are pushed to `ghcr.io/<your-gh-user>/kodus-ai-{api,worker,webhook,web,mcp-manager}:dev-<instance-name>` — each dev has their own namespace, no conflict with org-published images.
 
 ## Configuration
 
@@ -106,15 +152,17 @@ Recommended: run `yarn selfhosted:setup`, which prompts for the fields below int
 |---|---|---|
 | `KODUS_INSTALLER_PATH` | `../kodus-installer` | Path to the local installer checkout |
 | `TEST_VM_PROVIDER` | `digitalocean` | Set to `hetzner` to use Hetzner Cloud (requires `HCLOUD_TOKEN`) |
-| `IMAGE_TAG` | `latest` | GHCR image tag. Useful to test a specific RC (`selfhosted-X.Y.Z-rc.N`) |
+| `IMAGE_TAG` | `latest` | GHCR image tag for `provision`. Useful to test a specific RC (`selfhosted-X.Y.Z-rc.N`) |
 | `SH_LICENSE_KEY` | (none) | If set, stack boots with the license injected (paid features unlocked) |
 | `GH_DEV_TOKEN` | (none) | If set, auto-configures the GitHub integration after signup — dashboard ready to use |
+| `API_OPEN_AI_API_KEY` | (none) | OpenAI API key. **Required for Kodus to review PRs.** Without it, the dashboard shows a "No LLM provider configured" banner. Get one at https://platform.openai.com/api-keys. |
+| `API_OPENAI_FORCE_BASE_URL` | (none) | Optional. Override `api.openai.com` — set to e.g. `https://your-proxy/v1` for Azure OpenAI, OpenRouter, or local LLM proxies. |
 | `DO_REGION` | `nyc3` | DigitalOcean region |
 | `DO_SIZE` | `s-2vcpu-4gb` | Droplet size (~$24/mo if left running) |
 
 ## Local state
 
-`up.sh` saves each instance's metadata to `.kodus-dev/selfhosted-vm-{name}.json`:
+`provision.sh` saves each instance's metadata to `.kodus-dev/selfhosted-vm-{name}.json`:
 
 ```json
 {
@@ -144,15 +192,15 @@ Recommended: run `yarn selfhosted:setup`, which prompts for the fields below int
 - DO `s-2vcpu-4gb`: ~$0.036/h ≈ **$0.86/day** ≈ $26/month if left running
 - Hetzner CX22: ~$0.006/h ≈ **$0.14/day** (cheaper for sustained dev use)
 
-Don't forget `yarn selfhosted:down` when you're done.
+Don't forget `yarn selfhosted:destroy` when you're done.
 
 ## Troubleshooting
 
 ### "Instance 'default' already exists"
 
-You tried to provision but one is already alive. Options:
-- Use a different name: `yarn selfhosted:up --name new`
-- Destroy the current one: `yarn selfhosted:down`
+You tried to `provision` but one is already alive. Options:
+- Use a different name: `yarn selfhosted:provision --name new`
+- Destroy the current one: `yarn selfhosted:destroy`
 
 ### Stack came up but dashboard doesn't load
 
@@ -176,13 +224,9 @@ yarn selfhosted:ssh -- 'grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /va
 
 For a stable URL you'd need Cloudflare Named Tunnel — outside the scope of this helper; configure manually if needed.
 
-### I want to test a specific RC before promoting
+### `deploy` says "No instance named 'default'"
 
-```bash
-IMAGE_TAG=selfhosted-1.42.0-rc.3 yarn selfhosted:up --name rc-test
-# poke around manually
-yarn selfhosted:down --name rc-test
-```
+`deploy` requires a `provision` to have run first. Run `yarn selfhosted:provision` to create the droplet, then `yarn selfhosted:deploy` to ship your code.
 
 ### I want to run an E2E matrix scenario against this instance
 
@@ -208,15 +252,15 @@ npm run scenario -- --scenario code-review-basic --target self-hosted --provider
 
 | Goal | Use |
 |---|---|
-| Manually test a self-hosted bugfix | `scripts/selfhosted/up.sh` (this) |
-| Reproduce a customer bug | same, with `IMAGE_TAG` matching the customer's version |
-| Demo for internal team or customer | same, keep alive as long as you need |
+| Test my unmerged branch end-to-end as self-hosted | `yarn selfhosted:provision` + `yarn selfhosted:deploy` (this) |
+| Reproduce a customer bug | `IMAGE_TAG=selfhosted-X.Y.Z yarn selfhosted:provision`, then poke (no deploy) |
+| Demo for internal team or customer | `yarn selfhosted:provision`, keep alive as long as you need |
 | Automated pre-release QA | `tests/e2e/` + workflows (`e2e-self-hosted-matrix.yml`) |
 | Monorepo code development (cloud mode + hot reload) | `yarn docker:start` (not this helper) |
 
 ## Limitations
 
 - **Cloudflare quick tunnel** is not stable — the hostname changes on restart. Fine for dev, not for production integrations.
-- **No state persistence** across destroys — `down.sh` wipes everything. For DB snapshots, out of scope (do it manually via SSH with `pg_dump` before destroying).
+- **No state persistence** across destroys — `destroy.sh` wipes everything. For DB snapshots, out of scope (do it manually via SSH with `pg_dump` before destroying).
 - **License key** must be supplied via env — no built-in license generator.
 - **GitHub auto-config** only wires GitHub. For GitLab/Bitbucket/Azure, configure manually through the dashboard afterward.

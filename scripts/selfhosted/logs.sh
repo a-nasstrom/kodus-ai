@@ -27,7 +27,11 @@ while [ $# -gt 0 ]; do
             grep -E '^#( |$)' "$0" | sed 's/^# \?//'
             exit 0
             ;;
-        *) err "Unknown arg: $1 (use -- before service names)"; exit 2 ;;
+        *)
+            # Yarn 1 eats the first `--`, so positional args (service names)
+            # arrive here directly. Treat them as the service list.
+            SERVICES="$*"; break
+            ;;
     esac
 done
 NAME=$(normalize_name "$NAME_RAW")

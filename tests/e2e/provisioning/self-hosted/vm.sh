@@ -348,6 +348,17 @@ env_set WORKER_ROLE "code-review"
 # The notifications module hard-requires this (ConfigService.getOrThrow).
 # Set a dummy so the app boots — emails won't actually send.
 env_set RESEND_API_KEY "${RESEND_API_KEY:-disabled-for-dev}"
+# LLM provider config — required for Kodus to actually review PRs in the
+# matrix. Caller must provide these via env (no hardcoded fallback).
+if [ -n "${API_OPEN_AI_API_KEY:-}" ]; then
+    env_set API_OPEN_AI_API_KEY "$API_OPEN_AI_API_KEY"
+fi
+if [ -n "${API_OPENAI_FORCE_BASE_URL:-}" ]; then
+    env_set API_OPENAI_FORCE_BASE_URL "$API_OPENAI_FORCE_BASE_URL"
+fi
+if [ -n "${API_LLM_PROVIDER_MODEL:-}" ]; then
+    env_set API_LLM_PROVIDER_MODEL "$API_LLM_PROVIDER_MODEL"
+fi
 REMOTE
 
 if [ -n "$LICENSE_KEY_TO_INJECT" ]; then

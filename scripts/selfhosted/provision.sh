@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Provision a persistent self-hosted Kodus stack on a fresh cloud VM, for
-# manual testing / bug repro / demos. Stays alive until you run down.sh.
+# manual testing / bug repro / demos. Stays alive until you run destroy.sh.
 #
 # Usage:
-#   yarn selfhosted:up                     # default instance
-#   yarn selfhosted:up --name wellington   # named instance (multi-tenant)
+#   yarn selfhosted:provision                     # default instance
+#   yarn selfhosted:provision --name wellington   # named instance (multi-tenant)
 #
 # Required env (or scripts/selfhosted/.env):
 #   DIGITALOCEAN_TOKEN     DO API token        (default provider)
@@ -52,8 +52,31 @@ LOCAL_SSH_KEY=$(ssh_key_path_for "$NAME")
 if state_exists "$NAME"; then
     EXISTING_IP=$(state_get "$NAME" .server_ip)
     warn "Instance '$NAME' already exists (IP $EXISTING_IP)."
-    warn "Run 'yarn selfhosted:status' to inspect, or 'yarn selfhosted:down --name $NAME' to destroy."
+    warn "Run 'yarn selfhosted:status' to inspect, or 'yarn selfhosted:destroy --name $NAME' to destroy."
     exit 1
+fi
+
+# First-time UX: if the global config doesn't exist yet, run setup
+# interactively before doing anything else. This way the dev only thinks
+# about secrets ONCE — every subsequent command (destroy, deploy, ssh,
+# logs, status) reads from ~/.kodus-dev/config without needing env vars.
+#
+# Any env vars already exported in the caller's shell are used as defaults
+# in the prompts — they just press Enter to save them. No retyping.
+if [ ! -f "$GLOBAL_CONFIG" ]; then
+    log "First-time setup: no config at $GLOBAL_CONFIG yet."
+    log "Running 'yarn selfhosted:setup' so you only type secrets once."
+    echo ""
+    "$SCRIPT_DIR/setup.sh"
+    echo ""
+    # Load the freshly-written config directly. We don't re-source
+    # _common.sh here because its caller-env-wins logic would clobber any
+    # values the user just changed during setup (the pre-setup env vars
+    # would override the new config). A direct file source is what we want.
+    if [ -f "$GLOBAL_CONFIG" ]; then
+        # shellcheck disable=SC1090
+        set -a; . "$GLOBAL_CONFIG"; set +a
+    fi
 fi
 
 TEST_VM_PROVIDER="${TEST_VM_PROVIDER:-digitalocean}"
@@ -69,8 +92,8 @@ SSH_VERIFIED=0  # flips to 1 once we SSH'd into the box at least once
 DEV_USER_EMAIL=""
 DEV_USER_PASSWORD=""
 
-# Writes a state file that's enough for down.sh / status.sh / ssh.sh to work
-# even if up.sh later fails. Called twice: a partial one right after SSH is
+# Writes a state file that's enough for destroy.sh / status.sh / ssh.sh to work
+# even if provision.sh later fails. Called twice: a partial one right after SSH is
 # verified (so failed runs are still recoverable), and a full one at the end.
 save_state() {
     local stage="${1:-partial}"
@@ -202,7 +225,7 @@ provision_server() {
 #
 # Rule: once SSH is up, NEVER auto-destroy the droplet. The user almost
 # certainly wants to ssh in and inspect what went wrong. We save a state
-# file at that point so down.sh / ssh.sh / logs.sh can find the box.
+# file at that point so destroy.sh / ssh.sh / logs.sh can find the box.
 #
 # We only do best-effort destroy when the failure happened BEFORE SSH was
 # established (e.g. wrong region, bad token, droplet stuck pending) — in
@@ -222,14 +245,14 @@ rollback_on_failure() {
         warn "  SSH:     ssh -i $LOCAL_SSH_KEY root@$SERVER_IP"
         warn "  Logs:    yarn selfhosted:logs${NAME:+ --name $NAME}"
         warn "  Status:  yarn selfhosted:status${NAME:+ --name $NAME}"
-        warn "  Destroy: yarn selfhosted:down${NAME:+ --name $NAME}"
+        warn "  Destroy: yarn selfhosted:destroy${NAME:+ --name $NAME}"
         warn ""
         warn "  Remember: this droplet costs ~\$1/day. Destroy it when you're done."
         exit "$exit_code"
     fi
 
     if [ -f "$STATE_FILE" ]; then
-        warn "Provision failed AFTER state file was written. Run 'yarn selfhosted:down --name $NAME' to clean up."
+        warn "Provision failed AFTER state file was written. Run 'yarn selfhosted:destroy --name $NAME' to clean up."
         exit "$exit_code"
     fi
 
@@ -410,9 +433,20 @@ env_set API_PG_DB_SSL "false"
 env_set WORKER_ROLE "code-review"
 # The notifications module hard-requires this even on self-hosted dev (it
 # calls ConfigService.getOrThrow). Set a dummy value so the app boots; emails
-# obviously won't actually send. Override RESEND_API_KEY before running up.sh
-# if you want real notifications.
+# obviously won't actually send. Override RESEND_API_KEY before running
+# provision.sh if you want real notifications.
 env_set RESEND_API_KEY "${RESEND_API_KEY:-disabled-for-dev}"
+# LLM provider keys — required for Kodus to actually review PRs.
+# Without these, the dashboard shows a "No LLM provider configured" banner.
+if [ -n "${API_OPEN_AI_API_KEY:-}" ]; then
+    env_set API_OPEN_AI_API_KEY "$API_OPEN_AI_API_KEY"
+fi
+if [ -n "${API_OPENAI_FORCE_BASE_URL:-}" ]; then
+    env_set API_OPENAI_FORCE_BASE_URL "$API_OPENAI_FORCE_BASE_URL"
+fi
+if [ -n "${API_LLM_PROVIDER_MODEL:-}" ]; then
+    env_set API_LLM_PROVIDER_MODEL "$API_LLM_PROVIDER_MODEL"
+fi
 REMOTE
 
 if [ -n "${SH_LICENSE_KEY:-}" ]; then
@@ -520,6 +554,7 @@ $(echo -e "${GREEN}✅ Self-hosted stack online in ${MINS}m${SECS}s${NC}")
   $(echo -e "${BLUE}Dashboard:${NC}") http://$SERVER_IP:3000
   $(echo -e "${BLUE}API:${NC}")       http://$SERVER_IP:3001
   $(echo -e "${BLUE}Webhooks:${NC}")  $SERVER_TUNNEL_URL
+  $(echo -e "${BLUE}Image:${NC}")     ghcr.io/kodustech/kodus-ai-*:${IMAGE_TAG}
 
   $(echo -e "${BLUE}Login:${NC}")     $DEV_USER_EMAIL
   $(echo -e "${BLUE}Password:${NC}")  $DEV_USER_PASSWORD
@@ -528,9 +563,12 @@ $(echo -e "${GREEN}✅ Self-hosted stack online in ${MINS}m${SECS}s${NC}")
   $(echo -e "${GRAY}SSH:${NC}")       ssh -i $LOCAL_SSH_KEY root@$SERVER_IP
   $(echo -e "${GRAY}Status:${NC}")    yarn selfhosted:status${NAME:+ --name $NAME}
   $(echo -e "${GRAY}Logs:${NC}")      yarn selfhosted:logs${NAME:+ --name $NAME}
-  $(echo -e "${GRAY}Destroy:${NC}")   yarn selfhosted:down${NAME:+ --name $NAME}
+  $(echo -e "${GRAY}Destroy:${NC}")   yarn selfhosted:destroy${NAME:+ --name $NAME}
 
-$(echo -e "${YELLOW}This VM is ALIVE. Cost: ~\$1/day on DO.${NC}")
-$(echo -e "${YELLOW}Remember to destroy it when you're done.${NC}")
+$(echo -e "${YELLOW}⚠️  This is a PUBLISHED image, NOT your local code.${NC}")
+$(echo -e "${YELLOW}    To test your current branch instead:${NC}")
+$(echo -e "${YELLOW}    →  yarn selfhosted:deploy${NAME:+ --name $NAME}${NC}")
+
+$(echo -e "${YELLOW}This VM is ALIVE. Cost: ~\$1/day on DO. Destroy when done.${NC}")
 
 EOF

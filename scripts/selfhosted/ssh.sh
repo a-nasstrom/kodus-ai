@@ -24,11 +24,16 @@ while [ $# -gt 0 ]; do
             grep -E '^#( |$)' "$0" | sed 's/^# \?//'
             exit 0
             ;;
-        *) err "Unknown arg: $1 (use -- before remote command)"; exit 2 ;;
+        *)
+            # Yarn 1 eats the first `--`, so `yarn selfhosted:ssh -- 'cmd'`
+            # arrives here as `'cmd'`. Accept it as the remote command —
+            # this arg and any others are the command to run on the droplet.
+            REMOTE_CMD="$*"; break
+            ;;
     esac
 done
 NAME=$(normalize_name "$NAME_RAW")
-state_exists "$NAME" || { err "No instance named '$NAME'. Run 'yarn selfhosted:up' first."; exit 1; }
+state_exists "$NAME" || { err "No instance named '$NAME'. Run 'yarn selfhosted:provision' first."; exit 1; }
 
 IP=$(state_get "$NAME" .server_ip)
 KEY=$(state_get "$NAME" .ssh_key_path)
