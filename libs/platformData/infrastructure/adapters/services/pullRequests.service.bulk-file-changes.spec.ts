@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention --
- * Test fixtures use Mongo-shape field names like `_id`, plus `bulkWrite`
- * result fields (`modifiedCount`, `upsertedCount`) that mirror the
- * driver. Renaming them defeats the point of the regression. */
-
 import { PullRequestsService } from './pullRequests.service';
 
 /**
@@ -251,10 +246,11 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
             expect(
                 pullRequestsRepository.bulkApplyFileChanges,
             ).toHaveBeenCalledTimes(1);
-            const [prUuidArg, opsArg] =
+            const [prUuidArg, orgIdArg, opsArg] =
                 pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
 
             expect(prUuidArg).toBe('pr-uuid-1');
+            expect(orgIdArg).toBe('org-1');
 
             const kinds = opsArg.map((op: any) => op.kind);
             // 2 updateFile + 1 addSuggestions (for keep-b) + 2 addFile
@@ -305,6 +301,7 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
 
             expect(pullRequestsRepository.computeFileTotals).toHaveBeenCalledWith(
                 'pr-uuid-2',
+                'org-1',
             );
             const [, patch] = pullRequestsRepository.update.mock.calls[0];
             expect(patch.totalAdded).toBe(999);
@@ -367,7 +364,7 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
                 pullRequestsRepository.bulkApplyFileChanges,
             ).toHaveBeenCalledTimes(1);
             const ops =
-                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][1];
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][2];
 
             expect(
                 ops.filter((op: any) => op.kind === 'updateFile').length,
@@ -383,6 +380,59 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
     // ─────────────────────────────────────────────────────────
 
     describe('defensive guards', () => {
+        it('returns null and skips bulkWrite when organizationId is missing on both organizationAndTeamData and existingPR', async () => {
+            // Multi-tenant isolation: without an org context we can't
+            // safely scope the bulkWrite filters, so refuse the call
+            // rather than risk targeting another tenant's doc.
+            await (service as any).handleExistingPullRequest(
+                { uuid: 'pr-uuid-no-org', files: [] },
+                { number: 1 },
+                stubRepository,
+                [makeChangedFile('src/a.ts')],
+                [],
+                [],
+                {} as any, // no organizationId
+            );
+
+            expect(
+                pullRequestsRepository.bulkApplyFileChanges,
+            ).not.toHaveBeenCalled();
+            expect(
+                pullRequestsRepository.computeFileTotals,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('falls back to existingPR.organizationId when organizationAndTeamData is missing it', async () => {
+            // Hardening: the entity always carries organizationId
+            // (required: true on schema). Use it as the source of
+            // truth if the caller forgot to thread the value through.
+            const existingPR = {
+                uuid: 'pr-uuid-fallback',
+                organizationId: 'org-from-entity',
+                files: [],
+            };
+
+            await (service as any).handleExistingPullRequest(
+                existingPR,
+                { number: 1 },
+                stubRepository,
+                [makeChangedFile('src/a.ts')],
+                [],
+                [],
+                {} as any, // org missing on the context
+            );
+
+            expect(
+                pullRequestsRepository.bulkApplyFileChanges,
+            ).toHaveBeenCalledTimes(1);
+            const [, orgIdArg] =
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0];
+            expect(orgIdArg).toBe('org-from-entity');
+            expect(
+                pullRequestsRepository.computeFileTotals,
+            ).toHaveBeenCalledWith('pr-uuid-fallback', 'org-from-entity');
+        });
+
         it('returns null and skips bulkWrite when existingPR has no uuid', async () => {
             await callHandleExisting({
                 existingPR: { files: [] },
@@ -417,7 +467,7 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
             });
 
             const ops =
-                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][1];
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][2];
             const updateOps = ops.filter(
                 (op: any) => op.kind === 'updateFile',
             );
@@ -443,7 +493,7 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
             });
 
             const ops =
-                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][1];
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][2];
             const updateOps = ops.filter(
                 (op: any) => op.kind === 'updateFile',
             );
@@ -465,7 +515,7 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
             });
 
             const ops =
-                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][1];
+                pullRequestsRepository.bulkApplyFileChanges.mock.calls[0][2];
             expect(ops).toHaveLength(1);
             expect(ops[0].kind).toBe('addFile');
             expect(ops[0].file.path).toBe('src/real.ts');
@@ -491,7 +541,7 @@ describe('PullRequestsService — #1107 bulk file changes', () => {
             // then.
             expect(
                 pullRequestsRepository.computeFileTotals,
-            ).toHaveBeenCalledWith('pr-uuid-empty');
+            ).toHaveBeenCalledWith('pr-uuid-empty', 'org-1');
         });
     });
 

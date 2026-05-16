@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention --
- * Test fixtures mirror the Mongo sub-document shape (`_id`, `id`,
- * `path`) so renaming defeats the regression. */
-
 /**
  * INTEGRATION TEST for issue #1107 — exercises
  * `handleExistingPullRequest` against a real MongoDB instance and
@@ -395,11 +391,112 @@ const shouldSkip = !MONGODB_URI;
 
             const totals = await repository.computeFileTotals(
                 existingPR.uuid,
+                TEST_ORG_ID,
             );
             expect(totals).toEqual({
                 totalAdded: 15,
                 totalDeleted: 22,
                 totalChanges: 37,
+            });
+        });
+
+        it('refuses to bulk-apply when organizationId is empty', async () => {
+            const existingPR = await seedExistingPR({
+                number: 2001,
+                files: [
+                    {
+                        id: repository.newSubDocumentId(),
+                        path: 'src/x.ts',
+                        filename: 'x.ts',
+                        previousName: '',
+                        sha: 's',
+                        status: 'modified',
+                        suggestions: [],
+                        added: 1,
+                        deleted: 1,
+                        changes: 2,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    },
+                ],
+            });
+
+            await expect(
+                repository.bulkApplyFileChanges(existingPR.uuid, '', [
+                    {
+                        kind: 'updateFile',
+                        fileId: 'whatever',
+                        data: { added: 99 },
+                    },
+                ]),
+            ).rejects.toThrow(/organizationId/);
+
+            await expect(
+                repository.computeFileTotals(existingPR.uuid, ''),
+            ).rejects.toThrow(/organizationId/);
+        });
+
+        it('cannot modify a PR that belongs to a different tenant — defense-in-depth', async () => {
+            // Seed a real PR under TEST_ORG_ID.
+            const existingFileId = repository.newSubDocumentId();
+            const target = await seedExistingPR({
+                number: 2002,
+                files: [
+                    {
+                        id: existingFileId,
+                        path: 'src/secret.ts',
+                        filename: 'secret.ts',
+                        previousName: '',
+                        sha: 'orig',
+                        status: 'modified',
+                        suggestions: [],
+                        added: 1,
+                        deleted: 1,
+                        changes: 2,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    },
+                ],
+            });
+
+            // Now try to write to that PR's uuid as a different
+            // tenant. With `_id` alone the write would succeed (it's
+            // globally unique). The `organizationId` ANDed in is what
+            // stops the wrong-tenant write.
+            const wrongTenantResult =
+                await repository.bulkApplyFileChanges(
+                    target.uuid,
+                    'some-other-tenant',
+                    [
+                        {
+                            kind: 'updateFile',
+                            fileId: existingFileId,
+                            data: { added: 99999 },
+                        },
+                    ],
+                );
+
+            expect(wrongTenantResult.modified).toBe(0);
+            expect(wrongTenantResult.errors).toEqual([]);
+
+            // And the file was NOT touched.
+            const persisted = await model
+                .findOne({ _id: target.uuid })
+                .lean();
+            const file = (persisted as any).files.find(
+                (f: any) => f.path === 'src/secret.ts',
+            );
+            expect(file.added).toBe(1); // unchanged
+
+            // computeFileTotals from the wrong tenant must return 0s.
+            const wrongTotals = await repository.computeFileTotals(
+                target.uuid,
+                'some-other-tenant',
+            );
+            expect(wrongTotals).toEqual({
+                totalAdded: 0,
+                totalDeleted: 0,
+                totalChanges: 0,
             });
         });
     },

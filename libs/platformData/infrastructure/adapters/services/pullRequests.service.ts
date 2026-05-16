@@ -319,16 +319,21 @@ export class PullRequestsService implements IPullRequestsService {
 
     bulkApplyFileChanges(
         prUuid: string,
+        organizationId: string,
         ops: FileBulkOp[],
     ): Promise<BulkApplyResult> {
         return this.pullRequestsRepository.bulkApplyFileChanges(
             prUuid,
+            organizationId,
             ops,
         );
     }
 
-    computeFileTotals(prUuid: string) {
-        return this.pullRequestsRepository.computeFileTotals(prUuid);
+    computeFileTotals(prUuid: string, organizationId: string) {
+        return this.pullRequestsRepository.computeFileTotals(
+            prUuid,
+            organizationId,
+        );
     }
 
     newSubDocumentId(): string {
@@ -1037,6 +1042,23 @@ export class PullRequestsService implements IPullRequestsService {
                 return null;
             }
 
+            const organizationId =
+                organizationAndTeamData?.organizationId ??
+                (existingPR as any)?.organizationId;
+            if (!organizationId) {
+                // No org context => can't safely scope writes. Bail
+                // rather than risk a cross-tenant filter mismatch.
+                this.logger.error({
+                    message: `handleExistingPullRequest missing organizationId for PR#${pullRequest?.number}`,
+                    context: PullRequestsService.name,
+                    metadata: {
+                        pullRequestNumber: pullRequest?.number,
+                        prUuid: existingPR.uuid,
+                    },
+                });
+                return null;
+            }
+
             const existingByPath = new Map<string, IFile>();
             let skippedInvalidExistingFiles = 0;
             for (const f of existingPR.files ?? []) {
@@ -1149,6 +1171,7 @@ export class PullRequestsService implements IPullRequestsService {
                 bulkResult =
                     await this.pullRequestsRepository.bulkApplyFileChanges(
                         existingPR.uuid,
+                        organizationId,
                         ops,
                     );
             }
@@ -1197,6 +1220,7 @@ export class PullRequestsService implements IPullRequestsService {
             const { totalAdded, totalDeleted, totalChanges } =
                 await this.pullRequestsRepository.computeFileTotals(
                     existingPR.uuid,
+                    organizationId,
                 );
 
             const updatedPr = await this.update(existingPR, {

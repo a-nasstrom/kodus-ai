@@ -891,13 +891,19 @@ export class PullRequestsRepository implements IPullRequestsRepository {
      */
     async bulkApplyFileChanges(
         prUuid: string,
+        organizationId: string,
         ops: FileBulkOp[],
     ): Promise<BulkApplyResult> {
         if (ops.length === 0) {
             return { attempted: 0, modified: 0, errors: [] };
         }
+        if (!organizationId) {
+            throw new Error(
+                'bulkApplyFileChanges requires organizationId for tenant isolation',
+            );
+        }
         const bulkOps = ops.map((op) =>
-            this.translateFileBulkOp(prUuid, op),
+            this.translateFileBulkOp(prUuid, organizationId, op),
         );
         const CHUNK_SIZE = 200;
         let modified = 0;
@@ -961,19 +967,30 @@ export class PullRequestsRepository implements IPullRequestsRepository {
      * a `bulkApplyFileChanges` run, so the totals can never drift
      * from the actual sub-documents even if a chunk partially failed.
      */
-    async computeFileTotals(prUuid: string): Promise<{
+    async computeFileTotals(
+        prUuid: string,
+        organizationId: string,
+    ): Promise<{
         totalAdded: number;
         totalDeleted: number;
         totalChanges: number;
     }> {
+        if (!organizationId) {
+            throw new Error(
+                'computeFileTotals requires organizationId for tenant isolation',
+            );
+        }
         // Aggregation does NOT auto-cast string → ObjectId the way
         // standard query operators do, so build the ObjectId here.
         // The id may not be a valid 24-char hex (e.g. legacy data or
         // tests that synthesize uuids); fall back to string match
         // rather than throwing.
-        const match = mongoose.Types.ObjectId.isValid(prUuid)
-            ? { _id: new mongoose.Types.ObjectId(prUuid) }
-            : { _id: prUuid as unknown };
+        const match: Record<string, unknown> = {
+            organizationId,
+            ...(mongoose.Types.ObjectId.isValid(prUuid)
+                ? { _id: new mongoose.Types.ObjectId(prUuid) }
+                : { _id: prUuid }),
+        };
         const result = await this.pullRequestsModel
             .aggregate<{
                 totalAdded: number;
@@ -1007,6 +1024,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
 
     private translateFileBulkOp(
         prUuid: string,
+        organizationId: string,
         op: FileBulkOp,
     ): mongoose.mongo.AnyBulkWriteOperation<PullRequestsModel> {
         // `uuid` is exposed on the entity by the simple-mapper as
@@ -1014,7 +1032,15 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         // bulk filter must use `_id` — Mongoose auto-casts the string
         // to ObjectId on the way in. This mirrors `update(...)` above
         // and is the same trick `addFileToPullRequest` uses.
-        const prFilter = { _id: prUuid } as Record<string, unknown>;
+        //
+        // `organizationId` is ANDed in for tenant isolation: an
+        // ObjectId is globally unique, but defense-in-depth prevents
+        // a stale uuid (e.g. from a swapped context) from ever
+        // matching a doc that belongs to another tenant.
+        const prFilter = {
+            _id: prUuid,
+            organizationId,
+        } as Record<string, unknown>;
         switch (op.kind) {
             case 'addFile':
                 return {
@@ -1118,8 +1144,17 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         pullRequest: PullRequestsEntity,
         updateData: Omit<Partial<IPullRequests>, 'uuid' | 'id'>,
     ): Promise<PullRequestsEntity | null> {
+        // Tenant-scoped: the entity always carries `organizationId`
+        // (schema `required: true`), so AND-ing it into the filter
+        // closes a defense-in-depth gap without changing the
+        // signature for any caller. A stale or swapped entity from
+        // another tenant can no longer accidentally write here.
+        const filter: Record<string, unknown> = { _id: pullRequest.uuid };
+        if (pullRequest.organizationId) {
+            filter.organizationId = pullRequest.organizationId;
+        }
         const doc = await this.pullRequestsModel.findOneAndUpdate(
-            { _id: pullRequest.uuid },
+            filter,
             { $set: updateData },
             { new: true },
         );

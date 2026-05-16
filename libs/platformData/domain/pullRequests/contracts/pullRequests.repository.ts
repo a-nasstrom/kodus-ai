@@ -169,22 +169,32 @@ export interface IPullRequestsRepository {
     /**
      * Issue #1107: collapse the N+1 file/suggestion loop into a
      * single set of chunked `bulkWrite` calls. See impl for details.
+     *
+     * `organizationId` is part of the filter on every chunked op so
+     * a stale or malformed `prUuid` from one tenant can never write
+     * to another tenant's document.
      */
     bulkApplyFileChanges(
         prUuid: string,
+        organizationId: string,
         ops: FileBulkOp[],
     ): Promise<BulkApplyResult>;
 
     /**
      * Server-side aggregation over `files.added/deleted/changes`.
      * Used to recompute PR totals from ground truth without reading
-     * the full sub-document array.
+     * the full sub-document array. Tenant-scoped — see
+     * `bulkApplyFileChanges` for the rationale.
      */
-    computeFileTotals(prUuid: string): Promise<{
+    computeFileTotals(
+        prUuid: string,
+        organizationId: string,
+    ): Promise<{
         totalAdded: number;
         totalDeleted: number;
         totalChanges: number;
     }>;
+
 
     /** Generates a stable id for file/suggestion sub-documents. */
     newSubDocumentId(): string;
