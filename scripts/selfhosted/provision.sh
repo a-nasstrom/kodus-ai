@@ -506,6 +506,48 @@ fi
 rm -f /tmp/kodus-signup-$$.json
 ok "Dev user created"
 
+# ---------- smoke tenants (one per provider) ----------
+# Smoke tests need one tenant per provider so:
+#   * Each tenant only ever has a single integration → Kodus's
+#     `getTypeIntegration` (filtered only by category) can't pick the wrong
+#     platform.
+#   * Webhook routing on Bitbucket — which has no disambiguator and picks
+#     the OLDEST tenant with an active code-review automation registered
+#     against the repo — has exactly one candidate, so events always land
+#     on the smoke tenant.
+#
+# Created BEFORE any test-time signup so they remain the oldest candidates
+# in `findIntegrationConfigWithTeams`. Each smoke logs in to the matching
+# tenant rather than spinning up a fresh one.
+log "Creating smoke tenants (1 per provider) for E2E isolation..."
+SMOKE_TENANT_PASSWORD="${DEV_USER_PASSWORD}"
+for provider in github gitlab bitbucket azure-devops; do
+    smoke_email="e2e-${provider}@kodus.local"
+    smoke_name="Kodus E2E ${provider}"
+    payload=$(jq -nc \
+        --arg name "$smoke_name" \
+        --arg email "$smoke_email" \
+        --arg pass "$SMOKE_TENANT_PASSWORD" \
+        '{name:$name, email:$email, password:$pass}')
+    code=$(curl -sS -X POST -H "Content-Type: application/json" --max-time 30 \
+        -d "$payload" \
+        -o /tmp/kodus-smoke-signup-$$.json -w "%{http_code}" \
+        "http://$SERVER_IP:3001/auth/signUp" 2>&1 || echo "ERR")
+    if [[ ! "$code" =~ ^2[0-9][0-9]$ ]]; then
+        code=$(curl -sS -X POST -H "Content-Type: application/json" --max-time 30 \
+            -d "$payload" \
+            -o /tmp/kodus-smoke-signup-$$.json -w "%{http_code}" \
+            "http://$SERVER_IP:3001/auth/signup" 2>&1 || echo "ERR")
+    fi
+    # 409 (conflict) is fine — tenant already exists from a previous provision.
+    case "$code" in
+        2*) ok "  ${provider}: created" ;;
+        409) ok "  ${provider}: already exists" ;;
+        *) warn "  ${provider}: signup HTTP $code (body=$(cat /tmp/kodus-smoke-signup-$$.json 2>/dev/null | head -c 200))" ;;
+    esac
+    rm -f /tmp/kodus-smoke-signup-$$.json
+done
+
 # ---------- optional: configure GitHub integration ----------
 GH_CONFIGURED="false"
 if [ -n "${GH_DEV_TOKEN:-}" ]; then

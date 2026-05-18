@@ -1,3 +1,25 @@
+// undici (Node's built-in fetch) ships a `headersTimeout` of 300_000ms.
+// It fires INDEPENDENT of our AbortSignal — when Kodus's slow endpoints
+// (e.g. Bitbucket `finish-onboarding` regularly takes 3–5 minutes while
+// it clones, generates rules, and round-trips an LLM) don't send the
+// first response byte by 5 minutes, the connection is killed with
+// `TypeError: fetch failed` and the test sees a flaky network error.
+//
+// Install a custom undici Dispatcher with longer header/body timeouts on
+// the global dispatcher so every `fetch` call in the test runner uses it.
+// The bound is high enough (10 minutes) that legitimate hangs still
+// surface, but well above the worst-case real onboarding latency we've
+// measured.
+import { Agent, setGlobalDispatcher } from "undici";
+
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+setGlobalDispatcher(
+    new Agent({
+        headersTimeout: TEN_MINUTES_MS,
+        bodyTimeout: TEN_MINUTES_MS,
+    }),
+);
+
 export interface HttpOptions {
     method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
     headers?: Record<string, string>;

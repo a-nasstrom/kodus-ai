@@ -1,3 +1,4 @@
+import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -21,6 +22,8 @@ import { TeamAutomationModel } from './schemas/teamAutomation.model';
 
 @Injectable()
 export class TeamAutomationRepository implements ITeamAutomationRepository {
+    private readonly logger = createLogger(TeamAutomationRepository.name);
+
     constructor(
         @InjectRepository(TeamAutomationModel)
         private readonly teamAutomationRepository: Repository<TeamAutomationModel>,
@@ -168,12 +171,32 @@ export class TeamAutomationRepository implements ITeamAutomationRepository {
             const automationModel =
                 await this.teamAutomationRepository.find(findOneOptions);
 
-            return mapSimpleModelsToEntities(
-                automationModel,
-                TeamAutomationEntity,
+            // mapSimpleModelsToEntities() returns `null` (not []) when its
+            // input is empty — see libs/core/.../mappers.ts:59. Callers that
+            // do `const [x] = await find(...)` then explode with "is not
+            // iterable" instead of getting the natural "no rows matched"
+            // outcome. Coalesce here so the contract (Promise<Entity[]>) is
+            // honored even on empty lookups.
+            return (
+                mapSimpleModelsToEntities(
+                    automationModel,
+                    TeamAutomationEntity,
+                ) ?? []
             );
         } catch (error) {
-            console.log(error);
+            // Returning `undefined` here is a silent footgun: callers do
+            // `const [x] = await repo.find(...)` and the destructure
+            // explodes with "(intermediate value) is not iterable",
+            // masking whatever the real database error was. Log the
+            // underlying cause and degrade to an empty result so callers
+            // see a normal "nothing matched" outcome.
+            this.logger.error({
+                message: 'teamAutomationRepository:find failed',
+                context: TeamAutomationRepository.name,
+                error,
+                metadata: { filter },
+            });
+            return [];
         }
     }
 }

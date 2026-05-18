@@ -65,7 +65,10 @@ test("makeProvider bitbucket constructs with required env", () => {
             assert.equal(p.name, "bitbucket");
             assert.equal(p.integrationType, "BITBUCKET");
             assert.equal(p.webhookPath, "/bitbucket/webhook");
-            assert.equal(p.authMode(), "app-password");
+            // BitbucketProvider routes app-password auth through Kodus's
+            // AuthMode.TOKEN branch (the backend doesn't know "app-password"
+            // as a mode; sending it bypasses authenticateWithToken entirely).
+            assert.equal(p.authMode(), "token");
             assert.equal(p.authToken(), "bbpass");
         },
     );

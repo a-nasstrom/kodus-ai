@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type {
     LicenseMode,
     MatrixCell,
+    ProviderName,
     Scenario,
     ScenarioResult,
     ScenarioStatus,
@@ -85,19 +86,29 @@ function envForTarget(target: Target): TargetContext {
 // can't reproduce that from the test runner. The env vars are seeded by
 // run.sh from `~/.kodus-dev/config` (or 1Password refs).
 //
-// `self-hosted`: ALWAYS sign up a fresh tenant per cell. Re-using a
-// single tenant across cells leaves stale integration records (e.g. a
-// GitHub integration from a previous cell), and Kodus's
-// `getTypeIntegration` returns the first match by category — not by
-// platform — so dispatches end up routed to whichever provider
-// happened to onboard first, silently breaking webhook auto-register
-// for every subsequent provider in the same matrix run. Fresh signup
-// avoids the contamination entirely. The signup endpoint is wide open
-// on self-hosted (no email verification), so this costs only one extra
-// API call per cell.
+// `self-hosted`: one persistent tenant PER PROVIDER, seeded during
+// `provision.sh` so they're the OLDEST tenants on the droplet. Two
+// reasons we don't sign up a fresh tenant per cell:
+//
+//   1. Kodus's `getTypeIntegration` resolves the platform by category
+//      alone (not by platform). One tenant with multiple integrations
+//      ends up routing dispatches to the first match. Splitting per
+//      provider keeps each tenant single-integration.
+//
+//   2. Webhook routing on Bitbucket has no disambiguator: when several
+//      tenants register the same repo, `webhookContextService.getContext`
+//      returns the OLDEST tenant with an active code-review automation.
+//      A fresh tenant per cell guarantees a stale tenant wins the route
+//      and our test's just-created rule never reaches the review
+//      pipeline. Persistent provider-scoped tenants — created at
+//      provision time, before any test traffic — sidestep both issues.
+//
+// The shared password matches the default dev user's password so the
+// state file (and the `SH_TENANT_PASSWORD` env) stays usable for both.
 async function resolveTenantForCell(
     target: TargetContext,
     license: LicenseMode,
+    provider: ProviderName,
 ): Promise<TenantCredentials | undefined> {
     if (target.target === "cloud") {
         const map: Record<string, [string, string] | undefined> = {
@@ -112,10 +123,14 @@ async function resolveTenantForCell(
         if (!email || !password) return undefined;
         return { email, password };
     }
-    // self-hosted: sign up a virgin tenant per cell.
-    const suffix = randomBytes(4).toString("hex");
-    const email = `e2e-${suffix}-${Date.now()}@kodus.local`;
-    const password = `E2eTest!${randomBytes(8).toString("hex")}`;
+    // self-hosted: per-provider deterministic tenant. signUp is idempotent
+    // — if provision already seeded this email it returns immediately;
+    // otherwise it seeds the tenant on first use.
+    const email = `e2e-${provider}@kodus.local`;
+    const password =
+        process.env.SH_TENANT_PASSWORD ??
+        process.env.TEST_USER_PASSWORD ??
+        `E2eSmoke!${randomBytes(4).toString("hex")}`;
     await signUp(target, { email, password });
     return { email, password };
 }
@@ -139,7 +154,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             : envForTarget(cell.target);
         const tenant = opts.dryRun
             ? { email: "dry-run@kodus.test", password: "dry-run" }
-            : await resolveTenantForCell(target, cell.license);
+            : await resolveTenantForCell(target, cell.license, cell.provider);
 
         for (const scenario of opts.scenarios) {
             const cellLabel = `${scenario.id} × ${cell.target} × ${cell.provider} × ${cell.license}`;

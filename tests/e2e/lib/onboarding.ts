@@ -38,7 +38,7 @@ export async function signUp(
     target: TargetContext,
     creds: { email: string; password: string; name?: string },
 ): Promise<void> {
-    log.info(`Signing up fresh tenant ${creds.email}`);
+    log.info(`Signing up tenant ${creds.email}`);
     // Kodus's API has been spelled both `/auth/signUp` (camelCase) and
     // `/auth/signup` (lowercase) at different versions — try the canonical
     // form first, fall back to the lowercase variant on a 404.
@@ -61,6 +61,14 @@ export async function signUp(
             },
             timeoutMs: 30_000,
         });
+    }
+    // 409 (or any 4xx that looks like "already exists") is idempotent OK
+    // for our purposes — the tenant exists, we'll log in next. Kodus has
+    // shipped this as 409 and as 400 with different message shapes at
+    // various versions, so match loosely on the response text.
+    if (resp.status === 409 || (resp.status === 400 && /already|exists/i.test(resp.raw))) {
+        log.info(`Tenant ${creds.email} already exists — reusing`);
+        return;
     }
     ensureOk(resp, "onboarding:signUp");
     log.ok(`Tenant ${creds.email} created`);
@@ -240,6 +248,13 @@ export async function finishOnboarding(
     repo: ProviderRepoRef,
 ): Promise<void> {
     log.info("Finishing onboarding");
+    // finish-onboarding does substantial work synchronously: clones the
+    // repo to sync kody rules, generates per-repo rules via LLM, and
+    // chains a few use-cases. Bitbucket onboarding measured between
+    // 2m24s and 3m50s in observed runs (the clone path is meaningfully
+    // slower there than on github/gitlab). 360s keeps the smoke from
+    // aborting on the slowest seen run while still failing loudly if
+    // Kodus hangs forever.
     const resp = await http(
         `${target.apiBaseUrl}/code-management/finish-onboarding`,
         {
@@ -251,7 +266,7 @@ export async function finishOnboarding(
                 repositoryId: String(repo.id),
                 repositoryName: repo.name ?? repo.full_name,
             },
-            timeoutMs: 30_000,
+            timeoutMs: 360_000,
         },
     );
     ensureOk(resp, "onboarding:finishOnboarding");
