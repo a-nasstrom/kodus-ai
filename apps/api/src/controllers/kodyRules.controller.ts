@@ -754,9 +754,7 @@ export class KodyRulesController {
             'banner. See ManageImportedRulesAction for action semantics.',
     })
     @ApiOkResponse({ type: ApiObjectResponseDto })
-    public async manageImportedRules(
-        @Body() body: ManageImportedKodyRulesDto,
-    ) {
+    public async manageImportedRules(@Body() body: ManageImportedKodyRulesDto) {
         const organizationId = this.request.user.organization.uuid;
         if (!organizationId) {
             throw new Error('Organization ID not found');

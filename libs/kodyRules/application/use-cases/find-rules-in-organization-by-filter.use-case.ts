@@ -106,14 +106,14 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
             }
 
             if (repositoryId && !directoryId) {
-                filteredRules = allRules.filter(
+                filteredRules = filteredRules.filter(
                     (rule) =>
                         rule.repositoryId === 'global' ||
                         (rule.repositoryId === repositoryId &&
                             !rule.directoryId),
                 );
             } else if (repositoryId && directoryId) {
-                filteredRules = allRules.filter(
+                filteredRules = filteredRules.filter(
                     (rule) =>
                         rule.repositoryId === 'global' ||
                         (rule.repositoryId === repositoryId &&
@@ -136,9 +136,6 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase implements IUse
 
             const rules = filteredByStatus.filter((rule) => {
                 for (const key in filter) {
-                    // Rules sem `type` são tratadas como STANDARD (alinhado
-                    // com o `getRuleType` do front), pra cobrir dados legados
-                    // anteriores ao campo.
                     const actual =
                         key === 'type'
                             ? (rule.type ?? KodyRulesType.STANDARD)
