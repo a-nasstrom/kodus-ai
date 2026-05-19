@@ -40,6 +40,12 @@ import {
     DedupTraceSummary,
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
+import {
+    ReviewErrorCategory,
+    classifyLLMError,
+    getClassification,
+    isTerminalCategory,
+} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -475,6 +481,99 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     });
                 });
             }
+
+            // Derive the high-level review outcome the rest of the pipeline
+            // (and the eventual end-review comment) will react to.
+            // Rules:
+            //   - Any failure in a CRITICAL agent → FAILED. The user gets the
+            //     error variant of the end-review message instead of the
+            //     "all good" / "review completed" copy.
+            //   - Only kody-rules failure → PARTIAL. Main review is still
+            //     valid; downstream treats it like SUCCESS for the comment
+            //     copy but the dashboard can show the degraded state.
+            //   - No failures → SUCCESS. 0 suggestions is a legitimate clean
+            //     PR and stays SUCCESS — only mapped errors flip to FAILED.
+            // reviewAborted captures the "no point retrying without user
+            // action" signal (auth / quota / wrong model). Later stages may
+            // skip expensive work; we don't act on it here in PR1.
+            const failures = result.failures ?? [];
+            const reviewProvider =
+                typeof context.codeReviewConfig?.byokConfig?.main?.provider ===
+                'string'
+                    ? (context.codeReviewConfig.byokConfig.main
+                          .provider as string)
+                    : undefined;
+            const classifyFailure = (f: (typeof failures)[number]) =>
+                getClassification(f.error) ??
+                classifyLLMError(f.error, reviewProvider);
+
+            let derivedReviewStatus:
+                | 'SUCCESS'
+                | 'FAILED'
+                | 'PARTIAL' = 'SUCCESS';
+            let derivedLastReviewError:
+                | CodeReviewPipelineContext['lastReviewError']
+                | undefined;
+            let derivedReviewAborted = false;
+
+            if (failures.length > 0) {
+                const criticalFailures = failures.filter((f) =>
+                    CRITICAL_AGENTS.has(f.agentName),
+                );
+                derivedReviewStatus =
+                    criticalFailures.length > 0 ? 'FAILED' : 'PARTIAL';
+
+                // Pick the failure that best informs the user: a critical
+                // agent with a mapped (non-UNKNOWN) classification wins.
+                // Fallbacks cascade: any critical → any failure.
+                const ranked = (
+                    criticalFailures.length > 0 ? criticalFailures : failures
+                ).slice();
+                ranked.sort((a, b) => {
+                    const aMapped =
+                        classifyFailure(a).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    const bMapped =
+                        classifyFailure(b).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    if (aMapped === bMapped) return 0;
+                    return aMapped ? -1 : 1;
+                });
+                const chosen = ranked[0];
+                const classification = classifyFailure(chosen);
+
+                derivedLastReviewError = {
+                    category: classification.category,
+                    provider: classification.provider,
+                    friendlyMessage: classification.friendlyMessage,
+                    agentName: chosen.agentName,
+                    occurredAt: new Date(),
+                };
+
+                derivedReviewAborted = failures.some((f) =>
+                    isTerminalCategory(classifyFailure(f).category),
+                );
+
+                this.logger.log({
+                    message: `[AGENT] Review outcome: ${derivedReviewStatus} (${failures.length} failures, category=${classification.category}, aborted=${derivedReviewAborted})`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        reviewStatus: derivedReviewStatus,
+                        errorCategory: classification.category,
+                        provider: classification.provider,
+                        agentName: chosen.agentName,
+                        failureCount: failures.length,
+                        reviewAborted: derivedReviewAborted,
+                    },
+                });
+            }
+
+            context = this.updateContext(context, (draft) => {
+                draft.reviewStatus = derivedReviewStatus;
+                draft.lastReviewError = derivedLastReviewError;
+                draft.reviewAborted = derivedReviewAborted;
+            });
 
             // Collect suggestions discarded by severity filter and verify
             const allDiscarded: Partial<CodeSuggestion>[] = [];

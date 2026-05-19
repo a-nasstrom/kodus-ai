@@ -4,6 +4,7 @@ import {
     buildAgentTools,
     type DocumentationSearchAdapter,
 } from './agent-tools.factory';
+import { attachClassification, classifyLLMError } from './error-classifier';
 /**
  * Simple agent loop using Vercel AI SDK with native function calling.
  *
@@ -42,6 +43,16 @@ const byokErrorContext =
 
 function reportByokError(err: unknown): void {
     const ctx = byokErrorContext.getStore();
+
+    // Classify and attach the canonical category to the error object so
+    // downstream catch blocks (e.g. AgentReviewStage iterating
+    // result.failures) can read it via getClassification() without
+    // re-parsing provider-specific strings. Done before the reporter call
+    // so any logging sees the same classified info.
+    if (err && typeof err === 'object') {
+        attachClassification(err, classifyLLMError(err, ctx?.provider));
+    }
+
     if (!ctx?.reporter || !ctx.provider) return;
     try {
         ctx.reporter({

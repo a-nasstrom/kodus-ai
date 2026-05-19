@@ -8,6 +8,7 @@ import {
 } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { ReviewErrorCategory } from '@libs/code-review/infrastructure/agents/llm/error-classifier';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
     AnalysisContext,
@@ -210,6 +211,48 @@ export interface CodeReviewPipelineContext extends PipelineContext {
      *  agent-loop's local AbortController is aborted when the router-level
      *  job timeout fires (instead of leaving an LLM call running ghost). */
     parentSignal?: AbortSignal;
+
+    /**
+     * High-level outcome of the agent engine, derived by AgentReviewStage
+     * from the orchestrator's failures and used downstream to:
+     *  - shape the end-review message (success / no-findings / error variant)
+     *  - persist the review status on the PR (consumed by the auto-approve cron)
+     *
+     * Semantics:
+     *  - SUCCESS: main agent ran AND produced output; kody-rules agent (if
+     *    enabled) also succeeded. 0 suggestions counts as SUCCESS as long as
+     *    no agent threw — it just means the PR was clean.
+     *  - PARTIAL: main agent succeeded but the kody-rules agent failed. The
+     *    review still has value from the main agent.
+     *  - FAILED: main agent failed with a mapped error. Review has no value.
+     *
+     * Absent on legacy (non-agent) engine runs.
+     */
+    reviewStatus?: 'SUCCESS' | 'FAILED' | 'PARTIAL';
+
+    /**
+     * Set to true when at least one agent failed with a terminal error
+     * category (AUTH_INVALID / QUOTA_EXCEEDED / MODEL_NOT_FOUND) — the user
+     * must fix billing/auth/config before retrying. Downstream stages that
+     * perform expensive work (summary generation, dedup re-runs, etc.) may
+     * consult this flag to skip themselves. Reserved for use by later
+     * stages; the agent-review stage only sets it.
+     */
+    reviewAborted?: boolean;
+
+    /**
+     * Snapshot of the most important error that drove reviewStatus = FAILED,
+     * carried in-memory through the rest of the pipeline so the end-review
+     * comment stage can render a precise message without re-walking errors.
+     * Detailed/structured info still goes to CodeReviewExecution.metadata.
+     */
+    lastReviewError?: {
+        category: ReviewErrorCategory;
+        provider?: string;
+        friendlyMessage: string;
+        agentName?: string;
+        occurredAt: Date;
+    };
 }
 
 export interface DedupTraceSuggestionSummary {
