@@ -1,5 +1,6 @@
 import { Entity } from '@libs/core/domain/interfaces/entity';
 
+import { ReviewStatus } from '../enums/reviewStatus.enum';
 import {
     ICommit,
     IFile,
@@ -45,6 +46,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
     private readonly _syncedEmbeddedSuggestions: boolean;
     private readonly _syncedWithIssues: boolean;
     private readonly _isDraft: boolean;
+    private readonly _reviewStatus?: ReviewStatus;
 
     constructor(pullRequest: IPullRequests) {
         this._uuid = pullRequest.uuid;
@@ -78,6 +80,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
         this._syncedEmbeddedSuggestions = pullRequest.syncedEmbeddedSuggestions;
         this._syncedWithIssues = pullRequest.syncedWithIssues;
         this._isDraft = pullRequest.isDraft ?? false;
+        this._reviewStatus = pullRequest.reviewStatus;
     }
 
     toJson(): IPullRequests {
@@ -109,6 +112,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             syncedEmbeddedSuggestions: this._syncedEmbeddedSuggestions,
             syncedWithIssues: this._syncedWithIssues,
             isDraft: this._isDraft,
+            reviewStatus: this._reviewStatus,
         };
     }
 
@@ -141,6 +145,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             syncedEmbeddedSuggestions: this._syncedEmbeddedSuggestions,
             syncedWithIssues: this._syncedWithIssues,
             isDraft: this._isDraft,
+            reviewStatus: this._reviewStatus,
         };
     }
 
@@ -254,5 +259,9 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
 
     get isDraft(): boolean {
         return this._isDraft;
+    }
+
+    get reviewStatus(): ReviewStatus | undefined {
+        return this._reviewStatus;
     }
 }

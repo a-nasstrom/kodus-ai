@@ -2,6 +2,7 @@ import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { PriorityStatus } from '@libs/platformData/domain/pullRequests/enums/priorityStatus.enum';
+import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
 import { ICommit } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { ReviewModeResponse } from '@libs/core/infrastructure/config/types/general/codeReview.type';
 import { CoreDocument } from '@libs/core/infrastructure/repositories/model/mongodb';
@@ -167,6 +168,13 @@ export class PullRequestsModel extends CoreDocument {
 
     @Prop({ type: Boolean, required: true, default: false })
     public isDraft: boolean;
+
+    @Prop({
+        type: String,
+        enum: Object.values(ReviewStatus),
+        required: false,
+    })
+    public reviewStatus?: ReviewStatus;
 }
 
 export const PullRequestsSchema =
