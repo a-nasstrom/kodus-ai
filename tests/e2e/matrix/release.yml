@@ -8,6 +8,12 @@ scenarios:
     - kody-rules-create-and-apply
     - license-attribution
     - upgrade-n-1-to-n
+    # SSO cookie-domain regression. Restricted by appliesTo to a single
+    # cell (self-hosted × github × license-paid); spins up its own
+    # dedicated droplet (--name sso-e2e) with Caddy + Keycloak on
+    # sslip.io. Release-only because LE issuance + droplet boot adds
+    # ~7-8 min on first run. Validated end-to-end on 2026-05-19.
+    - sso-cookie-domain
 
 cells:
     # ---------- self-hosted ----------
