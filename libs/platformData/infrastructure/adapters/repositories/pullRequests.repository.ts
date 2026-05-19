@@ -585,6 +585,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                         repositoryId: { $first: '$repository.id' },
                         repositoryName: { $first: '$repository.name' },
                         provider: { $first: '$provider' },
+                        reviewStatus: { $first: '$reviewStatus' },
                         suggestions: {
                             $push: {
                                 id: '$files.suggestions.id',
@@ -606,6 +607,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                             name: '$repositoryName',
                         },
                         provider: 1,
+                        reviewStatus: 1,
                         suggestions: 1,
                     },
                 },

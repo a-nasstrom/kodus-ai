@@ -209,6 +209,12 @@ export interface IPullRequestWithDeliveredSuggestions {
         name: string;
     };
     suggestions: IDeliveredSuggestion[];
+    /**
+     * Latest agent-engine review outcome (when present). Absent on PRs
+     * reviewed by the legacy EE engine or before this field was introduced
+     * — the auto-approve cron treats absence as approvable.
+     */
+    reviewStatus?: ReviewStatus;
 }
 
 /**

@@ -9,6 +9,7 @@ import { PullRequestReviewState } from '@libs/platform/domain/platformIntegratio
 import { NotificationService } from '@libs/notifications/application/notification.service';
 import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-author-recipient.resolver';
 import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
+import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
 // SeverityLevel no longer used — request changes is driven by level classification
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 
@@ -64,6 +65,7 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
             organizationAndTeamData,
             pullRequest.number,
             repository,
+            context.reviewStatus,
         );
 
         if (approved) {
@@ -141,9 +143,29 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         repository: { id: string; name: string },
+        reviewStatus?: ReviewStatus,
     ): Promise<boolean> {
         try {
             if (!pullRequestApprovalActive || lineCommentsLength > 0) {
+                return false;
+            }
+
+            // FAILED reviews produce 0 line comments not because the PR is
+            // clean but because nothing could be analyzed (e.g. BYOK key
+            // out of credits). Approving here would tell the author "all
+            // good" when the truth is "we couldn't tell." Block until a
+            // successful re-run (`@kody review --force` after the fix)
+            // flips reviewStatus back to SUCCESS / PARTIAL.
+            if (reviewStatus === ReviewStatus.FAILED) {
+                this.logger.log({
+                    message: `Skipping auto-approve for PR#${prNumber} because the review failed`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        repository,
+                        reviewStatus,
+                    },
+                });
                 return false;
             }
 

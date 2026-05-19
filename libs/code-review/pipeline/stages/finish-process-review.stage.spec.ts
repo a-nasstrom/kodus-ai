@@ -6,6 +6,8 @@ import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-au
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { PullRequestReviewState } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 
+import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
+
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { RequestChangesOrApproveStage } from './finish-process-review.stage';
 
@@ -151,5 +153,31 @@ describe('RequestChangesOrApproveStage — review.auto_approved emit', () => {
         notificationService.emit.mockRejectedValueOnce(new Error('outbox down'));
 
         await expect(stage.execute(makeContext())).resolves.toBeDefined();
+    });
+
+    it('does not approve when the review failed (reviewStatus=FAILED)', async () => {
+        // FAILED reviews produce 0 line comments not because the PR is
+        // clean but because nothing could be analyzed. The stage must
+        // refuse to approve in that case.
+        const ctx = makeContext();
+        ctx.reviewStatus = ReviewStatus.FAILED;
+
+        await stage.execute(ctx);
+
+        expect(codeManagement.approvePullRequest).not.toHaveBeenCalled();
+        expect(notificationService.emit).not.toHaveBeenCalled();
+    });
+
+    it('still approves on PARTIAL — main agent succeeded so the review has value', async () => {
+        prAuthorResolver.resolve.mockResolvedValueOnce({
+            kind: 'user',
+            userId: 'user-1',
+        });
+        const ctx = makeContext();
+        ctx.reviewStatus = ReviewStatus.PARTIAL;
+
+        await stage.execute(ctx);
+
+        expect(codeManagement.approvePullRequest).toHaveBeenCalled();
     });
 });
