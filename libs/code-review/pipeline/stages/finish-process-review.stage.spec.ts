@@ -6,8 +6,6 @@ import { PrAuthorRecipientResolver } from '@libs/notifications/application/pr-au
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { PullRequestReviewState } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 
-import { ReviewStatus } from '@libs/platformData/domain/pullRequests/enums/reviewStatus.enum';
-
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { RequestChangesOrApproveStage } from './finish-process-review.stage';
 
@@ -155,12 +153,18 @@ describe('RequestChangesOrApproveStage — review.auto_approved emit', () => {
         await expect(stage.execute(makeContext())).resolves.toBeDefined();
     });
 
-    it('does not approve when the review failed (reviewStatus=FAILED)', async () => {
-        // FAILED reviews produce 0 line comments not because the PR is
-        // clean but because nothing could be analyzed. The stage must
-        // refuse to approve in that case.
+    it('does not approve when the review has a critical failure', async () => {
+        // critical errors[] entries mean the main agent / a structural
+        // stage failed — 0 line comments here is not a clean PR, it's
+        // an unanalyzed one. The stage must refuse to approve.
         const ctx = makeContext();
-        ctx.reviewStatus = ReviewStatus.FAILED;
+        ctx.errors = [
+            {
+                stage: 'AgentReviewStage',
+                error: new Error('byok auth failed'),
+                severity: 'critical',
+            } as any,
+        ];
 
         await stage.execute(ctx);
 
@@ -168,16 +172,23 @@ describe('RequestChangesOrApproveStage — review.auto_approved emit', () => {
         expect(notificationService.emit).not.toHaveBeenCalled();
     });
 
-    it('still approves on PARTIAL — main agent succeeded so the review has value', async () => {
-        prAuthorResolver.resolve.mockResolvedValueOnce({
-            kind: 'user',
-            userId: 'user-1',
-        });
+    it('does not approve when only an auxiliary (partial) failure happened', async () => {
+        // Per latest decision: even though the main review still has
+        // value, a partial failure (e.g. kody-rules agent threw) means
+        // configured rules couldn't be checked. The user must decide.
         const ctx = makeContext();
-        ctx.reviewStatus = ReviewStatus.PARTIAL;
+        ctx.errors = [
+            {
+                stage: 'AgentReviewStage',
+                substage: 'agent:kody-rules',
+                error: new Error('kody-rules unavailable'),
+                severity: 'partial',
+            } as any,
+        ];
 
         await stage.execute(ctx);
 
-        expect(codeManagement.approvePullRequest).toHaveBeenCalled();
+        expect(codeManagement.approvePullRequest).not.toHaveBeenCalled();
+        expect(notificationService.emit).not.toHaveBeenCalled();
     });
 });
