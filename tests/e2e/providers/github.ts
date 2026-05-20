@@ -14,6 +14,21 @@ import { logger } from "../lib/log.js";
 
 const log = logger("provider:github");
 
+// Map a Kody license-block notification body to a discriminator the
+// scenario layer can assert on. Loose keyword match so we can tell
+// "trial expired" apart from "BYOK not yet configured" without
+// committing to exact copy that may change.
+function classifyLicenseNotice(
+    body: string,
+): "trial-ended" | "byok-required" | "no-license" | "other" {
+    const b = body.toLowerCase();
+    if (/trial.*(ended|expired|over)/.test(b)) return "trial-ended";
+    if (/byok|own (api )?key|api[ -]?key/.test(b)) return "byok-required";
+    if (/(no|invalid).*license|activate.*plan|subscribe/.test(b))
+        return "no-license";
+    return "other";
+}
+
 export class GitHubProvider extends BaseProvider {
     readonly name: ProviderName = "github";
     readonly integrationType = "GITHUB";
@@ -258,41 +273,110 @@ export class GitHubProvider extends BaseProvider {
                         { headers: this.headers() },
                     ),
                 ]);
-                // Distinguish Kody's two notification stages:
-                //   - "Started!" placeholder carries `<!-- kody-codereview -->`
-                //     by itself. No findings yet — drop.
-                //   - "Complete!" carries `<!-- kody-codereview-completed-… -->`
-                //     plus `<!-- kody-codereview -->`. Pipeline finished —
-                //     keep, because for mechanics smoke tests "review came
-                //     back, no issues" is a valid PASS signal (even with
-                //     zero inline findings).
-                const isStatusComment = (body: string) =>
-                    body.includes("<!-- kody-codereview") &&
-                    !body.includes("kody-codereview-completed");
-                const filterNonTrigger = (items: { id: number; body: string }[]) =>
-                    items.filter(
-                        (c) =>
-                            String(c.id) !== opts.triggerId &&
-                            !(c.body ?? "").toLowerCase().startsWith("@kody") &&
-                            !isStatusComment(c.body ?? ""),
-                    );
-                const rc = filterNonTrigger(reviewComments.body ?? []);
-                const ic = filterNonTrigger(issueComments.body ?? []);
-                const rv = (reviews.body ?? []).filter((r) => {
+                // Kody posts three distinct comment shapes that all carry
+                // the `<!-- kody-codereview -->` discriminator:
+                //
+                //   1. "Code Review Started!" placeholder — no findings
+                //      yet. Pure status, drop.
+                //   2. "Your trial has ended! Activate your plan…" OR
+                //      "Set up your BYOK key…" — license/entitlement
+                //      gate fired and Kody is telling the user why no
+                //      review is coming. NOT a real review, but a
+                //      meaningful UX signal we want to surface as
+                //      `licenseBlockedNotice` (not as reviewComments).
+                //   3. Real review output — either
+                //      `<!-- kody-codereview-completed-… -->` (Complete
+                //      summary with "Kody Review Complete" / "Kody
+                //      Guide") or individual finding comments with the
+                //      docs.kodus.io footer. Keep as a review signal.
+                const classify = (
+                    body: string,
+                ): "started" | "license-block" | "review" => {
+                    if (!body.includes("<!-- kody-codereview")) return "review";
+                    if (body.includes("kody-codereview-completed")) return "review";
+                    // Trial / BYOK / plan-activation prompts. Stable
+                    // markers: the "Your trial has ended" and "activate
+                    // your plan" / "BYOK" wording. Loose match so minor
+                    // copy edits don't silently flip the classification.
+                    if (
+                        /trial.*ended|trial.*expired|byok|activate.*plan|talk.*to.*our.*founders/i.test(
+                            body,
+                        )
+                    ) {
+                        return "license-block";
+                    }
+                    return "started";
+                };
+                const filterNonTrigger = <T extends { id: number; body: string }>(
+                    items: T[],
+                ): { reviews: T[]; licenseNotice?: T } => {
+                    const reviews: T[] = [];
+                    let licenseNotice: T | undefined;
+                    for (const c of items) {
+                        if (String(c.id) === opts.triggerId) continue;
+                        const body = c.body ?? "";
+                        if (body.toLowerCase().startsWith("@kody")) continue;
+                        const kind = classify(body);
+                        if (kind === "started") continue;
+                        if (kind === "license-block") {
+                            licenseNotice ??= c;
+                            continue;
+                        }
+                        reviews.push(c);
+                    }
+                    return { reviews, licenseNotice };
+                };
+                const rcRes = filterNonTrigger(reviewComments.body ?? []);
+                const icRes = filterNonTrigger(issueComments.body ?? []);
+                const reviewsList = (reviews.body ?? []).filter((r) => {
                     const ts = r.submitted_at ?? r.created_at ?? "";
                     if (ts <= opts.sinceIso) return false;
                     const body = r.body ?? "";
                     if (body.toLowerCase().startsWith("@kody")) return false;
-                    if (isStatusComment(body)) return false;
-                    return true;
+                    return classify(body) === "review";
                 });
-                if (rc.length || ic.length || rv.length) {
-                    const sample = rc[0]?.body ?? ic[0]?.body ?? rv[0]?.body ?? "";
+                // Surface any license-block notice we found via comments,
+                // even when no real review fired. Lets the scenario layer
+                // assert on "gate blocked AND Kody notified" instead of
+                // bare silence.
+                const licenseNotice =
+                    rcRes.licenseNotice?.body ??
+                    icRes.licenseNotice?.body ??
+                    undefined;
+                if (
+                    rcRes.reviews.length ||
+                    icRes.reviews.length ||
+                    reviewsList.length
+                ) {
+                    const sample =
+                        rcRes.reviews[0]?.body ??
+                        icRes.reviews[0]?.body ??
+                        reviewsList[0]?.body ??
+                        "";
                     return {
-                        reviewComments: rc.length,
-                        issueComments: ic.length,
-                        reviews: rv.length,
+                        reviewComments: rcRes.reviews.length,
+                        issueComments: icRes.reviews.length,
+                        reviews: reviewsList.length,
                         sample: sample.slice(0, 240),
+                        ...(licenseNotice
+                            ? {
+                                  licenseBlockedNotice: {
+                                      message: licenseNotice.slice(0, 240),
+                                      kind: classifyLicenseNotice(licenseNotice),
+                                  },
+                              }
+                            : {}),
+                    };
+                }
+                if (licenseNotice) {
+                    return {
+                        reviewComments: 0,
+                        issueComments: 0,
+                        reviews: 0,
+                        licenseBlockedNotice: {
+                            message: licenseNotice.slice(0, 240),
+                            kind: classifyLicenseNotice(licenseNotice),
+                        },
                     };
                 }
                 return null;
@@ -328,6 +412,19 @@ export class GitHubProvider extends BaseProvider {
 
     authToken(): string {
         return this.token;
+    }
+
+    async currentUserId(): Promise<string> {
+        const resp = await http<{ id: number; login: string }>(
+            `${this.apiBase}/user`,
+            { headers: this.headers(), timeoutMs: 15_000 },
+        );
+        ensureOk(resp, "github:currentUserId");
+        return String(resp.body.id);
+    }
+
+    licenseGitTool(): string {
+        return "github";
     }
 }
 

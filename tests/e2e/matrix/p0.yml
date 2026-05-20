@@ -16,6 +16,10 @@ scenarios:
     - code-review-basic
     - kody-rules-create-and-apply
     - license-attribution
+    # Per-seat gate: appliesTo restricts to self-hosted × github × license-paid
+    # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default
+    # ~/.kodus-dev/license-seats1.jwt) isn't available — see run-matrix.ts.
+    - per-seat-license-toggle
 
 cells:
     # ---------- self-hosted ----------
@@ -54,3 +58,10 @@ cells:
     - target: cloud
       provider: github
       license: trial
+    # Community plan: post-trial tenant that configured its own LLM API
+    # key (BYOK). Free in Stripe terms but reviews still work (with the
+    # 10-rule limit). Distinct from `free` (= trial expired, no BYOK,
+    # gate blocks).
+    - target: cloud
+      provider: github
+      license: community-byok

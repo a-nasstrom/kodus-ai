@@ -25,6 +25,7 @@ When you set a field's value to `op://Vault/Item/field` in `~/.kodus-dev/config`
 |---|---|---|
 | `DIGITALOCEAN_TOKEN` | `op://Engineering/kodus-self-hosted-dev/do-token` | Required |
 | `SH_LICENSE_KEY` | `op://Engineering/kodus-self-hosted-dev/license-paid` | Optional |
+| `SH_LICENSE_KEY_PATH` | path to a `seats=1` JWT on disk (default `~/.kodus-dev/license-seats1.jwt`) | Optional; needed only by the `per-seat-license-toggle` matrix scenario |
 | `GH_DEV_TOKEN` | `op://Engineering/kodus-self-hosted-dev/gh-bot-token` | Optional |
 | `API_OPEN_AI_API_KEY` | `op://Engineering/kodus-self-hosted-dev/openai-key` | **Required.** Stores the Moonshot API key (team default uses Kimi K2.6 — see below). For native OpenAI, replace with a `sk-...` from platform.openai.com. |
 

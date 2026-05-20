@@ -86,7 +86,36 @@ async function runLicenseScenario(opts: RunOpts): Promise<{
         {
             method: "GET",
             pathRegex: /^\/repos\/[^/]+\/[^/]+\/issues\/\d+\/comments/,
-            handler: (_req, res) => json(res, 200, []),
+            handler: (_req, res) => {
+                // When the tenant is on a license-blocked tier and Kody
+                // is otherwise silent on review comments, the production
+                // behavior is for Kody to post a "Your trial has ended"
+                // notification as a top-level issue comment carrying the
+                // `<!-- kody-codereview -->` marker. The scenario layer
+                // detects that pattern via `licenseBlockedNotice` and
+                // treats it as the expected blocked-state signal. Without
+                // this, the mock can't reproduce the cloud blocked-tier
+                // path that the scenario now asserts on.
+                const blockedTier =
+                    opts.license === "free" || opts.license === "license-free";
+                if (!opts.kodyResponds && blockedTier) {
+                    const responseTime = new Date(
+                        new Date(reviewWindow.triggeredAt).getTime() + 500,
+                    ).toISOString();
+                    json(res, 200, [
+                        {
+                            id: 4004,
+                            body:
+                                "## Your trial has ended! 😢\n\n" +
+                                "To keep getting reviews, activate your plan [here](https://app.kodus.io/settings/subscription) or configure your BYOK key.\n\n" +
+                                "<!-- kody-codereview -->",
+                            created_at: responseTime,
+                        },
+                    ]);
+                    return;
+                }
+                json(res, 200, []);
+            },
         },
         {
             method: "GET",
@@ -185,7 +214,7 @@ test("integration license: self-hosted license-paid expects review and gets it �
     assert.equal(r.status, "passed", `expected passed, got ${r.status}: ${r.errorMessage}`);
     assert.equal((r.evidence as { expectReview?: boolean }).expectReview, true);
     assert.equal(
-        (r.evidence as { actuallySawReview?: boolean }).actuallySawReview,
+        (r.evidence as { sawRealReview?: boolean }).sawRealReview,
         true,
     );
 });
@@ -198,12 +227,12 @@ test("integration license: self-hosted license-paid expects review but none arri
     });
     assert.equal(r.status, "failed", `expected failed, got ${r.status}`);
     assert.ok(
-        r.errorMessage?.includes("Expected review for license=license-paid"),
+        r.errorMessage?.includes("Expected a real review for license=license-paid"),
         `error should mention paid-but-no-review; got: ${r.errorMessage}`,
     );
 });
 
-test("integration license: self-hosted license-free expects no review and gets none → passes", async () => {
+test("integration license: self-hosted license-free expects no review and gets license-block notice → passes", async () => {
     const r = await runLicenseScenario({
         target: "self-hosted",
         license: "license-free",
@@ -212,8 +241,13 @@ test("integration license: self-hosted license-free expects no review and gets n
     assert.equal(r.status, "passed", `expected passed, got ${r.status}: ${r.errorMessage}`);
     assert.equal((r.evidence as { expectReview?: boolean }).expectReview, false);
     assert.equal(
-        (r.evidence as { actuallySawReview?: boolean }).actuallySawReview,
+        (r.evidence as { sawRealReview?: boolean }).sawRealReview,
         false,
+    );
+    assert.equal(
+        (r.evidence as { sawLicenseNotice?: boolean }).sawLicenseNotice,
+        true,
+        "blocked tier should surface a licenseBlockedNotice",
     );
 });
 
@@ -229,7 +263,7 @@ test("integration license: self-hosted license-free expects no review but Kody a
         `expected failed (free leaked review), got ${r.status}`,
     );
     assert.ok(
-        r.errorMessage?.includes("Expected NO review for license=license-free"),
+        r.errorMessage?.includes("Expected NO real review for license=license-free"),
         `error should mention free-with-review; got: ${r.errorMessage}`,
     );
 });

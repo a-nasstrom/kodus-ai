@@ -321,4 +321,17 @@ export class GitLabProvider extends BaseProvider {
     authToken(): string {
         return this.token;
     }
+
+    async currentUserId(): Promise<string> {
+        const resp = await http<{ id: number; username: string }>(
+            `${this.apiBase}/user`,
+            { headers: this.headers(), timeoutMs: 15_000 },
+        );
+        ensureOk(resp, "gitlab:currentUserId");
+        return String(resp.body.id);
+    }
+
+    licenseGitTool(): string {
+        return "gitlab";
+    }
 }

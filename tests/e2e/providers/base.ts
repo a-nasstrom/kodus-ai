@@ -36,6 +36,8 @@ export abstract class BaseProvider implements Provider {
     abstract postComment(prNumber: number, body: string): Promise<{ id: string }>;
     abstract authMode(): "token" | "oauth" | "app-password";
     abstract authToken(): string;
+    abstract currentUserId(): Promise<string>;
+    abstract licenseGitTool(): string;
 }
 
 export function requireEnv(name: string): string {

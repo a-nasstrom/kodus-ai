@@ -6,6 +6,7 @@ export type LicenseMode =
     | "free"
     | "trial"
     | "paid"
+    | "community-byok" // free plan with the org's own LLM API key configured
     | "license-paid"
     | "license-free";
 
@@ -61,6 +62,18 @@ export interface ReviewSignal {
     issueComments: number;
     reviews: number;
     sample?: string;
+    // Set when Kody posted a license-related notification (e.g. "Your
+    // trial has ended! Activate your plan…" or a BYOK prompt) instead of
+    // a real review. Scenarios that expect the entitlement gate to
+    // BLOCK a review still want to verify Kody told the user *why* —
+    // bare silence (no comment at all) is a different failure mode
+    // (webhook never arrived, pipeline crashed silently) than the
+    // intended UX. Providers populate this when they detect a
+    // license/trial/BYOK-prompt comment from Kody on the PR.
+    licenseBlockedNotice?: {
+        message: string;
+        kind: "trial-ended" | "byok-required" | "no-license" | "other";
+    };
 }
 
 export interface WebhookInfo {
@@ -106,6 +119,16 @@ export interface Provider {
     // Azure DevOps needs `orgUrl` + `orgName`; everything else returns {}.
     // Override only when the Kodus backend rejects a bare token+authMode body.
     authExtraFields?(): Record<string, unknown>;
+    // Returns the id Kodus stores as `pullRequest.user.id` for PRs opened by
+    // this PAT — i.e. exactly what `validate-prerequisites.stage.ts` reads
+    // when deciding whether the author has a license seat. Per-provider:
+    //   * github / gitlab: numeric id from /user (stringified)
+    //   * bitbucket: uuid from /2.0/user with `{}` stripped (sanitizeUUID)
+    //   * azure-devops: authenticatedUser.id GUID from connectionData
+    currentUserId(): Promise<string>;
+    // Kodus's gitTool value for /license/assign (lowercase platformType).
+    // Matches `assignLicense(provider.toLowerCase())` in license.service.ts.
+    licenseGitTool(): string;
 }
 
 export interface TenantCredentials {

@@ -32,6 +32,7 @@ test("makeProvider github constructs with required env", () => {
             assert.equal(p.webhookPath, "/github/webhook");
             assert.equal(p.authMode(), "token");
             assert.equal(p.authToken(), "test-token");
+            assert.equal(p.licenseGitTool(), "github");
         },
     );
 });
@@ -49,6 +50,7 @@ test("makeProvider gitlab constructs with required env", () => {
             assert.equal(p.webhookPath, "/gitlab/webhook");
             assert.equal(p.authMode(), "token");
             assert.equal(p.authToken(), "gl-token");
+            assert.equal(p.licenseGitTool(), "gitlab");
         },
     );
 });
@@ -70,6 +72,7 @@ test("makeProvider bitbucket constructs with required env", () => {
             // as a mode; sending it bypasses authenticateWithToken entirely).
             assert.equal(p.authMode(), "token");
             assert.equal(p.authToken(), "bbpass");
+            assert.equal(p.licenseGitTool(), "bitbucket");
         },
     );
 });
@@ -89,6 +92,8 @@ test("makeProvider azure-devops constructs with required env", () => {
             assert.equal(p.webhookPath, "/azure-repos/webhook");
             assert.equal(p.authMode(), "token");
             assert.equal(p.authToken(), "az-pat");
+            // Kodus lowercases the platformType "AZURE_REPOS" for gitTool.
+            assert.equal(p.licenseGitTool(), "azure_repos");
         },
     );
 });

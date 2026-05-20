@@ -317,6 +317,21 @@ export class AzureDevOpsProvider extends BaseProvider {
                         ) {
                             continue;
                         }
+                        // Azure/Bitbucket leftover: when the gate skips the
+                        // pipeline mid-flow, Kody overwrites its "Started!"
+                        // placeholder so only the docs.kodus.io feedback
+                        // footer link remains. Drop it — same shape as the
+                        // bitbucket filter; real Kody completions contain
+                        // "Kody Review Complete" / "Kody Guide".
+                        const trimmed = text.trim();
+                        if (
+                            trimmed.length < 200 &&
+                            trimmed.includes("docs.kodus.io") &&
+                            !trimmed.includes("Kody Review Complete") &&
+                            !trimmed.includes("Kody Guide")
+                        ) {
+                            continue;
+                        }
                         count++;
                         if (!sample) sample = text.slice(0, 240);
                     }
@@ -369,5 +384,40 @@ export class AzureDevOpsProvider extends BaseProvider {
 
     authToken(): string {
         return this.pat;
+    }
+
+    async currentUserId(): Promise<string> {
+        // Azure-specific: Kodus's runCodeReview.use-case.ts picks
+        // `mappedUsers.user.descriptor` BEFORE id when the platform is Azure
+        // (the comment in that file calls this out explicitly). The
+        // descriptor in webhook payloads is the AAD subject descriptor —
+        // formatted as `aad.<base64>` — not the bare GUID returned by
+        // `authenticatedUser.id` on older connectionData versions. They
+        // refer to the same user but in incompatible string formats; if we
+        // send the GUID to /license/assign, validate-prerequisites compares
+        // against the descriptor and fails strict-equals.
+        //
+        // Use `api-version=7.1-preview.1` so connectionData includes
+        // `authenticatedUser.subjectDescriptor` — that's the exact value
+        // Kodus stores on inbound webhooks.
+        const resp = await http<{
+            authenticatedUser: { id: string; subjectDescriptor?: string };
+        }>(
+            `https://dev.azure.com/${encodeURIComponent(this.org)}/_apis/connectionData?api-version=7.1-preview.1`,
+            { headers: this.headers(), timeoutMs: 15_000 },
+        );
+        ensureOk(resp, "azure:currentUserId");
+        const subjectDescriptor =
+            resp.body.authenticatedUser?.subjectDescriptor ?? "";
+        if (subjectDescriptor) return subjectDescriptor;
+        // Fallback: GUID. Will fail license matching on Azure but at least
+        // exposes the underlying issue rather than returning empty.
+        return String(resp.body.authenticatedUser?.id ?? "");
+    }
+
+    licenseGitTool(): string {
+        // Kodus's license.service.ts lowercases the platformType when it
+        // sets gitTool, so AZURE_REPOS → "azure_repos".
+        return "azure_repos";
     }
 }

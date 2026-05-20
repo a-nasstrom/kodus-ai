@@ -2,15 +2,44 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { allScenarios, resolveScenarios } from "../../scenarios/index.js";
 
-test("allScenarios: includes the 5 P0 scenarios", () => {
+test("allScenarios: includes the 8 release-gate scenarios", () => {
     const ids = Object.keys(allScenarios).sort();
     assert.deepEqual(ids, [
         "code-review-basic",
         "kody-rules-create-and-apply",
         "license-attribution",
         "onboarding-webhook-registration",
+        "per-seat-license-toggle",
+        "sso-cookie-domain",
+        "sso-multi-user",
         "upgrade-n-1-to-n",
     ]);
+});
+
+test("sso-multi-user: single-cell self-hosted × github × license-paid", () => {
+    const s = allScenarios["sso-multi-user"];
+    assert.deepEqual(s.appliesTo.target, ["self-hosted"]);
+    assert.deepEqual(s.appliesTo.provider, ["github"]);
+    assert.deepEqual(s.appliesTo.license, ["license-paid"]);
+});
+
+test("sso-cookie-domain: single-cell self-hosted × github × license-paid", () => {
+    const s = allScenarios["sso-cookie-domain"];
+    assert.deepEqual(s.appliesTo.target, ["self-hosted"]);
+    assert.deepEqual(s.appliesTo.provider, ["github"]);
+    assert.deepEqual(s.appliesTo.license, ["license-paid"]);
+});
+
+test("per-seat-license-toggle: self-hosted × all 4 providers × license-paid", () => {
+    const s = allScenarios["per-seat-license-toggle"];
+    assert.deepEqual(s.appliesTo.target, ["self-hosted"]);
+    assert.deepEqual(s.appliesTo.provider, [
+        "github",
+        "gitlab",
+        "bitbucket",
+        "azure-devops",
+    ]);
+    assert.deepEqual(s.appliesTo.license, ["license-paid"]);
 });
 
 test("resolveScenarios: returns scenarios in given order", () => {
@@ -50,10 +79,17 @@ test("code-review-basic applies to paid/trial/license-paid but not free/license-
     assert.ok(!s.appliesTo.license.includes("license-free"));
 });
 
-test("license-attribution applies to all 5 license modes", () => {
+test("license-attribution applies to every known license mode", () => {
     const s = allScenarios["license-attribution"];
     assert.ok(s.appliesTo.license);
-    for (const m of ["free", "trial", "paid", "license-paid", "license-free"] as const) {
+    for (const m of [
+        "free",
+        "trial",
+        "paid",
+        "community-byok",
+        "license-paid",
+        "license-free",
+    ] as const) {
         assert.ok(s.appliesTo.license.includes(m), `missing license: ${m}`);
     }
 });

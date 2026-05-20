@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --experimental-strip-types
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { resolveScenarios } from "../scenarios/index.js";
@@ -80,17 +80,63 @@ function missingEnvFor(provider: string): string[] {
     return required.filter((v) => !process.env[v]);
 }
 
+// Some scenarios need extra inputs beyond the provider token — e.g. a license
+// JWT on disk. With `--skip-missing-tokens`, we drop the scenario from the run
+// instead of letting it fail at runtime. The check runs once per scenario id
+// (not per cell), so the message surfaces before we provision anything.
+//
+// Keep in sync with the file/env reads inside each scenario's run() body.
+interface ScenarioRequirement {
+    files?: string[]; // absolute paths; presence required
+    envOrFiles?: Array<{ env: string; defaultFile: string }>; // satisfied if either present
+}
+
+function resolveHome(p: string): string {
+    return p.startsWith("~/")
+        ? `${process.env.HOME ?? ""}${p.slice(1)}`
+        : p;
+}
+
+const SCENARIO_REQUIRED: Record<string, ScenarioRequirement> = {
+    "per-seat-license-toggle": {
+        envOrFiles: [
+            {
+                env: "SH_LICENSE_KEY_PATH",
+                defaultFile: "~/.kodus-dev/license-seats1.jwt",
+            },
+        ],
+    },
+};
+
+function missingScenarioRequirements(scenarioId: string): string[] {
+    const req = SCENARIO_REQUIRED[scenarioId];
+    if (!req) return [];
+    const missing: string[] = [];
+    for (const f of req.files ?? []) {
+        if (!existsSync(resolveHome(f))) missing.push(`file:${f}`);
+    }
+    for (const { env, defaultFile } of req.envOrFiles ?? []) {
+        const envVal = process.env[env];
+        const path = envVal ? resolveHome(envVal) : resolveHome(defaultFile);
+        if (!existsSync(path)) {
+            missing.push(`${env} (or file ${defaultFile})`);
+        }
+    }
+    return missing;
+}
+
 async function main() {
     const { matrixPath, targetFilter, dryRun, skipMissingTokens } = parseArgs();
     const raw = readFileSync(matrixPath, "utf8");
     const matrix = parseYaml(raw) as MatrixFile;
 
-    const scenarios = resolveScenarios(matrix.scenarios);
+    let scenarios = resolveScenarios(matrix.scenarios);
     let cells = targetFilter
         ? matrix.cells.filter((c) => c.target === targetFilter)
         : matrix.cells;
 
     let preSkipped: Array<{ cell: MatrixCell; missing: string[] }> = [];
+    let scenarioSkipped: Array<{ scenarioId: string; missing: string[] }> = [];
     if (skipMissingTokens) {
         const kept: MatrixCell[] = [];
         for (const cell of cells) {
@@ -111,6 +157,23 @@ async function main() {
                 );
             }
         }
+        const keptScenarios = scenarios.filter((s) => {
+            const missing = missingScenarioRequirements(s.id);
+            if (missing.length > 0) {
+                scenarioSkipped.push({ scenarioId: s.id, missing });
+                return false;
+            }
+            return true;
+        });
+        if (scenarioSkipped.length > 0) {
+            log.info(
+                `Skipping ${scenarioSkipped.length} scenario(s) (missing scenario-specific inputs):`,
+            );
+            for (const { scenarioId, missing } of scenarioSkipped) {
+                log.info(`  - ${scenarioId} (need: ${missing.join(", ")})`);
+            }
+        }
+        scenarios = keptScenarios;
         cells = kept;
         if (cells.length === 0) {
             log.err(

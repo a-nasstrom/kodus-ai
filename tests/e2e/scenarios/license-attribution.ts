@@ -50,7 +50,14 @@ export const licenseAttribution: Scenario = {
     appliesTo: {
         target: ["cloud", "self-hosted"],
         provider: ["github", "gitlab", "azure-devops", "bitbucket"],
-        license: ["free", "trial", "paid", "license-paid", "license-free"],
+        license: [
+            "free",
+            "trial",
+            "paid",
+            "community-byok",
+            "license-paid",
+            "license-free",
+        ],
     },
     timeoutSec: 1200,
     async run(ctx: RunContext) {
@@ -72,6 +79,12 @@ export const licenseAttribution: Scenario = {
         const repo = await ctx.kodus.registerRepo(session);
         await ctx.kodus.finishOnboarding(session, repo);
 
+        // Tiers where the entitlement gate BLOCKS the LLM review. On
+        // cloud these tenants are "trial expired without BYOK" — Kody
+        // posts a "trial ended / activate plan" notification on the PR
+        // instead of running the review pipeline. On self-hosted with
+        // no license key (`license-free`), reviews stop similarly when
+        // the org never activated a key.
         const noReviewLicenses: LicenseMode[] = ["free", "license-free"];
         const expectReview = !noReviewLicenses.includes(ctx.license);
 
@@ -84,44 +97,58 @@ export const licenseAttribution: Scenario = {
         });
 
         try {
-            // `paid` paths get a 900s poll budget. Empirically, Kimi K2.6 on
-            // the tiny-url fixture finishes a real review with findings in
-            // ~10–11 min when the diff has substance (the 600s budget
-            // missed a real completion by 31s in an earlier run).
-            // `free` paths only need to confirm NO review activity within
-            // a short window — anything longer just delays the false-positive
-            // case where the gate fails open and Kody starts to review.
-            const pollWindow = expectReview ? 900 : 90;
+            // `paid`/`trial` paths get a 900s poll budget to cover the
+            // slowest legitimate review (Kimi K2.6 on tiny-url measures
+            // ~10–11 min end-to-end, with variance). Blocked paths only
+            // need to confirm Kody posted the license-block notice — that
+            // shows up in seconds. A short window also keeps the false-
+            // positive surface tight: a gate that fails open and starts
+            // a review would still race the poll, but the longer the
+            // wait the more likely Kody will post the notice anyway.
+            const pollWindow = expectReview ? 900 : 180;
             const review = await ctx.provider.pollForReview(
                 { number: pr.number },
                 { sinceIso, timeoutSec: pollWindow },
             );
 
-            // Trust per-provider filter (excludes Kody's status placeholder
-            // by `<!-- kody-codereview -->` marker, keeps `kody-codereview-
-            // completed` notifications and real findings).
-            const sawReview =
+            const sawRealReview =
                 review.reviewComments +
                     review.issueComments +
                     review.reviews >
                 0;
+            const sawLicenseNotice = !!review.licenseBlockedNotice;
 
             if (expectReview) {
                 ctx.assert(
-                    sawReview,
-                    `Expected review for license=${ctx.license} but none arrived within ${pollWindow}s`,
+                    sawRealReview,
+                    `Expected a real review for license=${ctx.license} but none arrived within ${pollWindow}s. licenseBlockedNotice=${JSON.stringify(review.licenseBlockedNotice)}`,
+                );
+                ctx.assert(
+                    !sawLicenseNotice,
+                    `License=${ctx.license} should NOT trigger a trial/BYOK notice, but Kody posted one: ${JSON.stringify(review.licenseBlockedNotice)}`,
                 );
             } else {
+                // Blocked tier — gate must stop the real review pipeline
+                // AND Kody should explain why with a notice on the PR.
+                // Bare silence (no review, no notice) is a different
+                // failure mode (webhook never arrived, pipeline crashed
+                // silently, filter regression) and we'd rather fail loud.
                 ctx.assert(
-                    !sawReview,
-                    `Expected NO review for license=${ctx.license} but found activity: ${JSON.stringify(review)}`,
+                    !sawRealReview,
+                    `Expected NO real review for license=${ctx.license} but Kody posted one: ${JSON.stringify(review)}`,
+                );
+                ctx.assert(
+                    sawLicenseNotice,
+                    `License=${ctx.license} should have triggered a trial-ended / BYOK / no-license notice from Kody, but the PR has no such comment after ${pollWindow}s. review=${JSON.stringify(review)}`,
                 );
             }
 
             return {
                 license: ctx.license,
                 expectReview,
-                actuallySawReview: sawReview,
+                sawRealReview,
+                sawLicenseNotice,
+                licenseBlockedNotice: review.licenseBlockedNotice,
                 review,
                 prNumber: pr.number,
                 prUrl: pr.url,

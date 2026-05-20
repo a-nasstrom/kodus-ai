@@ -52,9 +52,14 @@ test("every cell in every matrix uses valid axes", () => {
                 `${name}: invalid provider ${cell.provider}`,
             );
             assert.ok(
-                ["free", "trial", "paid", "license-paid", "license-free"].includes(
-                    cell.license,
-                ),
+                [
+                    "free",
+                    "trial",
+                    "paid",
+                    "community-byok",
+                    "license-paid",
+                    "license-free",
+                ].includes(cell.license),
                 `${name}: invalid license ${cell.license}`,
             );
         }

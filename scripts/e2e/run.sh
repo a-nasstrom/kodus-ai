@@ -213,9 +213,12 @@ case "$MODE" in
     matrix)
         ASSUME_YES=0
         MATRIX_FILE="matrix/p0.yml"
+        TARGET_FLAG=""
         while [ $# -gt 0 ]; do
             case "$1" in
                 -y|--yes)  ASSUME_YES=1; shift ;;
+                --target)  TARGET_FLAG="--target $2"; shift 2 ;;
+                --target=*) TARGET_FLAG="--target ${1#--target=}"; shift ;;
                 -h|--help) usage; exit 0 ;;
                 -*)        err "Unknown matrix flag: $1"; exit 2 ;;
                 *)         MATRIX_FILE="$1"; shift ;;
@@ -241,19 +244,29 @@ case "$MODE" in
             [[ "$REPLY" =~ ^[Yy]$ ]] || { warn "Aborted."; exit 0; }
         fi
 
-        # Resolve all secrets the matrix might use. Provider tokens that resolve
-        # cleanly are kept; tokens that aren't set become "skipped" cells (handled
-        # by run-matrix.ts --skip-missing-tokens). DO/license are needed for
-        # self-hosted provisioning — if those op refs fail, we want to fail fast.
-        resolve_op_refs \
-            DIGITALOCEAN_TOKEN HCLOUD_TOKEN \
-            SH_LICENSE_KEY GH_DEV_TOKEN \
-            GH_TEST_TOKEN GL_TEST_TOKEN \
-            BB_TEST_USER BB_TEST_APP_PASSWORD \
-            AZ_TEST_TOKEN \
-            CLOUD_TENANT_PAID_PASSWORD CLOUD_TENANT_FREE_PASSWORD CLOUD_TENANT_TRIAL_PASSWORD
+        # Resolve only the secrets the matrix will actually use. Cloud-only
+        # runs don't need DO/Hetzner/SH_LICENSE_KEY (those drive self-hosted
+        # droplet provisioning); resolving them via 1Password forces an
+        # `op signin` that fails when the dev's session is expired even though
+        # the cloud run wouldn't touch DO at all.
+        if [ "$TARGET_FLAG" = "--target cloud" ]; then
+            resolve_op_refs \
+                GH_TEST_TOKEN GL_TEST_TOKEN \
+                BB_TEST_USER BB_TEST_APP_PASSWORD \
+                AZ_TEST_TOKEN \
+                CLOUD_TENANT_PAID_PASSWORD CLOUD_TENANT_FREE_PASSWORD CLOUD_TENANT_TRIAL_PASSWORD
+        else
+            resolve_op_refs \
+                DIGITALOCEAN_TOKEN HCLOUD_TOKEN \
+                SH_LICENSE_KEY GH_DEV_TOKEN \
+                GH_TEST_TOKEN GL_TEST_TOKEN \
+                BB_TEST_USER BB_TEST_APP_PASSWORD \
+                AZ_TEST_TOKEN \
+                CLOUD_TENANT_PAID_PASSWORD CLOUD_TENANT_FREE_PASSWORD CLOUD_TENANT_TRIAL_PASSWORD
+        fi
 
-        log "Running matrix: $MATRIX_FILE"
-        exec npm run matrix -- "$MATRIX_FILE" --skip-missing-tokens
+        log "Running matrix: $MATRIX_FILE ${TARGET_FLAG:+(target filter: ${TARGET_FLAG#--target })}"
+        # shellcheck disable=SC2086
+        exec npm run matrix -- "$MATRIX_FILE" --skip-missing-tokens $TARGET_FLAG
         ;;
 esac

@@ -1,4 +1,5 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
     LicenseMode,
@@ -51,14 +52,19 @@ function appliesToCell(scenario: Scenario, cell: MatrixCell): boolean {
 
 function envForTarget(target: Target): TargetContext {
     if (target === "cloud") {
-        const apiBaseUrl =
-            process.env.TARGET_BASE_URL ??
-            process.env.CLOUD_API_BASE_URL ??
-            "https://api-qa.kodus.io";
+        // QA cloud routes API traffic through the web app's reverse proxy
+        // at `/api/proxy/api/*` — the standalone `api-qa.kodus.io` host is
+        // an internal name not reachable from external machines. Default
+        // to `qa.web.kodus.io` (the same URL `setup-tenants.ts` uses) so
+        // the matrix runner and the seeder hit the same backend.
         const webBaseUrl =
             process.env.TARGET_WEB_URL ??
             process.env.CLOUD_WEB_BASE_URL ??
-            "https://app-qa.kodus.io";
+            "https://qa.web.kodus.io";
+        const apiBaseUrl =
+            process.env.TARGET_BASE_URL ??
+            process.env.CLOUD_API_BASE_URL ??
+            `${webBaseUrl.replace(/\/$/, "")}/api/proxy/api`;
         return { target, apiBaseUrl, webBaseUrl };
     }
     const apiBaseUrl =
@@ -105,12 +111,46 @@ function envForTarget(target: Target): TargetContext {
 //
 // The shared password matches the default dev user's password so the
 // state file (and the `SH_TENANT_PASSWORD` env) stays usable for both.
+interface CloudTenantEntry {
+    email: string;
+    password: string;
+    license: LicenseMode;
+    provider: ProviderName;
+    organizationId?: string;
+    teamId?: string;
+}
+
+function readCloudTenantsFile(): CloudTenantEntry[] {
+    const path = join(homedir(), ".kodus-dev", "cloud-tenants.json");
+    if (!existsSync(path)) return [];
+    try {
+        const raw = readFileSync(path, "utf8");
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? (parsed as CloudTenantEntry[]) : [];
+    } catch {
+        return [];
+    }
+}
+
 async function resolveTenantForCell(
     target: TargetContext,
     license: LicenseMode,
     provider: ProviderName,
 ): Promise<TenantCredentials | undefined> {
     if (target.target === "cloud") {
+        // Preferred path (post-cloud:setup-tenants): match by
+        // (provider, license) in ~/.kodus-dev/cloud-tenants.json. Each
+        // entry has email + password + the resolved org/team uuids the
+        // setup phase persisted.
+        const entries = readCloudTenantsFile();
+        const match = entries.find(
+            (e) => e.provider === provider && e.license === license,
+        );
+        if (match) return { email: match.email, password: match.password };
+
+        // Legacy fallback: per-license env vars (CLOUD_TENANT_PAID_EMAIL
+        // etc.). Kept so a one-off run can drive a hand-seeded tenant
+        // without touching the JSON file.
         const map: Record<string, [string, string] | undefined> = {
             free: ["CLOUD_TENANT_FREE_EMAIL", "CLOUD_TENANT_FREE_PASSWORD"],
             trial: ["CLOUD_TENANT_TRIAL_EMAIL", "CLOUD_TENANT_TRIAL_PASSWORD"],
