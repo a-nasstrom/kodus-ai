@@ -242,19 +242,66 @@ export async function registerRepo(
     return normalized;
 }
 
+// Codes the cloud QA proxy (or any nginx in front of Kodus) returns
+// when the upstream is still processing the request past the proxy's
+// read-timeout. On qa.web.kodus.io the timeout is 60s; bitbucket
+// onboarding regularly runs past that because the rule-generation path
+// makes N sequential Bitbucket Cloud API calls (objectively slower
+// than github/gitlab) plus an LLM call. The backend still finishes
+// successfully — confirmed 2026-05-20 by reading kody-rules from DB
+// after a 504. So we treat these statuses as "ack, still working" and
+// fall through to polling kodyLearningStatus on PLATFORM_CONFIGS.
+const PROXY_PENDING_STATUSES = new Set([502, 503, 504, 524, 408]);
+
+// Match the use-case enum (libs/organization/domain/parameters/types/
+// configValue.type.ts).
+type KodyLearningStatus =
+    | "enabled"
+    | "disabled"
+    | "generating_rules"
+    | "generating_config";
+
+interface PlatformConfigsResponse {
+    data?: {
+        configValue?: { kodyLearningStatus?: KodyLearningStatus };
+    };
+    configValue?: { kodyLearningStatus?: KodyLearningStatus };
+}
+
+async function readKodyLearningStatus(
+    target: TargetContext,
+    session: KodusSession,
+): Promise<KodyLearningStatus | undefined> {
+    const url = `${target.apiBaseUrl}/parameters/find-by-key?key=platform_configs&teamId=${encodeURIComponent(session.teamId)}`;
+    const resp = await http<PlatformConfigsResponse>(url, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+        timeoutMs: 10_000,
+    });
+    if (resp.status < 200 || resp.status >= 300) {
+        return undefined;
+    }
+    const root = (resp.body ?? {}) as PlatformConfigsResponse;
+    return (
+        root.data?.configValue?.kodyLearningStatus ??
+        root.configValue?.kodyLearningStatus
+    );
+}
+
 export async function finishOnboarding(
     target: TargetContext,
     session: KodusSession,
     repo: ProviderRepoRef,
 ): Promise<void> {
     log.info("Finishing onboarding");
-    // finish-onboarding does substantial work synchronously: clones the
-    // repo to sync kody rules, generates per-repo rules via LLM, and
-    // chains a few use-cases. Bitbucket onboarding measured between
-    // 2m24s and 3m50s in observed runs (the clone path is meaningfully
-    // slower there than on github/gitlab). 360s keeps the smoke from
-    // aborting on the slowest seen run while still failing loudly if
-    // Kodus hangs forever.
+    // finish-onboarding does substantial work synchronously: generates
+    // per-repo Kody rules via LLM and syncs rules from repo files. The
+    // upstream HTTP path can sit past nginx's 60s read-timeout on
+    // qa.web.kodus.io (cloud) or any reverse-proxy a self-hosted
+    // operator runs in front of the API. The work itself still
+    // completes — `generate-kody-rules.use-case` writes
+    // `kodyLearningStatus = ENABLED` on the platform_configs parameter
+    // when it's done. Treat proxy-timeout statuses as "queued, will
+    // poll for completion" instead of failing immediately.
     const resp = await http(
         `${target.apiBaseUrl}/code-management/finish-onboarding`,
         {
@@ -269,5 +316,42 @@ export async function finishOnboarding(
             timeoutMs: 360_000,
         },
     );
-    ensureOk(resp, "onboarding:finishOnboarding");
+
+    if (resp.status >= 200 && resp.status < 300) {
+        return;
+    }
+
+    if (!PROXY_PENDING_STATUSES.has(resp.status)) {
+        // Real error (4xx auth/validation, 5xx app crash) — fail loudly
+        // as before, including the response body so the failure is
+        // diagnosable.
+        ensureOk(resp, "onboarding:finishOnboarding");
+        return; // unreachable — ensureOk threw
+    }
+
+    log.info(
+        `finishOnboarding got HTTP ${resp.status} from the proxy — polling kodyLearningStatus to see if the backend finished anyway`,
+    );
+
+    // Poll for up to 5 minutes. Observed real-world latency for
+    // bitbucket onboarding is ~75-90s end-to-end (the slowest seen
+    // path); 300s adds margin for an LLM-side hiccup without hiding a
+    // genuine hang. Poll every 10s.
+    const deadline = Date.now() + 300_000;
+    while (Date.now() < deadline) {
+        const status = await readKodyLearningStatus(target, session).catch(
+            () => undefined,
+        );
+        if (status === "enabled") {
+            log.info(
+                `finishOnboarding eventually consistent: kodyLearningStatus=enabled (after proxy ${resp.status})`,
+            );
+            return;
+        }
+        await new Promise((r) => setTimeout(r, 10_000));
+    }
+
+    throw new Error(
+        `onboarding:finishOnboarding: HTTP ${resp.status} from proxy AND kodyLearningStatus did not become 'enabled' within 300s polling. Backend appears stuck.`,
+    );
 }
