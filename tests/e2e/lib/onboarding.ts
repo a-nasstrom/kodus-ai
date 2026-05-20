@@ -122,21 +122,34 @@ export async function registerIntegration(
 ): Promise<void> {
     log.info(`Registering ${provider.integrationType} integration`);
     const extras = provider.authExtraFields?.() ?? {};
+    // OAuth path (GitHub App today): the backend expects `code` =
+    // installation_id and ignores `token` entirely. See
+    // github.service.ts:authenticateWithCodeOauth — it calls
+    // appOctokit.auth({ type: 'installation', installationId: params.code }).
+    // Token path (PAT / app-password): payload carries the secret as
+    // `token`, no `code` field.
+    const authMode = provider.authMode();
+    const isOAuth = authMode === "oauth";
+    const body: Record<string, unknown> = {
+        integrationType: provider.integrationType,
+        authMode,
+        organizationAndTeamData: {
+            organizationId: session.organizationId,
+            teamId: session.teamId,
+        },
+        ...extras,
+    };
+    if (isOAuth) {
+        body.code = provider.authToken();
+    } else {
+        body.token = provider.authToken();
+    }
     const resp = await http<{ data: { status?: string } }>(
         `${target.apiBaseUrl}/code-management/auth-integration`,
         {
             method: "POST",
             headers: { Authorization: `Bearer ${session.accessToken}` },
-            body: {
-                integrationType: provider.integrationType,
-                authMode: provider.authMode(),
-                token: provider.authToken(),
-                organizationAndTeamData: {
-                    organizationId: session.organizationId,
-                    teamId: session.teamId,
-                },
-                ...extras,
-            },
+            body,
             timeoutMs: 30_000,
         },
     );

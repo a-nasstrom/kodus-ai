@@ -26,7 +26,7 @@ export const onboardingWebhookRegistration: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
-        provider: ["github", "gitlab", "bitbucket", "azure-devops"],
+        provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
         // Webhook registration is independent of license tier — it
         // happens during onboarding regardless. We only run it on `paid`
         // tiers because that's where the rest of the matrix lives;

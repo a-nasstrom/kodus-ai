@@ -12,6 +12,7 @@ const FIXTURE_BRANCHES: Record<
     { head: string; base: string } | undefined
 > = {
     github: { head: "refactor/use-map-storage", base: "main" },
+    "github-app": { head: "refactor/use-map-storage", base: "main" },
     gitlab: { head: "refactor/use-map-storage", base: "main" },
     bitbucket: { head: "refactor/use-map-storage", base: "main" },
     "azure-devops": { head: "refactor/use-map-storage", base: "main" },
@@ -24,7 +25,7 @@ export const commandReview: Scenario = {
     priority: "P0",
     appliesTo: {
         target: ["cloud", "self-hosted"],
-        provider: ["github", "gitlab", "bitbucket", "azure-devops"],
+        provider: ["github", "github-app", "gitlab", "bitbucket", "azure-devops"],
         license: ["paid", "trial", "license-paid"],
     },
     // Same envelope as code-review-basic: needs room for onboarding +
