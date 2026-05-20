@@ -440,6 +440,8 @@ import { FileChange } from '@libs/core/infrastructure/config/types/general/codeR
 import {
     getInternalModel,
     runWithBYOKLimiter,
+    withStructuredOutputFallback,
+    NoStructuredFallbackModelError,
     type BYOKLimiterRole,
 } from './byok-to-vercel';
 import { RemoteCommands } from '../../adapters/services/collectCrossFileContexts.service';
@@ -4018,22 +4020,12 @@ async function structureVerificationDecisionWithFallbackModel(
         totalTokens: number;
     };
 } | null> {
+    const verifierFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
     try {
-        const internalModel = getInternalModel(byokConfig, {
-            structuredOutputs: true,
-        });
-        const verifierFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
-
-        if (!internalModel) {
-            logger.warn({
-                message:
-                    '[AGENT-VERIFY-FALLBACK] No internal model available for verifier fallback',
-                context: 'AgentLoop',
-            });
-            return null;
-        }
-
-        const result: any = await throttledGenerateText({
+        const result: any = await withStructuredOutputFallback(
+            { byokConfig, label: 'verify-structure-fallback' },
+            (internalModel) =>
+                throttledGenerateText({
             byokConfig,
             organizationId,
             role: 'internal',
@@ -4084,7 +4076,8 @@ Return:
 - rationale
 - confidence (if present)`,
                 }),
-        });
+        }),
+        );
 
         const output: any = (result as any).object ?? (result as any).output;
         const coerceKeep = (value: unknown): boolean | null => {
@@ -4139,7 +4132,15 @@ Return:
             },
         };
     } catch (error) {
-        logger.warn({
+        if (error instanceof NoStructuredFallbackModelError) {
+            logger.warn({
+                message:
+                    '[AGENT-VERIFY-FALLBACK] No internal model available for verifier fallback',
+                context: 'AgentLoop',
+            });
+            return null;
+        }
+        logger.error({
             message: `[AGENT-VERIFY-FALLBACK] Failed to structure verifier output: ${error instanceof Error ? error.message : String(error)}`,
             context: 'AgentLoop',
         });
@@ -4298,21 +4299,12 @@ async function structureWithFallbackModel(
                 { type: 'null' as const },
             ],
         };
-        const internalModel = getInternalModel(byokConfig, {
-            structuredOutputs: true,
-        });
         const structureFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
 
-        if (!internalModel) {
-            logger.warn({
-                message:
-                    '[AGENT-FALLBACK] No internal model available for fallback',
-                context: 'AgentLoop',
-            });
-            return null;
-        }
-
-        const result: any = await throttledGenerateText({
+        const result: any = await withStructuredOutputFallback(
+            { byokConfig, label: 'review-structure-fallback' },
+            (internalModel) =>
+                throttledGenerateText({
             byokConfig,
             organizationId,
             role: 'internal',
@@ -4389,7 +4381,8 @@ ${reviewText}
 
 For each issue found, extract: relevantFile, language, label (bug/security/performance when present), suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
                 }),
-        });
+        }),
+        );
 
         const rawOutput: any = (result as any).object ?? (result as any).output;
         const output = {
@@ -4452,6 +4445,14 @@ For each issue found, extract: relevantFile, language, label (bug/security/perfo
             },
         };
     } catch (error) {
+        if (error instanceof NoStructuredFallbackModelError) {
+            logger.warn({
+                message:
+                    '[AGENT-FALLBACK] No internal model available for fallback',
+                context: 'AgentLoop',
+            });
+            return null;
+        }
         logger.error({
             message: `[AGENT-FALLBACK] generateObject failed`,
             context: 'AgentLoop',

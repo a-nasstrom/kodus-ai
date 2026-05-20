@@ -4,6 +4,10 @@ import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import {
+    withStructuredOutputFallback,
+    NoStructuredFallbackModelError,
+} from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
     buildLangfuseTelemetry,
@@ -1193,44 +1197,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             };
         }
 
-        // Model resolution: Google AI key → BYOK via getInternalModel → skip dedup
+        // Model resolution: Google AI key → BYOK via withStructuredOutputFallback → skip dedup
         const googleKey =
             process.env.API_GOOGLE_AI_API_KEY ||
             process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-        let model: any;
-        if (googleKey) {
-            const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
-            model = createGoogleGenerativeAI({ apiKey: googleKey })(
-                'gemini-3-flash-preview',
-            );
-        } else {
-            const { getInternalModel } = await import(
-                '@libs/code-review/infrastructure/agents/llm/byok-to-vercel'
-            );
-            model = getInternalModel(byokConfig, { structuredOutputs: true });
-        }
-
-        if (!model) {
-            return {
-                suggestions,
-                trace: {
-                    status: 'failed-keep-all',
-                    totalClassifiedCount: suggestions.length,
-                    kodyRulesSkippedCount: 0,
-                    nonKodyInputCount: suggestions.length,
-                    nonKodyOutputCount: suggestions.length,
-                    finalOutputCount: suggestions.length,
-                    uniqueCount: suggestions.length,
-                    groupsCount: 0,
-                    removedCount: 0,
-                    errorMessage: 'No model available for dedup (no Google key and no BYOK)',
-                    unique: suggestions.map((suggestion) =>
-                        this.summarizeDedupSuggestion(suggestion),
-                    ),
-                },
-            };
-        }
 
         try {
             // Build summaries with file + lines for cross-file comparison
@@ -1241,7 +1211,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 )
                 .join('\n');
 
-            const dedupResult: any = await tracedGenerateText({
+            const runDedup = (model: any) =>
+                tracedGenerateText({
                 model: model as any,
                 experimental_telemetry: buildLangfuseTelemetry(
                     'dedup-suggestions',
@@ -1304,7 +1275,23 @@ IGNORE the category label (bug/security/performance) when deciding — two agent
 Prefer keeping the suggestion with the most detail or clearest fix as the representative.
 
 ${summaries}`,
-            });
+                });
+
+            let dedupResult: any;
+            if (googleKey) {
+                const { createGoogleGenerativeAI } = await import(
+                    '@ai-sdk/google'
+                );
+                const model = createGoogleGenerativeAI({ apiKey: googleKey })(
+                    'gemini-3-flash-preview',
+                );
+                dedupResult = await runDedup(model);
+            } else {
+                dedupResult = await withStructuredOutputFallback(
+                    { byokConfig, label: 'dedup-suggestions' },
+                    runDedup,
+                );
+            }
 
             // Track token usage
             try {
@@ -1459,11 +1446,19 @@ ${summaries}`,
                 },
             };
         } catch (error) {
-            this.logger.warn({
-                message: `[DEDUP] PR#${prNumber}: Failed, keeping all ${suggestions.length} suggestions`,
-                context: this.stageName,
-                error,
-            });
+            const noModel = error instanceof NoStructuredFallbackModelError;
+            if (noModel) {
+                this.logger.warn({
+                    message: `[DEDUP] PR#${prNumber}: No model available for dedup (no Google key and no BYOK), keeping all ${suggestions.length} suggestions`,
+                    context: this.stageName,
+                });
+            } else {
+                this.logger.error({
+                    message: `[DEDUP] PR#${prNumber}: Failed, keeping all ${suggestions.length} suggestions`,
+                    context: this.stageName,
+                    error,
+                });
+            }
             return {
                 suggestions,
                 trace: {
@@ -1476,8 +1471,11 @@ ${summaries}`,
                     uniqueCount: suggestions.length,
                     groupsCount: 0,
                     removedCount: 0,
-                    errorMessage:
-                        error instanceof Error ? error.message : String(error),
+                    errorMessage: noModel
+                        ? 'No model available for dedup (no Google key and no BYOK)'
+                        : error instanceof Error
+                          ? error.message
+                          : String(error),
                     unique: suggestions.map((suggestion) =>
                         this.summarizeDedupSuggestion(suggestion),
                     ),

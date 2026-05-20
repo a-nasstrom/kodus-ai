@@ -145,10 +145,68 @@ const DEFAULT_MODEL = {
  * (`@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`,
  * `@ai-sdk/google-vertex`, `@ai-sdk/amazon-bedrock`) handle structured
  * outputs natively without any flag and are not affected by this option.
+ *
+ * Even when the caller opts in, the flag is gated by
+ * `shouldEnableJsonSchema()` — only known-good provider/model/baseURL
+ * combinations actually flip it on. Unknown OpenAI-compatible
+ * upstreams (DeepSeek, Grok, random Novita models) fall back to the
+ * SDK's `response_format: { type: "json_object" }` path, which is
+ * slow but works. Call sites should pair the flag with a
+ * retry-on-error wrapper that catches a wrong allowlist guess.
  */
 export type ByokModelOptions = {
     structuredOutputs?: boolean;
 };
+
+const OPENROUTER_JSON_SCHEMA_PREFIXES = [
+    'openai/',
+    'anthropic/',
+    'google/',
+    'moonshotai/',
+];
+
+/**
+ * Conservative capability gate for `supportsStructuredOutputs: true` on
+ * `@ai-sdk/openai-compatible` providers. Returns true only when we have
+ * strong evidence the upstream honors strict `response_format: json_schema`.
+ * Anything else returns false so the SDK falls back to `json_object` and
+ * the upstream sees the same request shape it always saw.
+ *
+ * Self-hosted env mode (`API_LLM_PROVIDER_MODEL`) is handled by its own
+ * branch in `byokToVercelModel`/`getInternalModel` — it's an explicit
+ * customer-controlled deployment, so we trust the caller's opt-in there.
+ */
+function shouldEnableJsonSchema(
+    provider: BYOKProvider,
+    model: string,
+    baseURL?: string,
+): boolean {
+    if (provider === BYOKProvider.OPEN_ROUTER) {
+        return OPENROUTER_JSON_SCHEMA_PREFIXES.some((p) =>
+            model.toLowerCase().startsWith(p),
+        );
+    }
+    if (provider === BYOKProvider.OPENAI_COMPATIBLE) {
+        if (!baseURL) return false;
+        // vLLM defaults to port 8000 and the issue's target case.
+        if (/:8000(\/|$)/.test(baseURL)) return true;
+        // Opt-in comma-separated allowlist of substrings, e.g.
+        // "vllm.internal,my-llm-proxy.example.com". Set by ops when
+        // running behind a non-vLLM but schema-capable proxy.
+        const allowList = process.env.API_TRUST_JSON_SCHEMA_BASE_URLS;
+        if (allowList) {
+            const needles = allowList
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+            if (needles.some((needle) => baseURL.includes(needle))) return true;
+        }
+        return false;
+    }
+    // NOVITA varies wildly by upstream — too risky to enable by default.
+    // Unknown / fallback openai-compatible: same.
+    return false;
+}
 
 export function byokToVercelModel(
     byokConfig?: BYOKConfig,
@@ -281,7 +339,9 @@ export function byokToVercelModel(
                 name: 'open-router',
                 apiKey,
                 baseURL: baseURL || 'https://openrouter.ai/api/v1',
-                supportsStructuredOutputs: options.structuredOutputs === true,
+                supportsStructuredOutputs:
+                    options.structuredOutputs === true &&
+                    shouldEnableJsonSchema(provider, model, baseURL),
             })(model);
 
         case BYOKProvider.OPENAI_COMPATIBLE:
@@ -289,7 +349,9 @@ export function byokToVercelModel(
                 name: 'openai-compatible',
                 apiKey,
                 baseURL: baseURL || '',
-                supportsStructuredOutputs: options.structuredOutputs === true,
+                supportsStructuredOutputs:
+                    options.structuredOutputs === true &&
+                    shouldEnableJsonSchema(provider, model, baseURL),
             })(model);
 
         case BYOKProvider.NOVITA:
@@ -297,7 +359,9 @@ export function byokToVercelModel(
                 name: 'novita',
                 apiKey,
                 baseURL: baseURL || 'https://api.novita.ai/v3/openai',
-                supportsStructuredOutputs: options.structuredOutputs === true,
+                supportsStructuredOutputs:
+                    options.structuredOutputs === true &&
+                    shouldEnableJsonSchema(provider, model, baseURL),
             })(model);
 
         case BYOKProvider.GOOGLE_VERTEX: {
@@ -321,12 +385,17 @@ export function byokToVercelModel(
         }
 
         default:
-            // Unknown provider — try as OpenAI-compatible
+            // Unknown provider — try as OpenAI-compatible. Capability
+            // gate is conservative for unknown providers (always false),
+            // so we never silently send json_schema to an upstream we
+            // can't reason about.
             return createOpenAICompatible({
                 name: String(provider),
                 apiKey,
                 baseURL: baseURL || '',
-                supportsStructuredOutputs: options.structuredOutputs === true,
+                supportsStructuredOutputs:
+                    options.structuredOutputs === true &&
+                    shouldEnableJsonSchema(provider, model, baseURL),
             })(model);
     }
 }
@@ -663,3 +732,151 @@ export function runWithBYOKLimiter<T>(
 
     return limiter.run(label, fn, params.abortSignal, queueTimeoutMs);
 }
+
+// ─── Structured-output retry-on-error ────────────────────────────────
+// The allowlist in `shouldEnableJsonSchema` is conservative on purpose
+// but can guess wrong: a model we trusted may stop honoring json_schema,
+// or a custom proxy we trusted may be older than we thought. Rather
+// than fail the call we mark the offending provider:model combination
+// "json_schema-unsupported" in a process-scoped cache and retry once
+// with the flag off (SDK downgrades to `response_format: json_object`,
+// upstream accepts, slow path returns parseable text). Future calls
+// for the same combo skip the doomed first attempt entirely.
+
+const noJsonSchemaCache = new Set<string>();
+
+function structuredFallbackCacheKey(byokConfig?: BYOKConfig): string {
+    if (byokConfig?.fallback) {
+        const f = byokConfig.fallback;
+        return `${f.provider}:${f.model}:${f.baseURL ?? ''}`;
+    }
+    if (byokConfig?.main) {
+        const m = byokConfig.main;
+        return `${m.provider}:${m.model}:${m.baseURL ?? ''}`;
+    }
+    // Self-hosted env mode — cache by the configured model id; the
+    // base URL is process-wide so we can elide it from the key.
+    return `env:${process.env.API_LLM_PROVIDER_MODEL ?? 'auto'}`;
+}
+
+function isJsonSchemaUnsupportedError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    // Match common phrasings without depending on a specific provider.
+    // OpenRouter, DeepSeek, Grok, Mistral, Novita upstreams all surface
+    // some variant of these strings in their 4xx response body.
+    const text = `${err.message ?? ''} ${(err as any).responseBody ?? ''}`;
+    if (!text) return false;
+    const haystack = text.toLowerCase();
+    // Match BOTH a structured-output term AND an "unsupported"-ish
+    // signal so we don't bail on unrelated 4xx errors.
+    const mentionsSchema =
+        haystack.includes('response_format') ||
+        haystack.includes('json_schema') ||
+        haystack.includes('structured output') ||
+        haystack.includes('structured_output') ||
+        haystack.includes('structured-output');
+    if (!mentionsSchema) return false;
+    const looksUnsupported =
+        haystack.includes('unsupported') ||
+        haystack.includes('not supported') ||
+        haystack.includes('invalid') ||
+        haystack.includes('must be') ||
+        haystack.includes('supported values');
+    if (!looksUnsupported) return false;
+    // Also accept any 4xx — server-side validation rejecting the body.
+    const status = (err as any).statusCode;
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+        return true;
+    }
+    // Some SDK wrappers don't surface statusCode (e.g. validation thrown
+    // before the network call). Accept message-only matches too.
+    return true;
+}
+
+export interface StructuredFallbackParams {
+    byokConfig?: BYOKConfig;
+    /** Optional label for logs when the retry actually fires. */
+    label?: string;
+}
+
+/**
+ * Run a structured-output LLM call, retrying without the
+ * `supportsStructuredOutputs: true` flag if the upstream rejects the
+ * `response_format: json_schema` body. Wrap the three review-pipeline
+ * sites that use `generateText({ output: Output.object(...) })` or
+ * `generateObject(...)`.
+ *
+ * The `exec` callback receives the resolved `LanguageModel` and is
+ * expected to wire it into the SDK call (so the caller keeps control
+ * over telemetry, abort signals, prompts, throttling, etc.). When the
+ * first attempt fails with a schema-related error, the helper rebuilds
+ * the model with the flag off and re-invokes `exec`. Other errors
+ * propagate unchanged.
+ *
+ * Throws `NoStructuredFallbackModelError` when `getInternalModel`
+ * returns null, mirroring the existing "no internal model available"
+ * branch at each call site.
+ */
+export async function withStructuredOutputFallback<T>(
+    params: StructuredFallbackParams,
+    exec: (model: LanguageModel) => Promise<T>,
+): Promise<T> {
+    const cacheKey = structuredFallbackCacheKey(params.byokConfig);
+    const tryStructured = !noJsonSchemaCache.has(cacheKey);
+
+    const firstModel = getInternalModel(params.byokConfig, {
+        structuredOutputs: tryStructured,
+    });
+    if (!firstModel) {
+        throw new NoStructuredFallbackModelError();
+    }
+
+    // The retry only helps when the first attempt actually sent
+    // `response_format: json_schema` — it downgrades that to
+    // `json_object`. `getInternalModel` may have refused the flag
+    // anyway (capability gate, or a non-OpenAI-compatible provider),
+    // in which case there is nothing to downgrade and the retry would
+    // resend a byte-identical request. `@ai-sdk/openai-compatible`
+    // exposes the effective state as `model.supportsStructuredOutputs`;
+    // it is undefined on native SDKs, which never need the retry.
+    const sentJsonSchema =
+        (firstModel as { supportsStructuredOutputs?: boolean })
+            .supportsStructuredOutputs === true;
+
+    try {
+        return await exec(firstModel);
+    } catch (err) {
+        if (!sentJsonSchema || !isJsonSchemaUnsupportedError(err)) {
+            throw err;
+        }
+        noJsonSchemaCache.add(cacheKey);
+        const label = params.label ? ` for ${params.label}` : '';
+        // eslint-disable-next-line no-console
+        console.warn(
+            `[STRUCTURED-OUTPUT-FALLBACK] Upstream rejected json_schema${label} (cacheKey=${cacheKey}). Retrying with response_format=json_object. Reason: ${(err as Error).message}`,
+        );
+        const retryModel = getInternalModel(params.byokConfig, {
+            structuredOutputs: false,
+        });
+        if (!retryModel) {
+            throw new NoStructuredFallbackModelError();
+        }
+        return await exec(retryModel);
+    }
+}
+
+export class NoStructuredFallbackModelError extends Error {
+    constructor() {
+        super(
+            'No internal model available for structured-output fallback (BYOK absent and no cloud/self-hosted key configured).',
+        );
+        this.name = 'NoStructuredFallbackModelError';
+    }
+}
+
+// Internal — exported for tests in evals/structured-outputs/repro.ts.
+export const __structuredFallbackInternals = {
+    cache: noJsonSchemaCache,
+    isJsonSchemaUnsupportedError,
+    cacheKey: structuredFallbackCacheKey,
+};
