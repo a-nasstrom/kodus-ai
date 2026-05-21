@@ -12,9 +12,15 @@
 #   ./scripts/env/bootstrap-vault.sh --dry-run      # show what would happen
 #   ./scripts/env/bootstrap-vault.sh --source .env  # custom source file
 #
-# Items where the source value is empty get a `REPLACE_ME` placeholder so
-# the vault layout matches the template; populate them later via the 1P
-# app or `op item edit`.
+# Items where the source value is empty are created with an EMPTY value
+# (not "REPLACE_ME" or other placeholder string). Reason: any non-empty
+# placeholder defeats `if (!process.env.X)` checks in code paths that
+# treat the var as @optional — the code would happily try to use
+# "REPLACE_ME" as an API key. Empty string is the honest "not set" signal:
+# - @optional vars: code falls back to its alternate path. Boot OK.
+# - @required vars: Joi validator fails at boot. Loud, early signal that
+#   you need to populate the secret. Exactly what we want.
+# Populate later via the 1P app or `op item edit ... password="<value>"`.
 #
 # Requirements: op CLI signed in, write access to the vault.
 
@@ -122,7 +128,8 @@ while IFS='=' read -r ITEM_NAME FIELD; do
     VALUE=$(get_source_value "$ITEM_NAME")
     USE_PLACEHOLDER=0
     if [[ -z "$VALUE" ]]; then
-        VALUE="REPLACE_ME"
+        # Honest "not set" — see header comment for why we don't use a
+        # non-empty placeholder. The item gets created with field empty.
         USE_PLACEHOLDER=1
     fi
 
@@ -191,8 +198,10 @@ echo "  Skipped (already exist):$SKIPPED"
 echo "  Failed:                 $FAILED"
 echo
 if [[ $PLACEHOLDER -gt 0 ]]; then
-    echo "ℹ  $PLACEHOLDER item(s) created with REPLACE_ME — fill them in via"
-    echo "   the 1Password app or 'op item edit'."
+    echo "ℹ  $PLACEHOLDER item(s) created with EMPTY value (no source value found)."
+    echo "   The .env produced by 'yarn env:pull' will have these vars set to \"\""
+    echo "   — @optional vars fall through, @required vars trip the Joi validator"
+    echo "   on boot. Populate via 1P app or: op item edit <NAME> --vault \"$VAULT\" password=\"<value>\""
 fi
 if [[ $FAILED -gt 0 ]]; then
     echo "✗  $FAILED failure(s). Re-run with --dry-run to inspect, or"
