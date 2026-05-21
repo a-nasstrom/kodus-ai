@@ -28,6 +28,8 @@ packages/**/*.js
 .env.qa
 .env.prod
 .env.local
+.env.reconciled
+.env.bak.*
 
 # E2B sandbox secrets
 e2b-sandbox/config.json

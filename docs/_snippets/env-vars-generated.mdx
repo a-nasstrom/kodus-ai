@@ -117,6 +117,7 @@
 | `API_VERTEX_AI_LOCATION` | – | string | ☁️ Cloud |  |
 | `API_GOOGLE_AI_PROVIDER` | – | enum(gemini,vertex) | ☁️ Cloud | Google AI provider: gemini (AI Studio) or vertex (Vertex AI). |
 | `API_NOVITA_AI_API_KEY` | – | secret | ☁️ Cloud |  |
+| `API_MOONSHOT_API_KEY` | – | secret | ☁️ Cloud | Moonshot AI (Kimi) — used by the public-demo trial flow in libs/code-review/infrastructure/agents/llm/byok-to-vercel.ts when the default model name matches /^kimi[-_.]/. Wires through the OpenAI- compatible adapter pointed at https://api.moonshot.ai/v1. The eval scripts (evals/{investigation,promotion}/run-eval.js) also reference this key by name. Cloud-only — self-hosted has no Moonshot demo path. |
 | `API_GROQ_BASE_URL` | – | url | ☁️ Cloud |  |
 | `API_GROQ_API_KEY` | – | secret | ☁️ Cloud |  |
 | `API_CEREBRAS_BASE_URL` | – | url | ☁️ Cloud |  |
@@ -184,6 +185,7 @@
 | --- | --- | --- | --- | --- |
 | `API_NOTIFICATION_EMAIL_PROVIDER` | – | enum(resend,smtp) | ⚙️ Both | Notifications email provider |
 | `RESEND_API_KEY` | – | secret | ⚙️ Both | Resend — Kodus-managed email sender. |
+| `RESEND_TEST_EMAIL` | – | email | ☁️ Cloud | Destination address used by scripts/dev/test-emails.ts when smoke- testing transactional email delivery. Dev-only utility — production code doesn't read this. Cloud-only because the test script targets the Kodus-managed Resend setup. |
 | `API_USER_INVITE_BASE_URL` | – | url | ⚙️ Both |  |
 | `API_SMTP_HOST` | – | string | 🏠 Self-hosted | SMTP host |
 | `API_SMTP_PORT` | – | number | 🏠 Self-hosted | SMTP port |
