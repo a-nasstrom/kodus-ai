@@ -44,6 +44,7 @@
         "selfhosted:ssh": "scripts/selfhosted/ssh.sh",
         "selfhosted:logs": "scripts/selfhosted/logs.sh",
         "selfhosted:clean": "scripts/selfhosted/clean.sh",
+        "selfhosted:diag": "scripts/selfhosted/diag.sh",
         "sso-e2e:droplet:provision": "scripts/sso-e2e/droplet/provision.sh",
         "sso-e2e:droplet:run": "scripts/sso-e2e/droplet/run.sh",
         "sso-e2e:droplet:multi-user": "scripts/sso-e2e/droplet/run-multi-user.sh",
