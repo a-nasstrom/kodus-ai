@@ -4,6 +4,7 @@ import {
     buildAgentTools,
     type DocumentationSearchAdapter,
 } from './agent-tools.factory';
+import { attachClassification, classifyLLMError } from './error-classifier';
 /**
  * Simple agent loop using Vercel AI SDK with native function calling.
  *
@@ -37,11 +38,20 @@ interface ByokErrorReportingContext {
     organizationId?: string;
     provider?: string;
 }
-const byokErrorContext =
-    new AsyncLocalStorage<ByokErrorReportingContext>();
+const byokErrorContext = new AsyncLocalStorage<ByokErrorReportingContext>();
 
 function reportByokError(err: unknown): void {
     const ctx = byokErrorContext.getStore();
+
+    // Classify and attach the canonical category to the error object so
+    // downstream catch blocks (e.g. AgentReviewStage iterating
+    // result.failures) can read it via getClassification() without
+    // re-parsing provider-specific strings. Done before the reporter call
+    // so any logging sees the same classified info.
+    if (err && typeof err === 'object') {
+        attachClassification(err, classifyLLMError(err, ctx?.provider));
+    }
+
     if (!ctx?.reporter || !ctx.provider) return;
     try {
         ctx.reporter({
@@ -292,13 +302,21 @@ export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
 function withAnthropicCacheControl(
     systemPrompt: string,
     model: any,
-): string | { role: 'system'; content: string; providerOptions: Record<string, any> } {
+):
+    | string
+    | {
+          role: 'system';
+          content: string;
+          providerOptions: Record<string, any>;
+      } {
     const modelId: string = model?.modelId ?? '';
     if (/claude|anthropic/i.test(modelId)) {
         return {
             role: 'system' as const,
             content: systemPrompt,
-            providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+            providerOptions: {
+                anthropic: { cacheControl: { type: 'ephemeral' } },
+            },
         };
     }
     return systemPrompt;
@@ -1052,7 +1070,10 @@ async function runAgentLoopBody(
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
                     abortSignal: abortController.signal,
-                    system: withAnthropicCacheControl(input.systemPrompt, input.model) as any,
+                    system: withAnthropicCacheControl(
+                        input.systemPrompt,
+                        input.model,
+                    ) as any,
                     prompt: input.userPrompt,
                     experimental_telemetry: _buildLangfuseTelemetry(
                         input.agentName ?? 'agent-loop',
@@ -1366,7 +1387,6 @@ async function runAgentLoopBody(
                             totalCacheWriteTokens += u.cacheWriteTokens;
                             totalOutputTokens += u.outputTokens;
                             totalReasoningTokens += u.reasoningTokens;
-
                         }
 
                         input.onStepFinish?.(event);
@@ -1535,7 +1555,10 @@ async function runAgentLoopBody(
                     generateText({
                         abortSignal: secondChanceSignal,
                         model: input.model,
-                        system: withAnthropicCacheControl(input.systemPrompt, input.model) as any,
+                        system: withAnthropicCacheControl(
+                            input.systemPrompt,
+                            input.model,
+                        ) as any,
                         experimental_telemetry: _buildLangfuseTelemetry(
                             `${input.agentName ?? 'agent-loop'}-second-chance`,
                             input.telemetryMetadata,
@@ -3279,8 +3302,8 @@ async function verifySingleFindingWithTools(params: {
                 prompt: verificationPrompt.prompt,
                 tools: {
                     ...tools,
-                    [DONE_TOOL_NAME]: buildDoneTools(internalModel)
-                        .verification,
+                    [DONE_TOOL_NAME]:
+                        buildDoneTools(internalModel).verification,
                 },
                 stopWhen: [
                     hasToolCall(DONE_TOOL_NAME),
@@ -4012,38 +4035,38 @@ async function structureVerificationDecisionWithFallbackModel(
     const verifierFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
     try {
         const result: any = await withStructuredOutputFallback(
-            { byokConfig, label: 'verify-structure-fallback' },
+            { byokConfig, organizationId, label: 'verify-structure-fallback' },
             (internalModel) =>
                 throttledGenerateText({
-            byokConfig,
-            organizationId,
-            role: 'internal',
-            label: 'verify-structure-fallback',
-            abortSignal: verifierFallbackSignal,
-            queueTimeoutMs,
-            fn: () =>
-                generateText({
+                    byokConfig,
+                    organizationId,
+                    role: 'internal',
+                    label: 'verify-structure-fallback',
                     abortSignal: verifierFallbackSignal,
-                    model: internalModel as any,
-                    experimental_telemetry: _buildLangfuseTelemetry(
-                        'verify-structure-fallback',
-                    ),
-                    output: Output.object({
-                        schema: jsonSchema({
-                            type: 'object',
-                            properties: {
-                                index: { type: 'number' },
-                                keep: { type: 'boolean' },
-                                rationale: { type: 'string' },
-                                confidence: {
-                                    type: 'string',
-                                    enum: ['high', 'medium', 'low'],
-                                },
-                            },
-                            required: ['keep', 'rationale'],
-                        }),
-                    }) as any,
-                    system: `You are a JSON extraction assistant.
+                    queueTimeoutMs,
+                    fn: () =>
+                        generateText({
+                            abortSignal: verifierFallbackSignal,
+                            model: internalModel as any,
+                            experimental_telemetry: _buildLangfuseTelemetry(
+                                'verify-structure-fallback',
+                            ),
+                            output: Output.object({
+                                schema: jsonSchema({
+                                    type: 'object',
+                                    properties: {
+                                        index: { type: 'number' },
+                                        keep: { type: 'boolean' },
+                                        rationale: { type: 'string' },
+                                        confidence: {
+                                            type: 'string',
+                                            enum: ['high', 'medium', 'low'],
+                                        },
+                                    },
+                                    required: ['keep', 'rationale'],
+                                }),
+                            }) as any,
+                            system: `You are a JSON extraction assistant.
 
 You receive the raw text output of a code-review verifier and must extract only its final verdict.
 
@@ -4053,7 +4076,7 @@ Rules:
 - Preserve refined suggestion text only if the verifier clearly provided it.
 - If the text contains uncertainty, keep the rationale faithful to that uncertainty.
 - Output only the structured decision object.`,
-                    prompt: `Extract the verifier verdict from this text:
+                            prompt: `Extract the verifier verdict from this text:
 
 ---
 ${verificationText}
@@ -4064,8 +4087,8 @@ Return:
 - keep
 - rationale
 - confidence (if present)`,
+                        }),
                 }),
-        }),
         );
 
         const output: any = (result as any).object ?? (result as any).output;
@@ -4291,69 +4314,77 @@ async function structureWithFallbackModel(
         const structureFallbackSignal = timeoutSignal(LLM_CALL_TIMEOUT_MS);
 
         const result: any = await withStructuredOutputFallback(
-            { byokConfig, label: 'review-structure-fallback' },
+            { byokConfig, organizationId, label: 'review-structure-fallback' },
             (internalModel) =>
                 throttledGenerateText({
-            byokConfig,
-            organizationId,
-            role: 'internal',
-            label: 'review-structure-fallback',
-            abortSignal: structureFallbackSignal,
-            queueTimeoutMs,
-            fn: () =>
-                generateText({
+                    byokConfig,
+                    organizationId,
+                    role: 'internal',
+                    label: 'review-structure-fallback',
                     abortSignal: structureFallbackSignal,
-                    model: internalModel as any,
-                    experimental_telemetry: _buildLangfuseTelemetry(
-                        'review-structure-fallback',
-                    ),
-                    output: Output.object({
-                        schema: jsonSchema({
-                            type: 'object',
-                            additionalProperties: false,
-                            properties: {
-                                reasoning: { type: 'string' },
-                                suggestions: {
-                                    type: 'array',
-                                    items: {
-                                        type: 'object',
-                                        additionalProperties: false,
-                                        properties: {
-                                            relevantFile: { type: 'string' },
-                                            language: nullableStringSchema,
-                                            label: nullableLabelSchema,
-                                            suggestionContent: {
-                                                type: 'string',
+                    queueTimeoutMs,
+                    fn: () =>
+                        generateText({
+                            abortSignal: structureFallbackSignal,
+                            model: internalModel as any,
+                            experimental_telemetry: _buildLangfuseTelemetry(
+                                'review-structure-fallback',
+                            ),
+                            output: Output.object({
+                                schema: jsonSchema({
+                                    type: 'object',
+                                    additionalProperties: false,
+                                    properties: {
+                                        reasoning: { type: 'string' },
+                                        suggestions: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                additionalProperties: false,
+                                                properties: {
+                                                    relevantFile: {
+                                                        type: 'string',
+                                                    },
+                                                    language:
+                                                        nullableStringSchema,
+                                                    label: nullableLabelSchema,
+                                                    suggestionContent: {
+                                                        type: 'string',
+                                                    },
+                                                    existingCode: {
+                                                        type: 'string',
+                                                    },
+                                                    improvedCode: {
+                                                        type: 'string',
+                                                    },
+                                                    oneSentenceSummary:
+                                                        nullableStringSchema,
+                                                    relevantLinesStart:
+                                                        nullableNumberSchema,
+                                                    relevantLinesEnd:
+                                                        nullableNumberSchema,
+                                                    severity:
+                                                        nullableSeveritySchema,
+                                                },
+                                                required: [
+                                                    'relevantFile',
+                                                    'language',
+                                                    'label',
+                                                    'suggestionContent',
+                                                    'existingCode',
+                                                    'improvedCode',
+                                                    'oneSentenceSummary',
+                                                    'relevantLinesStart',
+                                                    'relevantLinesEnd',
+                                                    'severity',
+                                                ],
                                             },
-                                            existingCode: { type: 'string' },
-                                            improvedCode: { type: 'string' },
-                                            oneSentenceSummary:
-                                                nullableStringSchema,
-                                            relevantLinesStart:
-                                                nullableNumberSchema,
-                                            relevantLinesEnd:
-                                                nullableNumberSchema,
-                                            severity: nullableSeveritySchema,
                                         },
-                                        required: [
-                                            'relevantFile',
-                                            'language',
-                                            'label',
-                                            'suggestionContent',
-                                            'existingCode',
-                                            'improvedCode',
-                                            'oneSentenceSummary',
-                                            'relevantLinesStart',
-                                            'relevantLinesEnd',
-                                            'severity',
-                                        ],
                                     },
-                                },
-                            },
-                            required: ['reasoning', 'suggestions'],
-                        }),
-                    }) as any,
-                    system: `You are a JSON extraction assistant. You receive code review text and extract structured findings.
+                                    required: ['reasoning', 'suggestions'],
+                                }),
+                            }) as any,
+                            system: `You are a JSON extraction assistant. You receive code review text and extract structured findings.
 
 Rules:
 - Extract EVERY issue/bug/vulnerability mentioned into a separate suggestion
@@ -4362,15 +4393,15 @@ Rules:
 - If line numbers are mentioned, include them
 - If no issues found, return empty suggestions array
 - Never invent issues not in the text`,
-                    prompt: `Extract all code review findings from this text:
+                            prompt: `Extract all code review findings from this text:
 
 ---
 ${reviewText}
 ---
 
 For each issue found, extract: relevantFile, language, label (bug/security/performance when present), suggestionContent (full description), existingCode, improvedCode, oneSentenceSummary, relevantLinesStart, relevantLinesEnd, severity (critical/high/medium/low).`,
+                        }),
                 }),
-        }),
         );
 
         const rawOutput: any = (result as any).object ?? (result as any).output;

@@ -8,6 +8,7 @@ import {
 } from '@libs/sandbox/domain/contracts/sandbox.provider';
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
+import { ReviewErrorCategory } from '@libs/code-review/infrastructure/agents/llm/error-classifier';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
     AnalysisContext,
@@ -210,6 +211,22 @@ export interface CodeReviewPipelineContext extends PipelineContext {
      *  agent-loop's local AbortController is aborted when the router-level
      *  job timeout fires (instead of leaving an LLM call running ghost). */
     parentSignal?: AbortSignal;
+
+    /**
+     * Snapshot of the most important failure surfaced by AgentReviewStage —
+     * carried in-memory through the rest of the pipeline so the end-review
+     * comment stage can render a precise message without re-walking errors[].
+     * The actual outcome (SUCCESS / PARTIAL_ERROR / ERROR) lives in
+     * `errors[].severity` and ultimately on `automation_execution.status`;
+     * this only exists to interpolate the user-facing reason.
+     */
+    lastReviewError?: {
+        category: ReviewErrorCategory;
+        provider?: string;
+        friendlyMessage: string;
+        agentName?: string;
+        occurredAt: Date;
+    };
 }
 
 export interface DedupTraceSuggestionSummary {

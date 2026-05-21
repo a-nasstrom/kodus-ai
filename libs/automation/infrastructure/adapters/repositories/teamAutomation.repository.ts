@@ -8,6 +8,7 @@ import {
     UpdateQueryBuilder,
 } from 'typeorm';
 
+import { createLogger } from '@kodus/flow';
 import { ITeamAutomationRepository } from '@libs/automation/domain/teamAutomation/contracts/team-automation.repository';
 import { TeamAutomationEntity } from '@libs/automation/domain/teamAutomation/entities/team-automation.entity';
 import { ITeamAutomation } from '@libs/automation/domain/teamAutomation/interfaces/team-automation.interface';

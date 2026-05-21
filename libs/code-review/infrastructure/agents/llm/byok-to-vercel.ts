@@ -797,6 +797,12 @@ export interface StructuredFallbackParams {
     byokConfig?: BYOKConfig;
     /** Optional label for logs when the retry actually fires. */
     label?: string;
+    /**
+     * Organization the call runs for. Scopes the no-json-schema cache so
+     * one tenant's verdict never demotes another. Omit only for
+     * process-wide self-hosted mode.
+     */
+    organizationId?: string;
 }
 
 /**
@@ -851,7 +857,7 @@ export async function withStructuredOutputFallback<T>(
         }
         noJsonSchemaCache.add(cacheKey);
         const label = params.label ? ` for ${params.label}` : '';
-         
+
         console.warn(
             `[STRUCTURED-OUTPUT-FALLBACK] Upstream rejected json_schema${label} (cacheKey=${cacheKey}). Retrying with response_format=json_object. Reason: ${(err as Error).message}`,
         );

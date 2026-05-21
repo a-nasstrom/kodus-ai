@@ -57,13 +57,23 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
             lineComments,
         );
 
-        // Aprovar PR se não houver comentários
+        // Any non-empty severity blocks auto-approve so we never signal
+        // "all good" on a degraded run. The user-facing message tells
+        // them which auxiliary checks failed and where to look for the
+        // details; here we just refuse to approve.
+        const reviewHasFailures = (context.errors ?? []).some(
+            (e) =>
+                (e?.severity ?? 'critical') === 'critical' ||
+                e?.severity === 'partial',
+        );
+
         const approved = await this.approvePullRequest(
             codeReviewConfig.pullRequestApprovalActive,
             lineComments.length,
             organizationAndTeamData,
             pullRequest.number,
             repository,
+            reviewHasFailures,
         );
 
         if (approved) {
@@ -141,9 +151,28 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         repository: { id: string; name: string },
+        reviewHasFailures: boolean,
     ): Promise<boolean> {
         try {
             if (!pullRequestApprovalActive || lineCommentsLength > 0) {
+                return false;
+            }
+
+            // Any failure (critical or partial) means we couldn't fully
+            // analyze the PR — 0 line comments here is unanalyzed, not
+            // clean. Approving here would signal "all good" when the
+            // truth is "we couldn't tell." User must re-run (`@kody
+            // review` after fixing the cause) before auto-approve can
+            // re-engage.
+            if (reviewHasFailures) {
+                this.logger.log({
+                    message: `Skipping auto-approve for PR#${prNumber} because the review had failures`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        repository,
+                    },
+                });
                 return false;
             }
 

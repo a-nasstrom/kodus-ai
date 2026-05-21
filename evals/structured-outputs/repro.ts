@@ -41,12 +41,7 @@
 
 import 'dotenv/config';
 
-import {
-    generateText,
-    Output,
-    jsonSchema,
-    type LanguageModel,
-} from 'ai';
+import { generateText, Output, jsonSchema, type LanguageModel } from 'ai';
 
 import {
     byokToVercelModel,
@@ -504,7 +499,10 @@ async function probeRetryFallback(): Promise<{
                         code: 'invalid_response_format',
                     },
                 }),
-                { status: 400, headers: { 'content-type': 'application/json' } },
+                {
+                    status: 400,
+                    headers: { 'content-type': 'application/json' },
+                },
             );
         }
         // Second call: succeed.
@@ -645,14 +643,136 @@ async function probeNoFutileRetry(): Promise<{ ok: boolean; summary: string }> {
     const first = captured[0]?.body?.response_format;
     // Exactly one call, it was json_object (gate OFF), and the error
     // propagated instead of triggering a doomed retry.
-    const ok =
-        captured.length === 1 && first?.type === 'json_object' && threw;
+    const ok = captured.length === 1 && first?.type === 'json_object' && threw;
     return {
         ok,
         summary: `calls=${captured.length} (expect 1) first=${JSON.stringify(
             first ?? null,
         )} threw=${threw}`,
     };
+}
+
+/**
+ * Probe that the no-json-schema cache is per-tenant and TTL-bounded.
+ *
+ * Two orgs share the same provider/model/key. Org A's upstream rejects
+ * json_schema (so A's verdict gets cached); org B must NOT inherit it —
+ * B's first call should still attempt json_schema. Then we expire org
+ * A's entry and confirm A retries json_schema again instead of being
+ * permanently denylisted.
+ */
+async function probeCacheIsolation(): Promise<{
+    ok: boolean;
+    summary: string;
+}> {
+    __structuredFallbackInternals.cache.clear();
+
+    const byok: BYOKConfig = {
+        main: {
+            provider: BYOKProvider.OPEN_ROUTER,
+            apiKey: encrypt('sk-test-not-a-real-key'),
+            model: 'openai/gpt-4o-mini', // allowlisted → json_schema ON
+        },
+    };
+
+    const captured: CapturedRequest[] = [];
+    const original = globalThis.fetch;
+    // Stateless fake: json_schema → 400 unsupported, json_object → 200.
+    globalThis.fetch = (async (input: any, init?: any) => {
+        let body: any = null;
+        try {
+            body = init?.body ? JSON.parse(init.body as string) : null;
+        } catch {
+            body = init?.body ?? null;
+        }
+        captured.push({ url: '', body });
+        if (body?.response_format?.type === 'json_schema') {
+            return new Response(
+                JSON.stringify({
+                    error: {
+                        message: 'response_format json_schema is not supported',
+                        type: 'invalid_request_error',
+                    },
+                }),
+                {
+                    status: 400,
+                    headers: { 'content-type': 'application/json' },
+                },
+            );
+        }
+        return new Response(
+            JSON.stringify({
+                id: 'x',
+                object: 'chat.completion',
+                created: 0,
+                model: 'openai/gpt-4o-mini',
+                choices: [
+                    {
+                        index: 0,
+                        message: {
+                            role: 'assistant',
+                            content: '{"answer":"ok"}',
+                        },
+                        finish_reason: 'stop',
+                    },
+                ],
+                usage: {
+                    prompt_tokens: 8,
+                    completion_tokens: 4,
+                    total_tokens: 12,
+                },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+    }) as typeof fetch;
+
+    const runOnce = (orgId: string) =>
+        withStructuredOutputFallback(
+            {
+                byokConfig: byok,
+                organizationId: orgId,
+                label: `cache-probe-${orgId}`,
+            },
+            (model) =>
+                generateText({
+                    model: model as any,
+                    prompt: 'Return any JSON value matching the schema.',
+                    output: Output.object({ schema: minimalSchema }) as any,
+                }),
+        ).catch(() => null);
+
+    try {
+        // Org A: json_schema 400 → retry json_object 200 → verdict cached.
+        await runOnce('org-A');
+        const afterA = captured.length;
+
+        // Org B: same provider/model/key, different org — must not inherit
+        // A's verdict, so its first call attempts json_schema again.
+        await runOnce('org-B');
+        const orgBFirst = captured[afterA]?.body?.response_format?.type;
+        const isolated = orgBFirst === 'json_schema';
+
+        // TTL: expire org A's entry, then A must retry json_schema.
+        const keyA = __structuredFallbackInternals.cacheKey(byok, 'org-A');
+        __structuredFallbackInternals.cache.set(
+            keyA,
+            Date.now() - __structuredFallbackInternals.ttlMs - 1000,
+        );
+        const expiredSeen =
+            !__structuredFallbackInternals.isNoJsonSchemaCached(keyA);
+        const beforeTtl = captured.length;
+        await runOnce('org-A');
+        const ttlRetried =
+            captured[beforeTtl]?.body?.response_format?.type === 'json_schema';
+
+        const ok = isolated && expiredSeen && ttlRetried;
+        return {
+            ok,
+            summary: `orgB-isolated=${isolated} (orgB-first=${orgBFirst}) ttl-expired=${expiredSeen} ttl-retried=${ttlRetried}`,
+        };
+    } finally {
+        globalThis.fetch = original;
+    }
 }
 
 async function main(): Promise<void> {
@@ -686,6 +806,7 @@ async function main(): Promise<void> {
 
     let retryOk = true;
     let noFutileOk = true;
+    let cacheOk = true;
     if (!LIVE && !SELECTED_SCENARIO) {
         console.log('\n--- retry-on-error fallback (helper-level)');
         console.log(
@@ -704,6 +825,14 @@ async function main(): Promise<void> {
         console.log(
             `    ${noFutile.ok ? '[PASS]' : '[FAIL]'} ${noFutile.summary}`,
         );
+
+        console.log('\n--- no-json-schema cache is per-tenant + TTL-bounded');
+        console.log(
+            '    why: one org’s json_schema rejection must not demote other orgs, and a stale verdict must expire',
+        );
+        const cache = await probeCacheIsolation();
+        cacheOk = cache.ok;
+        console.log(`    ${cache.ok ? '[PASS]' : '[FAIL]'} ${cache.summary}`);
     }
 
     const failed = results.filter(
@@ -711,10 +840,13 @@ async function main(): Promise<void> {
     );
     console.log('');
     console.log('='.repeat(60));
-    const extraProbes = LIVE || SELECTED_SCENARIO ? 0 : 2;
+    const extraProbes = LIVE || SELECTED_SCENARIO ? 0 : 3;
     const totalRan = results.length + extraProbes;
     const totalFailed =
-        failed.length + (retryOk ? 0 : 1) + (noFutileOk ? 0 : 1);
+        failed.length +
+        (retryOk ? 0 : 1) +
+        (noFutileOk ? 0 : 1) +
+        (cacheOk ? 0 : 1);
     console.log(`Summary: ${totalRan - totalFailed}/${totalRan} green`);
     if (failed.length > 0) {
         console.log(`Failed: ${failed.map((r) => r.scenario.name).join(', ')}`);
@@ -725,9 +857,12 @@ async function main(): Promise<void> {
     if (!noFutileOk) {
         console.log('Failed: no futile retry when gated off');
     }
+    if (!cacheOk) {
+        console.log('Failed: no-json-schema cache isolation');
+    }
 
     process.exit(
-        failed.length === 0 && retryOk && noFutileOk ? 0 : 1,
+        failed.length === 0 && retryOk && noFutileOk && cacheOk ? 0 : 1,
     );
 }
 

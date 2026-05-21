@@ -44,6 +44,11 @@ import {
     DedupTraceSummary,
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
+import {
+    ReviewErrorCategory,
+    classifyLLMError,
+    getClassification,
+} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -320,11 +325,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
 
                 if (context.sandboxHandle?.run) {
-                    const repo =
-                        await this.repositoryService.findByExternalId(
-                            context.platformType,
-                            String(context.repository?.id || ''),
-                        );
+                    const repo = await this.repositoryService.findByExternalId(
+                        context.platformType,
+                        String(context.repository?.id || ''),
+                    );
 
                     this.logger.log({
                         message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
@@ -465,8 +469,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     : 'partial';
                 context = this.updateContext(context, (draft) => {
                     draft.errors.push({
-                        pipelineId:
-                            context.pipelineMetadata?.pipelineId,
+                        pipelineId: context.pipelineMetadata?.pipelineId,
                         stage: this.stageName,
                         substage: `agent:${failure.agentName}`,
                         error: failure.error,
@@ -477,6 +480,67 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                             prNumber,
                         },
                     });
+                });
+            }
+
+            // Pick the best failure to surface to the user (used by the
+            // end-review comment to interpolate the reason). Severity-based
+            // bookkeeping already happened in the loop above — this only
+            // chooses *which* failure's classification gets attached to the
+            // context for the message. A critical agent with a mapped (non-
+            // UNKNOWN) classification wins; fall back to any critical, then
+            // any failure.
+            const failures = result.failures ?? [];
+            if (failures.length > 0) {
+                const reviewProvider =
+                    typeof context.codeReviewConfig?.byokConfig?.main
+                        ?.provider === 'string'
+                        ? (context.codeReviewConfig.byokConfig.main
+                              .provider as string)
+                        : undefined;
+                const classifyFailure = (f: (typeof failures)[number]) =>
+                    getClassification(f.error) ??
+                    classifyLLMError(f.error, reviewProvider);
+                const criticalFailures = failures.filter((f) =>
+                    CRITICAL_AGENTS.has(f.agentName),
+                );
+                const ranked = (
+                    criticalFailures.length > 0 ? criticalFailures : failures
+                ).slice();
+                ranked.sort((a, b) => {
+                    const aMapped =
+                        classifyFailure(a).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    const bMapped =
+                        classifyFailure(b).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    if (aMapped === bMapped) return 0;
+                    return aMapped ? -1 : 1;
+                });
+                const chosen = ranked[0];
+                const classification = classifyFailure(chosen);
+
+                context = this.updateContext(context, (draft) => {
+                    draft.lastReviewError = {
+                        category: classification.category,
+                        provider: classification.provider,
+                        friendlyMessage: classification.friendlyMessage,
+                        agentName: chosen.agentName,
+                        occurredAt: new Date(),
+                    };
+                });
+
+                this.logger.log({
+                    message: `[AGENT] Review failures: ${failures.length} (critical=${criticalFailures.length}, category=${classification.category})`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        errorCategory: classification.category,
+                        provider: classification.provider,
+                        agentName: chosen.agentName,
+                        failureCount: failures.length,
+                        criticalCount: criticalFailures.length,
+                    },
                 });
             }
 
@@ -891,7 +955,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // reached `CreateFileCommentsStage` and the fallback
                 // comments for those files silently disappeared from the
                 // review.
-                const discardedByFile = new Map<string, Partial<CodeSuggestion>[]>();
+                const discardedByFile = new Map<
+                    string,
+                    Partial<CodeSuggestion>[]
+                >();
                 for (const s of allDiscarded) {
                     const file = s.relevantFile || '';
                     if (!file) continue;
@@ -1147,50 +1214,50 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const runDedup = (model: any) =>
                 tracedGenerateText({
-                model: model as any,
-                experimental_telemetry: buildLangfuseTelemetry(
-                    'dedup-suggestions',
-                    telemetryMeta,
-                ),
-                output: Output.object({
-                    schema: jsonSchema({
-                        type: 'object',
-                        properties: {
-                            groups: {
-                                type: 'array',
-                                description:
-                                    'Groups of suggestions. Each group has a representative and its duplicates.',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        keep: {
-                                            type: 'number',
-                                            description:
-                                                'Index of the best suggestion to keep as representative',
+                    model: model as any,
+                    experimental_telemetry: buildLangfuseTelemetry(
+                        'dedup-suggestions',
+                        telemetryMeta,
+                    ),
+                    output: Output.object({
+                        schema: jsonSchema({
+                            type: 'object',
+                            properties: {
+                                groups: {
+                                    type: 'array',
+                                    description:
+                                        'Groups of suggestions. Each group has a representative and its duplicates.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            keep: {
+                                                type: 'number',
+                                                description:
+                                                    'Index of the best suggestion to keep as representative',
+                                            },
+                                            duplicates: {
+                                                type: 'array',
+                                                items: { type: 'number' },
+                                                description:
+                                                    'Indices of duplicate suggestions (same bug, same or different locations)',
+                                            },
                                         },
-                                        duplicates: {
-                                            type: 'array',
-                                            items: { type: 'number' },
-                                            description:
-                                                'Indices of duplicate suggestions (same bug, same or different locations)',
-                                        },
+                                        required: ['keep', 'duplicates'],
+                                        additionalProperties: false,
                                     },
-                                    required: ['keep', 'duplicates'],
-                                    additionalProperties: false,
+                                },
+                                unique: {
+                                    type: 'array',
+                                    items: { type: 'number' },
+                                    description:
+                                        'Indices of suggestions that have no duplicates',
                                 },
                             },
-                            unique: {
-                                type: 'array',
-                                items: { type: 'number' },
-                                description:
-                                    'Indices of suggestions that have no duplicates',
-                            },
-                        },
-                        required: ['groups', 'unique'],
-                        additionalProperties: false,
-                    }),
-                }) as any,
-                prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
+                            required: ['groups', 'unique'],
+                            additionalProperties: false,
+                        }),
+                    }) as any,
+                    prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
 
 BE CONSERVATIVE — when in doubt, do NOT group. Only group when you are highly confident they describe the exact same bug.
 
@@ -1213,16 +1280,19 @@ ${summaries}`,
 
             let dedupResult: any;
             if (googleKey) {
-                const { createGoogleGenerativeAI } = await import(
-                    '@ai-sdk/google'
-                );
+                const { createGoogleGenerativeAI } =
+                    await import('@ai-sdk/google');
                 const model = createGoogleGenerativeAI({ apiKey: googleKey })(
                     'gemini-3-flash-preview',
                 );
                 dedupResult = await runDedup(model);
             } else {
                 dedupResult = await withStructuredOutputFallback(
-                    { byokConfig, label: 'dedup-suggestions' },
+                    {
+                        byokConfig,
+                        organizationId: telemetryMeta?.organizationId,
+                        label: 'dedup-suggestions',
+                    },
                     runDedup,
                 );
             }
