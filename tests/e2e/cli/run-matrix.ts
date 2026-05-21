@@ -233,6 +233,7 @@ async function main() {
             return { target, results: outcome.results };
         }),
     );
+    let targetCrashed = false;
     for (const settled of targetOutcomes) {
         if (settled.status === "fulfilled") {
             allResults.push(...settled.value.results);
@@ -242,7 +243,13 @@ async function main() {
             // assertion failures are caught inside runMatrix and end
             // up in `results`. If this fires we surface it on stderr
             // and continue tallying whatever the other target
-            // produced.
+            // produced. Crucially we also flag the crash so the
+            // process exits non-zero even when `summary.failed` is 0
+            // (which is what happens when provisioning blows up
+            // before a single cell got to record a failure). Without
+            // this flag a release gate could silently turn green on
+            // a run where one whole target never executed.
+            targetCrashed = true;
             log.err(
                 `--- target run rejected: ${settled.reason instanceof Error ? settled.reason.message : String(settled.reason)}`,
             );
@@ -264,7 +271,7 @@ async function main() {
     );
     log.info(`Evidence: ${artifactDir}`);
 
-    if (summary.failed > 0 || summary.blocked > 0) {
+    if (summary.failed > 0 || summary.blocked > 0 || targetCrashed) {
         process.exit(1);
     }
 }

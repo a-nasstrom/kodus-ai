@@ -72,20 +72,24 @@ services:
             KC_BOOTSTRAP_ADMIN_USERNAME: admin
             KC_BOOTSTRAP_ADMIN_PASSWORD: ${SSO_E2E_KC_ADMIN_PASSWORD}
             # dev-file is an embedded H2 file DB — fast to bootstrap,
-            # zero external services. The realm is rebuilt by
-            # bootstrap-keycloak-remote.sh every provision, so we don't
-            # need persistence across droplet restarts. Postgres would
-            # be a footgun: stale realms from prior runs.
+            # zero external services. We DELIBERATELY do not mount a
+            # persistent volume on /opt/keycloak/data — every
+            # `docker compose up -d` (including a plain restart of an
+            # existing droplet) recreates the H2 file fresh, and
+            # bootstrap-keycloak-remote.sh re-imports the realm
+            # from scratch. Persisting the volume was a footgun
+            # observed 2026-05-21: a "warm restart" of the kc-sso-e2e
+            # container loaded a stale realm (with a different client
+            # secret than the freshly-bootstrapped one) and the SAML
+            # round-trip failed on signature mismatch without any
+            # surface error in the bootstrap script.
             KC_DB: dev-file
-        volumes:
-            - kc-sso-e2e-data:/opt/keycloak/data
         networks:
             - kodus-backend-services
 
 volumes:
     caddy-data:
     caddy-config:
-    kc-sso-e2e-data:
 
 networks:
     kodus-backend-services:
