@@ -91,9 +91,18 @@ export class UpdateOrCreateTeamAutomationUseCase implements IUseCase {
         oldTeamAutomation: any[],
         organizationAndTeamData: any,
     ) {
+        // Index by automation uuid so the lookup below is O(1). `set` only when
+        // absent keeps the first-match semantics of the previous `.find()`.
+        const existingByAutomationUuid = new Map<string, any>();
+        for (const old of oldTeamAutomation) {
+            if (!existingByAutomationUuid.has(old.automation.uuid)) {
+                existingByAutomationUuid.set(old.automation.uuid, old);
+            }
+        }
+
         for (const automation of teamAutomations.automations) {
-            const existingAutomation = oldTeamAutomation.find(
-                (old) => old.automation.uuid === automation.automationUuid,
+            const existingAutomation = existingByAutomationUuid.get(
+                automation.automationUuid,
             );
 
             if (existingAutomation) {
