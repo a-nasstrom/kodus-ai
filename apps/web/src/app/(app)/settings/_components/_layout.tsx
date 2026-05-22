@@ -49,9 +49,11 @@ import {
 import { resolveCodeReviewConfigForScope } from "./code-review-config-scope";
 import {
     AutomationCodeReviewConfigProvider,
+    CodeReviewModelDataProvider,
     DefaultCodeReviewConfigProvider,
     PlatformConfigProvider,
     ScopedCodeReviewConfigProvider,
+    type CodeReviewModelData,
 } from "./context";
 import { PerRepository } from "./per-repository/repository";
 import {
@@ -87,6 +89,7 @@ type SettingsLayoutProps = React.PropsWithChildren<{
     initialConfigValue: FormattedGlobalCodeReviewConfig;
     initialDefaultConfig: InitialDefaultConfig;
     initialPlatformConfig: InitialPlatformConfig;
+    initialModelData: CodeReviewModelData;
 }>;
 
 export const SettingsLayout = ({
@@ -95,6 +98,7 @@ export const SettingsLayout = ({
     initialConfigValue,
     initialDefaultConfig,
     initialPlatformConfig,
+    initialModelData,
 }: SettingsLayoutProps) => {
     const { teamId } = useSelectedTeamId();
     const effectiveTeamId = teamId ?? initialTeamId;
@@ -145,14 +149,16 @@ export const SettingsLayout = ({
     );
 
     return (
-        <SettingsLayoutShell
-            teamId={effectiveTeamId}
-            configValue={liveShellQuery?.configValue ?? initialConfigValue}
-            defaultConfig={defaultConfig ?? initialDefaultConfig}
-            platformConfig={platformConfig ?? initialPlatformConfig}
-            isMCPAvailable={isMCPAvailable}>
-            {children}
-        </SettingsLayoutShell>
+        <CodeReviewModelDataProvider value={initialModelData}>
+            <SettingsLayoutShell
+                teamId={effectiveTeamId}
+                configValue={liveShellQuery?.configValue ?? initialConfigValue}
+                defaultConfig={defaultConfig ?? initialDefaultConfig}
+                platformConfig={platformConfig ?? initialPlatformConfig}
+                isMCPAvailable={isMCPAvailable}>
+                {children}
+            </SettingsLayoutShell>
+        </CodeReviewModelDataProvider>
     );
 };
 
