@@ -45,6 +45,8 @@
         "selfhosted:logs": "scripts/selfhosted/logs.sh",
         "selfhosted:clean": "scripts/selfhosted/clean.sh",
         "selfhosted:diag": "scripts/selfhosted/diag.sh",
+        "selfhosted:dns-setup": "scripts/selfhosted/dns-setup.sh",
+        "selfhosted:dns-setup-named": "scripts/selfhosted/dns-setup-named.sh",
         "sso-e2e:droplet:provision": "scripts/sso-e2e/droplet/provision.sh",
         "sso-e2e:droplet:run": "scripts/sso-e2e/droplet/run.sh",
         "sso-e2e:droplet:multi-user": "scripts/sso-e2e/droplet/run-multi-user.sh",
