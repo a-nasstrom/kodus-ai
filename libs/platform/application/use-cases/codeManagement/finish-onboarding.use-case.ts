@@ -79,17 +79,19 @@ export class FinishOnboardingUseCase {
                 start: number,
                 extra: Record<string, unknown> = {},
             ) => {
-                this.logger.log({
-                    message: `[TIMING:onboarding] ${label} took ${Date.now() - start}ms`,
-                    context: FinishOnboardingUseCase.name,
-                    metadata: {
+                // console.log directly so the line survives whatever
+                // structured-logger level filtering the framework
+                // applies in production builds (which silently dropped
+                // the first attempt that used this.logger.log).
+                console.log(
+                    `[TIMING:onboarding] ${label} took ${Date.now() - start}ms`,
+                    JSON.stringify({
                         teamId,
-                        organizationId,
                         step: label,
                         durationMs: Date.now() - start,
                         ...extra,
-                    },
-                });
+                    }),
+                );
             };
 
             let __t = Date.now();
