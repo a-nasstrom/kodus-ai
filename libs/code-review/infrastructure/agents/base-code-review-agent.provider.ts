@@ -347,6 +347,13 @@ export interface ReviewAgentInput {
     batchTotal?: number;
     /** Review mode: 'fast' skips heavy passes (verify, coverage recovery, synthesis rescue) and caps agent steps; 'normal' skips verify only for very-high-confidence findings; 'deep' verifies everything. */
     reviewMode?: 'fast' | 'normal' | 'deep';
+    /**
+     * Resolved BYOK *main* model override (directory -> repository -> BYOK
+     * settings) from `codeReviewConfig.byokModel`. When set, it replaces
+     * `byokConfig.main.model` for this run so the agent uses the same model
+     * the rest of the pipeline does. Empty/undefined means "inherit".
+     */
+    byokModel?: string;
     /** Optional per-agent step budget for the main investigation loop. */
     maxSteps?: number;
     /** When true, skip recovery, second-chance, AND synthesis-rescue
@@ -513,9 +520,21 @@ export abstract class BaseCodeReviewAgentProvider {
         });
 
         // Resolve BYOK config - Scoped locally to prevent race conditions across parallel PR reviews
-        const byokConfig = await this.permissionValidationService.getBYOKConfig(
+        let byokConfig = await this.permissionValidationService.getBYOKConfig(
             input.organizationAndTeamData,
         );
+
+        // Honor the per-repository/directory model override resolved by the
+        // pipeline (codeReviewConfig.byokModel). getBYOKConfig() returns the
+        // raw org-level config, so without this the agent would always run on
+        // the BYOK-settings main model and ignore the override.
+        const overrideModel = input.byokModel?.trim();
+        if (overrideModel && byokConfig?.main) {
+            byokConfig = {
+                ...byokConfig,
+                main: { ...byokConfig.main, model: overrideModel },
+            };
+        }
 
         // Create Vercel AI SDK model from BYOK config
         const model = byokToVercelModel(byokConfig);

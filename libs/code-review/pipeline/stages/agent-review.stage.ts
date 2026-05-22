@@ -424,6 +424,8 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 callGraph,
                 callGraphJson: context.callGraphJson,
                 reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
+                // Per-repo/directory model override resolved by ValidateConfigStage.
+                byokModel: context.codeReviewConfig?.byokModel,
                 // Forwarded from the workflow job timeout. The router builds
                 // an AbortController; here we pass it through so when the
                 // 1h45min budget fires, the agent-loop's local controller is
