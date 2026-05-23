@@ -349,6 +349,22 @@ packages:
   - openssl
   - curl
   - rsync
+write_files:
+  # Pull Docker Hub images via Google's public mirror instead of going
+  # directly to registry-1.docker.io. Some DigitalOcean droplets land
+  # on egress paths where IPv4 traffic to AWS us-east-1 (Docker Hub's
+  # CDN) silently blackholes at hop 5 of the DO backbone — observed
+  # 2026-05-23 on 159.203.110.117 where every pull of pgvector/mongo
+  # timed out, while ghcr.io (Azure) and mirror.gcr.io (Google) both
+  # responded in ~150ms from the same host. The Docker daemon falls
+  # back to docker.io if the mirror doesn't have the image, so this
+  # is also self-healing if mirror.gcr.io ever drops an image.
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "registry-mirrors": ["https://mirror.gcr.io"]
+      }
+    permissions: '0644'
 runcmd:
   - curl -fsSL https://get.docker.com | sh
   - systemctl enable --now docker
