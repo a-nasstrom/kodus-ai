@@ -1,15 +1,15 @@
-import { strict as assert } from "node:assert";
-import { test } from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import onboardingWebhookRegistration from "../../scenarios/onboarding-webhook-registration.js";
+import { strict as assert } from 'node:assert';
+import { test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import onboardingWebhookRegistration from '../../scenarios/onboarding-webhook-registration.js';
 import type {
     Provider,
     RunContext,
     TargetContext,
     WebhookInfo,
-} from "../types.js";
+} from '../types.js';
 
 // Hand-rolled fake provider + kodus client so we can drive the scenario
 // directly without spinning up the full mock HTTP server. The scenario's
@@ -25,25 +25,25 @@ function makeFakeProvider(opts: FakeProviderOpts): Provider {
     const fake: Partial<Provider> & {
         deletedIds: string[];
     } = {
-        name: "github",
-        integrationType: "GITHUB",
-        webhookPath: "/github/webhook",
+        name: 'github',
+        integrationType: 'GITHUB',
+        webhookPath: '/github/webhook',
         deletedIds: deleted,
         listWebhooks: opts.listWebhooksImpl,
         deleteWebhook: async (id: string) => {
             deleted.push(id);
         },
-        repoRef: async () => ({ full_name: "org/repo", id: 1 }),
-        createWebhook: async () => ({ id: "1" }),
+        repoRef: async () => ({ full_name: 'org/repo', id: 1 }),
+        createWebhook: async () => ({ id: '1' }),
         openPR: async () => ({
             number: 1,
-            url: "x",
-            branch: "b",
-            baseBranch: "main",
+            url: 'x',
+            branch: 'b',
+            baseBranch: 'main',
         }),
         closePR: async () => {},
         triggerReviewOnExistingPR: async () => ({
-            triggerId: "1",
+            triggerId: '1',
             sinceIso: new Date().toISOString(),
         }),
         pollForReview: async () => ({
@@ -51,9 +51,9 @@ function makeFakeProvider(opts: FakeProviderOpts): Provider {
             issueComments: 0,
             reviews: 0,
         }),
-        postComment: async () => ({ id: "1" }),
-        authMode: () => "token",
-        authToken: () => "fake-token",
+        postComment: async () => ({ id: '1' }),
+        authMode: () => 'token',
+        authToken: () => 'fake-token',
     };
     return fake as Provider;
 }
@@ -62,38 +62,41 @@ function makeRunContext(provider: Provider): {
     ctx: RunContext;
     cleanup: () => void;
 } {
-    const artifactDir = mkdtempSync(join(tmpdir(), "webhook-test-"));
+    const artifactDir = mkdtempSync(join(tmpdir(), 'webhook-test-'));
     const target: TargetContext = {
-        target: "self-hosted",
-        apiBaseUrl: "http://localhost:1",
-        webBaseUrl: "http://localhost:1",
-        tunnelUrl: "https://abc.trycloudflare.com",
+        target: 'self-hosted',
+        apiBaseUrl: 'http://localhost:1',
+        webBaseUrl: 'http://localhost:1',
+        tunnelUrl: 'https://abc.trycloudflare.com',
     };
     const ctx: RunContext = {
         target,
         provider,
-        license: "license-paid",
-        tenant: { email: "x@y", password: "p" },
+        license: 'license-paid',
+        tenant: { email: 'x@y', password: 'p' },
         kodus: {
             login: async () => ({
-                accessToken: "t",
-                organizationId: "o",
-                teamId: "team",
+                accessToken: 't',
+                organizationId: 'o',
+                teamId: 'team',
             }),
             registerIntegration: async () => {},
-            registerRepo: async () => ({ full_name: "org/repo", id: 1 }),
+            registerRepo: async () => ({ full_name: 'org/repo', id: 1 }),
             finishOnboarding: async () => {},
         },
         assert: ((cond: unknown, msg: string) => {
             if (!cond) throw new Error(`Assertion failed: ${msg}`);
-        }) as RunContext["assert"],
+        }) as RunContext['assert'],
+        skip: ((reason: string): never => {
+            throw new Error(`ctx.skip called in unit test: ${reason}`);
+        }) as RunContext['skip'],
         artifactDir,
-        runId: "test-run",
+        runId: 'test-run',
     };
     return { ctx, cleanup: () => rmSync(artifactDir, { recursive: true }) };
 }
 
-test("onboarding-webhook-registration: passes when a matching active hook exists after onboarding", async () => {
+test('onboarding-webhook-registration: passes when a matching active hook exists after onboarding', async () => {
     let calls = 0;
     const provider = makeFakeProvider({
         listWebhooksImpl: async () => {
@@ -103,10 +106,10 @@ test("onboarding-webhook-registration: passes when a matching active hook exists
             if (calls === 1) return [];
             return [
                 {
-                    id: "h1",
-                    url: "https://abc.trycloudflare.com/github/webhook",
+                    id: 'h1',
+                    url: 'https://abc.trycloudflare.com/github/webhook',
                     active: true,
-                    events: ["pull_request", "issue_comment"],
+                    events: ['pull_request', 'issue_comment'],
                 },
             ];
         },
@@ -121,14 +124,14 @@ test("onboarding-webhook-registration: passes when a matching active hook exists
         assert.equal(result.registered.length, 1);
         assert.equal(
             result.registered[0].url,
-            "https://abc.trycloudflare.com/github/webhook",
+            'https://abc.trycloudflare.com/github/webhook',
         );
     } finally {
         cleanup();
     }
 });
 
-test("onboarding-webhook-registration: removes stale hooks before re-running onboarding", async () => {
+test('onboarding-webhook-registration: removes stale hooks before re-running onboarding', async () => {
     let calls = 0;
     const provider = makeFakeProvider({
         listWebhooksImpl: async () => {
@@ -136,25 +139,25 @@ test("onboarding-webhook-registration: removes stale hooks before re-running onb
             if (calls === 1) {
                 return [
                     {
-                        id: "stale-1",
-                        url: "https://old-tunnel.trycloudflare.com/github/webhook",
+                        id: 'stale-1',
+                        url: 'https://old-tunnel.trycloudflare.com/github/webhook',
                         active: true,
-                        events: ["pull_request"],
+                        events: ['pull_request'],
                     },
                     {
-                        id: "unrelated",
-                        url: "https://other-service.com/api/listener",
+                        id: 'unrelated',
+                        url: 'https://other-service.com/api/listener',
                         active: true,
-                        events: ["push"],
+                        events: ['push'],
                     },
                 ];
             }
             return [
                 {
-                    id: "fresh",
-                    url: "https://abc.trycloudflare.com/github/webhook",
+                    id: 'fresh',
+                    url: 'https://abc.trycloudflare.com/github/webhook',
                     active: true,
-                    events: ["pull_request"],
+                    events: ['pull_request'],
                 },
             ];
         },
@@ -167,17 +170,17 @@ test("onboarding-webhook-registration: removes stale hooks before re-running onb
         assert.equal(
             result.staleRemoved,
             1,
-            "only the kodus-shaped stale hook should be removed (not the unrelated one)",
+            'only the kodus-shaped stale hook should be removed (not the unrelated one)',
         );
         // Cast back to access the test-only field we attached.
         const fake = provider as unknown as { deletedIds: string[] };
-        assert.deepEqual(fake.deletedIds, ["stale-1"]);
+        assert.deepEqual(fake.deletedIds, ['stale-1']);
     } finally {
         cleanup();
     }
 });
 
-test("onboarding-webhook-registration: FAILS when no kodus hook is registered after onboarding (the GitLab bug shape)", async () => {
+test('onboarding-webhook-registration: FAILS when no kodus hook is registered after onboarding (the GitLab bug shape)', async () => {
     const provider = makeFakeProvider({
         listWebhooksImpl: async () => [],
     });
@@ -192,7 +195,7 @@ test("onboarding-webhook-registration: FAILS when no kodus hook is registered af
     }
 });
 
-test("onboarding-webhook-registration: FAILS when matching hook exists but is inactive", async () => {
+test('onboarding-webhook-registration: FAILS when matching hook exists but is inactive', async () => {
     let calls = 0;
     const provider = makeFakeProvider({
         listWebhooksImpl: async () => {
@@ -200,10 +203,10 @@ test("onboarding-webhook-registration: FAILS when matching hook exists but is in
             if (calls === 1) return [];
             return [
                 {
-                    id: "disabled",
-                    url: "https://abc.trycloudflare.com/github/webhook",
+                    id: 'disabled',
+                    url: 'https://abc.trycloudflare.com/github/webhook',
                     active: false,
-                    events: ["pull_request"],
+                    events: ['pull_request'],
                 },
             ];
         },

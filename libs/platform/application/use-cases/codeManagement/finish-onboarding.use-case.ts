@@ -117,37 +117,16 @@ export class FinishOnboardingUseCase {
             );
             __mark('createOrUpdate:PLATFORM_CONFIGS', __t);
 
-            __t = Date.now();
-            await this.generateKodyRulesUseCase.execute(
-                { teamId, months: 3 },
-                organizationId,
-            );
-            __mark('generateKodyRules', __t);
-
-            // enable all generated rules
-            __t = Date.now();
-            const rules = await this.findKodyRulesUseCase.execute(
-                organizationId,
-                {},
-            );
-            __mark('findKodyRules', __t, { ruleCount: rules?.length ?? 0 });
-
-            if (rules && rules.length > 0) {
-                __t = Date.now();
-                const ruleIds = rules.map((rule) => rule.uuid);
-                await this.changeStatusKodyRulesUseCase.execute({
-                    ruleIds,
-                    status: KodyRulesStatus.ACTIVE,
-                });
-                __mark('changeStatusKodyRules', __t, {
-                    ruleCount: ruleIds.length,
-                });
-            }
-
             // Rule generation makes dozens of provider API calls and can
             // take tens of seconds (Bitbucket especially). Run it detached
             // so onboarding completes immediately; the frontend polls
             // `kodyLearningStatus` to know when rules are ready.
+            // `generateKodyRulesInBackground` handles the full sequence
+            // (generate → find → enable) with retry + status lifecycle,
+            // so the synchronous variant of those three steps that used
+            // to live here would just duplicate work and block the HTTP
+            // response (the Bitbucket path measured 70–112s vs 1–4s for
+            // GitHub/GitLab in the 2026-05-22 self-hosted matrix).
             setImmediate(() => {
                 void this.generateKodyRulesInBackground(organizationId, teamId);
             });

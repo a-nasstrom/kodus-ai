@@ -461,7 +461,11 @@ export class GitHubProvider extends BaseProvider {
         return { id: String(resp.body.id) };
     }
 
-    authMode(): "token" {
+    // Return type widened from the literal "token" to the full union so
+    // GitHubAppProvider (which extends this class) can override and
+    // return "oauth" without TS complaining about variance — the App
+    // path identifies the integration by installationId, not a PAT.
+    authMode(): "token" | "oauth" | "app-password" {
         return "token";
     }
 

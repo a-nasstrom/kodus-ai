@@ -45,7 +45,7 @@ export class GitHubAppProvider extends GitHubProvider {
         this.installationId = requireEnv("GH_APP_INSTALLATION_ID");
     }
 
-    override authMode(): "oauth" {
+    override authMode(): "token" | "oauth" | "app-password" {
         return "oauth";
     }
 
