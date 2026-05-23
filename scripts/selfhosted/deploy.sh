@@ -250,6 +250,21 @@ $OVERRIDE_YML
 EOF
 ok "Override written"
 
+# Also persist the override on the dev machine so any FUTURE droplet
+# (e.g. the sso-e2e droplet, which delegates to selfhosted/provision.sh
+# but never runs deploy.sh) can pick up the same image tags without
+# requiring a separate rebuild + push. provision.sh checks for this
+# file post-rsync and SCPs it onto the new droplet BEFORE install.sh
+# runs, so install.sh's docker compose up sees the override and pulls
+# from ghcr.io/<gh-user>/*:dev-<name> instead of the org's stale or
+# nonexistent :latest tags.
+KODUS_DEV_DIR="${HOME}/.kodus-dev"
+mkdir -p "$KODUS_DEV_DIR"
+cat > "${KODUS_DEV_DIR}/last-deploy.override.yml" <<EOF
+$OVERRIDE_YML
+EOF
+ok "Cached override at ~/.kodus-dev/last-deploy.override.yml (for sso-e2e + future droplets)"
+
 # ---------- pull + restart on droplet ----------
 # Translate our internal service keys → compose service names so we don't
 # accidentally `pull web` (no such service) instead of `pull kodus-web`.

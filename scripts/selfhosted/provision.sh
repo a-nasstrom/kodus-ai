@@ -177,6 +177,23 @@ provision_ssh_key() {
 
 provision_server() {
     local label=$1 user_data=$2
+
+    # Guard against non-ASCII bytes in cloud-init user_data. Today
+    # (2026-05-23) a single em-dash in a comment caused cloud-init to
+    # silently reject the entire user_data, dropping write_files and
+    # runcmd; the droplet booted bare and provision.sh exited with the
+    # uninformative "kodus-ready missing". Fail fast here with a
+    # specific error instead of paying $0.02 for a useless droplet
+    # plus 2 minutes of cloud-init wait.
+    if LC_ALL=C grep -q '[^[:print:][:space:]]' <<<"$user_data"; then
+        local bad_line
+        bad_line=$(LC_ALL=C grep -n '[^[:print:][:space:]]' <<<"$user_data" | head -1)
+        err "cloud-init user_data contains non-ASCII byte (line: $bad_line)"
+        err "  cloud-init rejects the whole user_data when this happens (silently)."
+        err "  Replace smart quotes / em-dashes / accented chars with ASCII."
+        exit 1
+    fi
+
     case "$TEST_VM_PROVIDER" in
         digitalocean)
             local resp
@@ -353,12 +370,14 @@ write_files:
   # Pull Docker Hub images via Google's public mirror instead of going
   # directly to registry-1.docker.io. Some DigitalOcean droplets land
   # on egress paths where IPv4 traffic to AWS us-east-1 (Docker Hub's
-  # CDN) silently blackholes at hop 5 of the DO backbone — observed
+  # CDN) silently blackholes at hop 5 of the DO backbone -- observed
   # 2026-05-23 on 159.203.110.117 where every pull of pgvector/mongo
   # timed out, while ghcr.io (Azure) and mirror.gcr.io (Google) both
   # responded in ~150ms from the same host. The Docker daemon falls
-  # back to docker.io if the mirror doesn't have the image, so this
-  # is also self-healing if mirror.gcr.io ever drops an image.
+  # back to docker.io if the mirror does not have the image, so this
+  # is also self-healing if mirror.gcr.io ever drops an image. All
+  # characters in this comment MUST stay ASCII -- cloud-init rejects
+  # the whole user_data (silently!) if it sees non-ASCII bytes.
   - path: /etc/docker/daemon.json
     content: |
       {
@@ -401,6 +420,44 @@ rsync -az --delete \
     "$KODUS_INSTALLER_PATH/" "root@$SERVER_IP:/opt/kodus-installer/"
 ssh_vm "chmod +x /opt/kodus-installer/scripts/*.sh"
 ok "Installer transferred"
+
+# ---------- apply cached dev image override (if any) ----------
+# If the operator ran `yarn selfhosted:deploy --name <something>` at any
+# point on this Mac, it cached a docker-compose.override.yml at
+# ~/.kodus-dev/last-deploy.override.yml that pins every kodus-* service
+# to a specific dev-tag in their personal GHCR namespace. Apply it to
+# this droplet too, so a fresh sso-e2e (or any other future droplet
+# that delegates here) uses the SAME images as the matrix droplet
+# instead of falling back to the org's `:latest` tag -- which today
+# may not exist OR may be stale relative to the local build.
+# Idempotent no-op when the cache file is missing (e.g. a totally
+# fresh dev machine that never ran deploy.sh).
+OVERRIDE_CACHE="${HOME}/.kodus-dev/last-deploy.override.yml"
+if [ -f "$OVERRIDE_CACHE" ]; then
+    log "Applying cached dev-image override from $OVERRIDE_CACHE"
+    scp -i "$LOCAL_SSH_KEY" \
+        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+        "$OVERRIDE_CACHE" "root@$SERVER_IP:/opt/kodus-installer/docker-compose.override.yml"
+    # Droplet has to authenticate to GHCR before docker compose can
+    # pull from the personal namespace (images are private by
+    # default). Forward the dev machine's gh CLI token; revoke right
+    # after install.sh finishes pulling so the token doesn't sit on
+    # disk over the lifetime of the droplet.
+    if command -v gh >/dev/null 2>&1; then
+        GH_USER_FOR_LOGIN=$(gh api user --jq .login 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+        GH_TOKEN_FOR_DROPLET=$(gh auth token 2>/dev/null || true)
+        if [ -n "$GH_USER_FOR_LOGIN" ] && [ -n "$GH_TOKEN_FOR_DROPLET" ]; then
+            ssh_vm "echo '$GH_TOKEN_FOR_DROPLET' | docker login ghcr.io -u '$GH_USER_FOR_LOGIN' --password-stdin >/dev/null"
+            ok "Droplet logged into ghcr.io as $GH_USER_FOR_LOGIN (for override pull)"
+        else
+            warn "Could not resolve GH user/token; install.sh may fail to pull private images"
+        fi
+        unset GH_TOKEN_FOR_DROPLET
+    else
+        warn "gh CLI not found; install.sh may fail to pull private GHCR images"
+    fi
+    ok "Override applied"
+fi
 
 # ---------- cloudflared tunnel ----------
 log "Starting cloudflared quick tunnel for :3332..."
