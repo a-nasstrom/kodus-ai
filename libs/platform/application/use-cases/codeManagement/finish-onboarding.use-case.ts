@@ -117,37 +117,23 @@ export class FinishOnboardingUseCase {
             );
             __mark('createOrUpdate:PLATFORM_CONFIGS', __t);
 
-            __t = Date.now();
-            await this.generateKodyRulesUseCase.execute(
-                { teamId, months: 3 },
-                organizationId,
-            );
-            __mark('generateKodyRules', __t);
-
-            // enable all generated rules
-            __t = Date.now();
-            const rules = await this.findKodyRulesUseCase.execute(
-                organizationId,
-                {},
-            );
-            __mark('findKodyRules', __t, { ruleCount: rules?.length ?? 0 });
-
-            if (rules && rules.length > 0) {
-                __t = Date.now();
-                const ruleIds = rules.map((rule) => rule.uuid);
-                await this.changeStatusKodyRulesUseCase.execute({
-                    ruleIds,
-                    status: KodyRulesStatus.ACTIVE,
-                });
-                __mark('changeStatusKodyRules', __t, {
-                    ruleCount: ruleIds.length,
-                });
-            }
-
             // Rule generation makes dozens of provider API calls and can
-            // take tens of seconds (Bitbucket especially). Run it detached
-            // so onboarding completes immediately; the frontend polls
-            // `kodyLearningStatus` to know when rules are ready.
+            // take tens of seconds, and on Bitbucket Cloud the per-endpoint
+            // burst limits (x-envoy-ratelimited=true) blow past even
+            // sequential calls with exponential-backoff 429 retry inside a
+            // single HTTP request. The previous synchronous block here
+            // (await generateKodyRulesUseCase + findKodyRules + activate)
+            // surfaced as `finishOnboarding HTTP 500` on the 2026-05-23
+            // self-hosted matrix because GenerateKodyRulesUseCase exhausted
+            // its retries on Atlassian Edge throttling. The same work runs
+            // inside `generateKodyRulesInBackground` below, which already
+            // does generate → find → activate with retry-with-backoff
+            // wrapping the whole pipeline and owns the
+            // kodyLearningStatus lifecycle (GENERATING_RULES → ENABLED) so
+            // the frontend poll resolves regardless. Detaching this work
+            // lets finishOnboarding return immediately instead of holding
+            // the HTTP request open for the duration of the rule
+            // generation.
             setImmediate(() => {
                 void this.generateKodyRulesInBackground(organizationId, teamId);
             });
