@@ -290,6 +290,24 @@ case "$MODE" in
             # SSO E2E droplet only matters if the matrix file references
             # an sso-* scenario. Cheap check: grep the YAML.
             if grep -qE '^\s*-\s*sso-(cookie-domain|multi-user)\b' "$E2E_DIR/$MATRIX_FILE"; then
+                # The sso-e2e droplet's bootstrap-kodus-sso.sh has to
+                # POST /sso-config, which is gated by the enterprise-
+                # tier license guard (libs/ee/license/guards/
+                # enterprise-tier.guard.ts). A signed-up tenant on a
+                # license-less droplet rejects it with HTTP 403
+                # "organization is not on a supported plan", and the
+                # provision script exits 1 — burning ~10 min on a
+                # doomed droplet. Fail FAST here instead.
+                #
+                # Operator fix: set SH_LICENSE_KEY in ~/.kodus-dev/config
+                # (op://Engineering/kodus-self-hosted-dev/license-paid).
+                if [ -z "${SH_LICENSE_KEY:-}" ]; then
+                    err "Matrix references sso-* scenarios but SH_LICENSE_KEY is empty."
+                    err "  sso-e2e droplet provision will fail at POST /sso-config (HTTP 403 enterprise tier)."
+                    err "  Fix: set SH_LICENSE_KEY in ~/.kodus-dev/config (yarn selfhosted:setup)."
+                    err "  Workaround for this run: use a YAML without sso-cookie-domain / sso-multi-user."
+                    exit 1
+                fi
                 log "auto-provision: ensuring sso-e2e droplet (--reuse)"
                 "$REPO_ROOT/scripts/sso-e2e/droplet/provision.sh" --reuse --skip-test
             fi

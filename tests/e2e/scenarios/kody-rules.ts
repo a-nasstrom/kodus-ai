@@ -81,11 +81,19 @@ export const kodyRulesCreateAndApply: Scenario = {
         await ctx.kodus.finishOnboarding(session, repo);
 
         const ruleName = `e2e-rule-${ctx.runId.slice(0, 8)}-${randomUUID().slice(0, 6)}`;
-        // Unambiguous wording: explicitly call out comments AND string
-        // literals so a pedantic LLM doesn't excuse comment-only matches as
-        // "not a string literal in the JS sense". The fixture has both.
+        // The rule must be unambiguous AND override intent-aware reasoning.
+        // Prior wording said "Forbid any occurrence... including in comments
+        // and string literals" — the fixture file declares itself as an
+        // "intentional E2E fixture", and Kimi K2.6 then "helpfully" excuses
+        // every match as deliberate test data, returning 0 findings. This
+        // surfaced as github-only flake on 2026-05-23 (gitlab/azure passed
+        // by luck on the same fixture). Reframe the rule as a mechanical
+        // string check with explicit instructions to ignore comments,
+        // fixtures, file purpose, and authorial intent — the LLM cannot
+        // claim the marker is "intentional" when the rule itself names
+        // fixture/test/intentional code as still-in-scope.
         const ruleInstruction =
-            "Forbid any occurrence of the identifier TODO_REMOVE_ME in source files, including in comments and string literals.";
+            "Mechanical static-analysis check (no intent reasoning, no fixture exemption): flag EVERY occurrence of the substring `TODO_REMOVE_ME` anywhere in the diff — including identifiers, string literals, comments, fixture files, test code, legacy modules, and code the author explicitly marks as intentional. The presence of the substring is the violation. Do NOT skip an occurrence because the file claims to be a test fixture or because a comment says the marker is intentional.";
 
         const ruleResp = await http<{
             data?: { uuid?: string; id?: string };

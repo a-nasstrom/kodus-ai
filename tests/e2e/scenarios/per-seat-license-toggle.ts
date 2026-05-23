@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { http, ensureOk } from "../lib/http.js";
+import { logger } from "../lib/log.js";
 import type {
     ProviderName,
     RunContext,
     Scenario,
 } from "../lib/types.js";
+
+const log = logger("per-seat");
 
 // Per-provider head→base fixture branches. Mirrors the convention used by
 // the other scenarios (license-attribution, code-review-basic): each
@@ -123,56 +126,83 @@ export const perSeatLicenseToggle: Scenario = {
         );
         const gitTool = ctx.provider.licenseGitTool();
 
-        // Force `assignedUsers = []` from the start. POST /license/assign
-        // with licenseStatus=inactive is idempotent — if the user isn't in
-        // the list it's a no-op.
-        await toggleSeat(baseUrl, authHeader, userId, gitTool, "inactive");
-        await assertSeatCount(baseUrl, authHeader, 0, ctx);
-        const usersBeforePhase1 = await fetchSeats(baseUrl, authHeader);
+        try {
+            // Force `assignedUsers = []` from the start. POST /license/assign
+            // with licenseStatus=inactive is idempotent — if the user isn't in
+            // the list it's a no-op.
+            await toggleSeat(baseUrl, authHeader, userId, gitTool, "inactive");
+            await assertSeatCount(baseUrl, authHeader, 0, ctx);
+            const usersBeforePhase1 = await fetchSeats(baseUrl, authHeader);
 
-        const phase1 = await runReviewPhase(ctx, fixture, {
-            label: "unassigned-before",
-            expectReview: false,
-            pollTimeoutSec: 120,
-            seatsAtStart: usersBeforePhase1,
-        });
+            const phase1 = await runReviewPhase(ctx, fixture, {
+                label: "unassigned-before",
+                expectReview: false,
+                pollTimeoutSec: 120,
+                seatsAtStart: usersBeforePhase1,
+            });
 
-        await toggleSeat(baseUrl, authHeader, userId, gitTool, "active");
-        await assertSeatCount(baseUrl, authHeader, 1, ctx);
-        const usersBeforePhase2 = await fetchSeats(baseUrl, authHeader);
+            await toggleSeat(baseUrl, authHeader, userId, gitTool, "active");
+            await assertSeatCount(baseUrl, authHeader, 1, ctx);
+            const usersBeforePhase2 = await fetchSeats(baseUrl, authHeader);
 
-        const phase2 = await runReviewPhase(ctx, fixture, {
-            label: "assigned",
-            expectReview: true,
-            // Measured per-provider review duration on tiny-url + Kimi K2.6:
-            //   bitbucket ~10 min, github/azure ~14 min, gitlab 14–15 min
-            // with variance from sandbox cold-start + LLM API latency.
-            // A 900s budget passed gitlab on a fast run but missed it on a
-            // slow run (15 min exact) — a real flake source. Bump to 1500s
-            // (25 min) so the slowest legitimate review still completes
-            // with margin; anything longer signals a real pipeline hang
-            // and should fail loudly, not be retried.
-            pollTimeoutSec: 1500,
-            seatsAtStart: usersBeforePhase2,
-        });
+            const phase2 = await runReviewPhase(ctx, fixture, {
+                label: "assigned",
+                expectReview: true,
+                // Measured per-provider review duration on tiny-url + Kimi K2.6:
+                //   bitbucket ~10 min, github/azure ~14 min, gitlab 14–15 min
+                // with variance from sandbox cold-start + LLM API latency.
+                // A 900s budget passed gitlab on a fast run but missed it on a
+                // slow run (15 min exact) — a real flake source. Bump to 1500s
+                // (25 min) so the slowest legitimate review still completes
+                // with margin; anything longer signals a real pipeline hang
+                // and should fail loudly, not be retried.
+                pollTimeoutSec: 1500,
+                seatsAtStart: usersBeforePhase2,
+            });
 
-        await toggleSeat(baseUrl, authHeader, userId, gitTool, "inactive");
-        await assertSeatCount(baseUrl, authHeader, 0, ctx);
-        const usersBeforePhase3 = await fetchSeats(baseUrl, authHeader);
+            await toggleSeat(baseUrl, authHeader, userId, gitTool, "inactive");
+            await assertSeatCount(baseUrl, authHeader, 0, ctx);
+            const usersBeforePhase3 = await fetchSeats(baseUrl, authHeader);
 
-        const phase3 = await runReviewPhase(ctx, fixture, {
-            label: "unassigned-after",
-            expectReview: false,
-            pollTimeoutSec: 120,
-            seatsAtStart: usersBeforePhase3,
-        });
+            const phase3 = await runReviewPhase(ctx, fixture, {
+                label: "unassigned-after",
+                expectReview: false,
+                pollTimeoutSec: 120,
+                seatsAtStart: usersBeforePhase3,
+            });
 
-        return {
-            userGitId: userId,
-            userIdType: typeof userId,
-            gitTool,
-            phases: [phase1, phase2, phase3],
-        };
+            return {
+                userGitId: userId,
+                userIdType: typeof userId,
+                gitTool,
+                phases: [phase1, phase2, phase3],
+            };
+        } finally {
+            // Restore droplet to "no license active" so subsequent cells
+            // (gitlab/bitbucket/azure × license-paid, or github × license-free)
+            // don't inherit the seats=1 + user-unassigned state and skip every
+            // review with "User Not Licensed". Persisting an invalid key makes
+            // validateOrganizationLicense() return valid=false, which on
+            // self-hosted means `allowed=true` (Community Edition) — no
+            // per-seat enforcement. See permissionValidation.service.ts:302.
+            // Best-effort: a failure here would mask the real test result, so
+            // we swallow it and only log.
+            try {
+                await http(
+                    `${baseUrl}/license/activate`,
+                    {
+                        method: "POST",
+                        headers: authHeader,
+                        body: { licenseKey: "" },
+                        timeoutMs: 10_000,
+                    },
+                );
+            } catch (err) {
+                log.info(
+                    `teardown: failed to clear license (next cell may inherit seats=1): ${String(err)}`,
+                );
+            }
+        }
     },
 };
 
