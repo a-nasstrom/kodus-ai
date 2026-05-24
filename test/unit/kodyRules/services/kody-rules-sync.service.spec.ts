@@ -22,7 +22,22 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
         defaultBranch: 'main',
     };
 
-    function createService() {
+    function createService(
+        opts: {
+            ideRulesSyncEnabled?: boolean;
+            fileContent?: string;
+        } = {},
+    ) {
+        const ideRulesSyncEnabled = opts.ideRulesSyncEnabled ?? false;
+        const fileContent =
+            opts.fileContent ??
+            [
+                '---',
+                '# @kody-sync',
+                '---',
+                'Logging rule content',
+            ].join('\n');
+
         const kodyRulesService = {
             createOrUpdate: jest.fn().mockResolvedValue({ uuid: 'rule-1' }),
         };
@@ -32,7 +47,7 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
                     repositories: [
                         {
                             id: 'repo-1',
-                            configs: { ideRulesSyncEnabled: false },
+                            configs: { ideRulesSyncEnabled },
                             directories: [
                                 {
                                     id: 'dir-1',
@@ -57,15 +72,9 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
             getRepositoryAllFiles: jest.fn(),
             getRepositoryContentFile: jest.fn().mockResolvedValue({
                 data: {
-                    content: Buffer.from(
-                        [
-                            '---',
-                            '# @kody-sync',
-                            '---',
-                            'Logging rule content',
-                        ].join('\n'),
-                        'utf-8',
-                    ).toString('base64'),
+                    content: Buffer.from(fileContent, 'utf-8').toString(
+                        'base64',
+                    ),
                     encoding: 'base64',
                 },
             }),
@@ -142,6 +151,37 @@ describe('KodyRulesSyncService.syncRepositoryMain', () => {
             organizationAndTeamData,
             expect.objectContaining({
                 sourcePath: 'qantilever/.cursor/rules/logging.mdc',
+                // Source file carries `@kody-sync` → rule is pinned.
+                // Drives the UI's orphan-chip exclusion so this rule
+                // doesn't get flagged as orphan when the toggle is off.
+                pinnedSync: true,
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it('marks pinnedSync=false when the source file has no @kody-sync marker (toggle on)', async () => {
+        const { service, kodyRulesService } = createService({
+            ideRulesSyncEnabled: true,
+            fileContent: [
+                '---',
+                'title: Logging Rule',
+                '---',
+                'Use log instead of logger',
+            ].join('\n'),
+        });
+
+        await service.syncRepositoryMain({
+            organizationAndTeamData,
+            repository,
+            path: 'qantilever/.cursor/rules/logging.mdc',
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                sourcePath: 'qantilever/.cursor/rules/logging.mdc',
+                pinnedSync: false,
             }),
             expect.any(Object),
         );

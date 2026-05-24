@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@components/ui/badge";
+import { Pin } from "lucide-react";
 import {
     inferRuleOrigin,
     type InferredRuleOrigin,
@@ -43,7 +44,11 @@ const ORIGIN_CLASSES: Record<
 };
 
 type OriginBadgeProps = {
-    rule: { sourcePath?: string | null; origin?: string | null };
+    rule: {
+        sourcePath?: string | null;
+        origin?: string | null;
+        pinnedSync?: boolean | null;
+    };
 };
 
 // Static visual badge that names the rule's origin (Auto-sync / Onboard /
@@ -52,14 +57,24 @@ type OriginBadgeProps = {
 // asChild) created a setRef loop in our setup. The hover tooltip is
 // rendered as a native `title` attribute instead — no Radix slot, no
 // composed refs, zero risk of infinite update.
+//
+// Auto-sync rules whose source file carries an `@kody-sync` marker
+// (`pinnedSync=true`) render a Pin icon inside the badge and the
+// tooltip names the override — so the user can tell at a glance that
+// the rule keeps being synced even with the repo's auto-sync toggle off,
+// and that it won't appear in the orphan chip.
 export const OriginBadge = ({ rule }: OriginBadgeProps) => {
     const origin = inferRuleOrigin(rule);
     if (origin === "manual") return null;
 
-    const tooltip =
-        origin === "Auto-sync" && rule.sourcePath
-            ? "Imported from " + rule.sourcePath
-            : ORIGIN_TOOLTIPS[origin];
+    const isPinned = origin === "Auto-sync" && rule.pinnedSync === true;
+
+    const tooltip = isPinned
+        ? "Pinned via @kody-sync — kept in sync even with auto-sync off" +
+          (rule.sourcePath ? " (" + rule.sourcePath + ")" : "")
+        : origin === "Auto-sync" && rule.sourcePath
+          ? "Imported from " + rule.sourcePath
+          : ORIGIN_TOOLTIPS[origin];
 
     return (
         <Badge
@@ -69,6 +84,12 @@ export const OriginBadge = ({ rule }: OriginBadgeProps) => {
             className={
                 "min-h-auto px-2.5 py-1 ring-1 " + ORIGIN_CLASSES[origin]
             }>
+            {isPinned && (
+                <Pin
+                    className="-ml-0.5 mr-1 size-3 -rotate-45"
+                    aria-hidden
+                />
+            )}
             {origin}
         </Badge>
     );

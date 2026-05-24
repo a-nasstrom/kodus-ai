@@ -284,13 +284,19 @@ const KodyRulesPageContent = () => {
     // the count. Onboarding / Kody-generated rules share the
     // "sourcePath is set" shape but come from unrelated flows and don't
     // count here.
+    //
+    // Rules with `pinnedSync=true` are EXCLUDED: their source file
+    // carries `@kody-sync`, so the backend keeps syncing them even
+    // when the repo toggle is off. They're actively maintained, not
+    // orphans. See `kodyRulesSync.service.ts:shouldForceSync`.
     const autoSyncedActiveCount = useMemo(
         () =>
             kodyRules.filter(
                 (rule) =>
                     (rule.status === KodyRulesStatus.ACTIVE ||
                         rule.status === KodyRulesStatus.PAUSED) &&
-                    inferRuleOrigin(rule) === "Auto-sync",
+                    inferRuleOrigin(rule) === "Auto-sync" &&
+                    !rule.pinnedSync,
             ).length,
         [kodyRules],
     );
@@ -385,11 +391,15 @@ const KodyRulesPageContent = () => {
 
         // Banner CTA quick-filter (forces "Auto-sync only") wins over the
         // popover filters so the orphan review experience stays focused.
+        // Same exclusion as `autoSyncedActiveCount`: pinned-sync rules
+        // are actively maintained via `@kody-sync` so they shouldn't
+        // appear in the orphan review view either.
         const bannerFilteredRules =
             onlyIdeSynced && ruleType === KodyRulesType.STANDARD
                 ? statusFilteredRules.filter(
                       (rule) =>
-                          inferRuleOrigin(rule as KodyRule) === "Auto-sync",
+                          inferRuleOrigin(rule as KodyRule) === "Auto-sync" &&
+                          !(rule as KodyRule).pinnedSync,
                   )
                 : statusFilteredRules;
 

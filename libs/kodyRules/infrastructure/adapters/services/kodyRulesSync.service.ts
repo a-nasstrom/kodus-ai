@@ -615,6 +615,14 @@ export class KodyRulesSyncService {
                     examples: Array.isArray(oneRule.examples)
                         ? (oneRule.examples as any)
                         : [],
+                    // Computed from current file content on every sync.
+                    // With the toggle off this is always true (we only
+                    // reach this branch for force-sync files); with the
+                    // toggle on it reflects the current marker state,
+                    // so a later toggle-off keeps pinned rules out of
+                    // the UI's orphan-chip count without needing a
+                    // separate backfill step.
+                    pinnedSync: this.shouldForceSync(decoded),
                 } as CreateKodyRuleDto;
 
                 const result =
@@ -901,6 +909,7 @@ export class KodyRulesSyncService {
                     examples: Array.isArray(oneRule.examples)
                         ? (oneRule.examples as any)
                         : [],
+                    pinnedSync: this.shouldForceSync(decoded),
                 } as CreateKodyRuleDto;
 
                 const result = await this.kodyRulesService.createOrUpdate(
@@ -1097,6 +1106,7 @@ export class KodyRulesSyncService {
             examples: Array.isArray(oneRule.examples)
                 ? (oneRule.examples as any)
                 : [],
+            pinnedSync: this.shouldForceSync(content),
         } as CreateKodyRuleDto;
 
         const result = await this.kodyRulesService.createOrUpdate(

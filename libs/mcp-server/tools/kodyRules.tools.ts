@@ -52,6 +52,9 @@ type KodyRuleInput = Required<
         | 'targetRuleUuid'
         | 'resolvedAt'
         | 'resolvedBy'
+        // MCP-created rules never come from the IDE-sync flow, so
+        // the `@kody-sync` pin doesn't apply.
+        | 'pinnedSync'
     >
 > & {
     severity: KodyRuleSeverity;
@@ -80,6 +83,7 @@ type KodyRuleMemoryInput = Required<
         | 'targetRuleUuid'
         | 'resolvedAt'
         | 'resolvedBy'
+        | 'pinnedSync'
     >
 >;
 
