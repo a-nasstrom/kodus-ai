@@ -100,24 +100,34 @@ Progress on the proper fix:
   `catch` (`backfill-historical-prs.use-case.ts:303`) swallows fetch errors
   into empty stats; the live review path now re-throws. Revisit in the issue.
 
-### 3. Parallel matrix architecture (OPTIMIZATION, not a blocker)
+### 3. Parallel matrix architecture — ✅ DONE & validated (2026-05-25)
 
-Run one droplet per provider so cells run in parallel (wall-time ~60min →
-~15min) and cross-cell license-state pollution becomes impossible. Estimated
-8–12h. Does **not** fix the Bitbucket token issue (single shared token). Design
-notes:
+One droplet per provider; provider units run in parallel, cells within a
+provider stay serial. Cross-provider license-state pollution is now
+impossible and wall-time dropped (matrix execution ~15min vs ~50-60min
+serial). Shipped on `quality-gates-v2` (commit `d9cf90835`):
 
-- Per-provider state files: `selfhosted-vm-matrix-<provider>.json`.
-- `tests/e2e/lib/runner.ts` `envForTarget(target, provider)` → resolve
-  `SELFHOSTED_API_BASE_URL_<PROVIDER>` with fallback to the shared var.
-- Group cells by provider; run providers in parallel via `Promise.allSettled`,
-  cells within a provider serial (preserve license-state ordering).
-- `scripts/e2e/run.sh`: `--auto-provision-per-provider` provisions N droplets
-  in parallel and exports per-provider URLs.
-- `selfhosted:deploy-all` / `selfhosted:destroy-all` helpers.
+- `envForTarget(target, provider)` resolves `SELFHOSTED_*_<PROVIDER>` with
+  fallback to the shared `SELFHOSTED_*` then `TARGET_*`. `selfhostedEnvSuffix`
+  (uppercase, non-alnum→_) is unit-tested.
+- `run-matrix.ts` splits into units: cloud = 1, self-hosted = 1 per provider,
+  all via `Promise.allSettled`.
+- `run.sh --auto-provision-per-provider` provisions `matrix-<provider>` per
+  provider and exports `SELFHOSTED_*_<SUFFIX>` (+ refreshed tunnel) each.
+  Build-once: a prior deploy's cached override propagates to fresh droplets.
+- `selfhosted:deploy-all` (build once, distribute) + `selfhosted:destroy-all`.
 
-A partial start of the `envForTarget(target, provider)` change was reverted to
-keep `chore/quality-gates` clean — redo it here.
+**Validated**: `full-no-sso.yml --target self-hosted
+--auto-provision-per-provider` ran github/gitlab/bitbucket/azure-devops in
+parallel — **6/6 each, 0 failures** (Azure exercised for the first time).
+Provisioning is still serial (parallelizing it is a minor future add). Does
+not change the Bitbucket single-token story — the per-credential gate
+(item #1) bounds that.
+
+> Note: SSO cells need `SH_LICENSE_KEY`, which is **empty** in
+> `~/.kodus-dev/config` — so `full.yml` (with sso-*) fail-fasts. Use
+> `full-no-sso.yml` until a license JWT is seeded. (`op read` confirms len 0;
+> don't be fooled by masked dumps showing `SH_LICENSE_KEY=<...>`.)
 
 ### 4. `MCP_MANAGER_URL` hostname wrong on self-hosted (COSMETIC)
 
