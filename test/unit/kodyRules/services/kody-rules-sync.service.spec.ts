@@ -562,6 +562,199 @@ describe('KodyRulesSyncService — Bug: orphaned rules after IDE sync toggle-off
     });
 });
 
+describe('KodyRulesSyncService — Bug: stale pinnedSync after marker removal (depin pass)', () => {
+    const organizationAndTeamData = { organizationId: 'org-1', teamId: 'team-1' };
+    const repository = {
+        id: 'repo-1',
+        name: 'backend-services',
+        fullName: 'quintoandar/backend-services',
+        defaultBranch: 'main',
+    };
+
+    function buildServiceForDepin(opts: {
+        existingRules: any[];
+        fileContent?: string | null; // null → "file removed"
+    }) {
+        const { existingRules, fileContent } = opts;
+
+        const kodyRulesService = {
+            findByOrganizationId: jest
+                .fn()
+                .mockResolvedValue({ rules: existingRules }),
+            createOrUpdate: jest
+                .fn()
+                .mockResolvedValue({ uuid: 'rule-updated' }),
+        };
+        const parametersService = {
+            findByKey: jest.fn().mockResolvedValue({
+                configValue: {
+                    repositories: [
+                        {
+                            id: 'repo-1',
+                            configs: { ideRulesSyncEnabled: false },
+                            directories: [],
+                        },
+                    ],
+                },
+            }),
+        };
+        const codeManagementService = {
+            getDefaultBranch: jest.fn().mockResolvedValue('main'),
+            getRepositoryAllFiles: jest.fn().mockResolvedValue([]),
+            getPullRequestByNumber: jest.fn().mockResolvedValue({
+                head: { ref: 'feature' },
+                base: { ref: 'main' },
+            }),
+            getRepositoryContentFile: jest.fn().mockResolvedValue(
+                fileContent === null
+                    ? null
+                    : {
+                          data: {
+                              content: Buffer.from(
+                                  fileContent ??
+                                      [
+                                          '---',
+                                          'title: Logging Rule',
+                                          '---',
+                                          'no marker here',
+                                      ].join('\n'),
+                                  'utf-8',
+                              ).toString('base64'),
+                              encoding: 'base64',
+                          },
+                      },
+            ),
+        };
+
+        const service = new KodyRulesSyncService(
+            kodyRulesService as any,
+            parametersService as any,
+            {} as any, // contextResolutionService
+            codeManagementService as any,
+            { execute: jest.fn().mockResolvedValue(undefined) } as any,
+            {} as any, // createOrUpdateKodyRulesUseCase
+            {} as any, // promptRunnerService
+            {} as any, // permissionValidationService
+            {} as any, // observabilityService
+            {} as any, // contextReferenceDetectionService
+        );
+        return { service, kodyRulesService, codeManagementService };
+    }
+
+    it('depins a previously-pinned rule when the PR drops the @kody-sync marker (toggle off)', async () => {
+        // BUG: with the toggle off, the force-sync loop skips the modified
+        // file (no marker → not in forceSyncFiles). The normal sync path
+        // never runs either. Without an explicit depin pass, the rule
+        // keeps `pinnedSync=true` forever and the orphan chip silently
+        // hides it from the user.
+        const { service, kodyRulesService } = buildServiceForDepin({
+            existingRules: [
+                {
+                    uuid: 'rule-was-pinned',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+        });
+
+        await service.syncFromChangedFiles({
+            organizationAndTeamData,
+            repository,
+            pullRequestNumber: 42,
+            files: [{ filename: '.cursorrules', status: 'modified' }],
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledTimes(1);
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'rule-was-pinned',
+                pinnedSync: false,
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it('soft-deletes the rule when the PR deletes the source file (toggle off)', async () => {
+        // The early-return at `forceSyncFiles.length === 0` used to leave
+        // the rule's record in the DB indefinitely. With the depin pass,
+        // removed files trigger `deleteRuleBySourcePath` so the rule is
+        // marked DELETED for audit/undo.
+        const { service, kodyRulesService } = buildServiceForDepin({
+            existingRules: [
+                {
+                    uuid: 'rule-orphaned',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+        });
+
+        await service.syncFromChangedFiles({
+            organizationAndTeamData,
+            repository,
+            pullRequestNumber: 42,
+            files: [{ filename: '.cursorrules', status: 'removed' }],
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'rule-orphaned',
+                status: 'deleted',
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it('does nothing when the changed file has no matching existing rule (no-op safety)', async () => {
+        // Spurious changes to rule-pattern files (e.g. a brand-new
+        // `.cursorrules` not yet imported) shouldn't trigger writes.
+        const { service, kodyRulesService } = buildServiceForDepin({
+            existingRules: [],
+        });
+
+        await service.syncFromChangedFiles({
+            organizationAndTeamData,
+            repository,
+            pullRequestNumber: 42,
+            files: [{ filename: '.cursorrules', status: 'modified' }],
+        });
+
+        expect(kodyRulesService.createOrUpdate).not.toHaveBeenCalled();
+    });
+
+    it('skips the depin write when the rule is already not pinned (no audit-log noise)', async () => {
+        // depinRuleBySourcePath has an explicit `pinnedSync !== true` guard
+        // so we don't spam audit-log EDIT events on every PR for rules
+        // that are already in the correct state.
+        const { service, kodyRulesService } = buildServiceForDepin({
+            existingRules: [
+                {
+                    uuid: 'rule-already-not-pinned',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: false,
+                },
+            ],
+        });
+
+        await service.syncFromChangedFiles({
+            organizationAndTeamData,
+            repository,
+            pullRequestNumber: 42,
+            files: [{ filename: '.cursorrules', status: 'modified' }],
+        });
+
+        expect(kodyRulesService.createOrUpdate).not.toHaveBeenCalled();
+    });
+});
+
 // scopePathToSourceDirectory was removed — its responsibility moved to
 // `validateAndScopeIdeRulePath` in libs/common/utils/kody-rules/file-patterns.ts.
 // See test/unit/common/kody-rules-file-patterns.spec.ts for the equivalent
