@@ -755,6 +755,264 @@ describe('KodyRulesSyncService — Bug: stale pinnedSync after marker removal (d
     });
 });
 
+describe('KodyRulesSyncService — depin pass: syncRepositoryMain full-scan + syncSingleFileFromMain', () => {
+    const organizationAndTeamData = { organizationId: 'org-1', teamId: 'team-1' };
+    const repository = {
+        id: 'repo-1',
+        name: 'backend-services',
+        fullName: 'quintoandar/backend-services',
+        defaultBranch: 'main',
+    };
+
+    function buildService(opts: {
+        existingRules: any[];
+        allFiles?: Array<{ path: string; size?: number }>;
+        // Maps `filename` → file content. `null` means "file not found".
+        // Missing key falls back to a default content WITHOUT @kody-sync.
+        fileContents?: Record<string, string | null>;
+    }) {
+        const { existingRules, allFiles = [], fileContents = {} } = opts;
+
+        const kodyRulesService = {
+            findByOrganizationId: jest
+                .fn()
+                .mockResolvedValue({ rules: existingRules }),
+            createOrUpdate: jest
+                .fn()
+                .mockResolvedValue({ uuid: 'rule-updated' }),
+        };
+        const parametersService = {
+            findByKey: jest.fn().mockResolvedValue({
+                configValue: {
+                    repositories: [
+                        {
+                            id: 'repo-1',
+                            configs: { ideRulesSyncEnabled: false },
+                            directories: [],
+                        },
+                    ],
+                },
+            }),
+        };
+        const codeManagementService = {
+            getDefaultBranch: jest.fn().mockResolvedValue('main'),
+            getRepositoryAllFiles: jest.fn().mockResolvedValue(allFiles),
+            getRepositoryContentFile: jest
+                .fn()
+                .mockImplementation((req: any) => {
+                    const filename = req?.file?.filename;
+                    const content =
+                        filename in fileContents
+                            ? fileContents[filename]
+                            : 'no marker here';
+                    if (content === null) return null;
+                    return {
+                        data: {
+                            content: Buffer.from(content, 'utf-8').toString(
+                                'base64',
+                            ),
+                            encoding: 'base64',
+                        },
+                    };
+                }),
+        };
+
+        const service = new KodyRulesSyncService(
+            kodyRulesService as any,
+            parametersService as any,
+            {} as any, // contextResolutionService
+            codeManagementService as any,
+            { execute: jest.fn().mockResolvedValue(undefined) } as any,
+            {} as any, // createOrUpdateKodyRulesUseCase
+            {} as any, // promptRunnerService
+            { validateBasicLicense: jest.fn().mockResolvedValue({ allowed: true }), getBYOKConfig: jest.fn().mockResolvedValue(undefined) } as any,
+            {} as any, // observabilityService
+            {} as any, // contextReferenceDetectionService
+        );
+        return { service, kodyRulesService, codeManagementService };
+    }
+
+    it('full-scan depin: depins pinned rules whose source file lost the @kody-sync marker', async () => {
+        // The full-scan is invoked from the "Resync rules from IDE" button
+        // (no `path` arg). With the toggle off, the depin pass walks every
+        // pinned rule and reconciles against the filesystem snapshot.
+        const { service, kodyRulesService } = buildService({
+            existingRules: [
+                {
+                    uuid: 'rule-pin-stale',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+            allFiles: [{ path: '.cursorrules' }],
+            fileContents: { '.cursorrules': 'plain rule body, no marker' },
+        });
+
+        await service.syncRepositoryMain({
+            organizationAndTeamData,
+            repository,
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'rule-pin-stale',
+                pinnedSync: false,
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it('full-scan depin: soft-deletes pinned rules whose source file is gone from the default branch', async () => {
+        // File listed in DB but no longer in the repo's allFiles snapshot
+        // → soft-delete. Without this, `pinnedSync=true` would silently
+        // hide the rule from the chip even though the file is gone.
+        const { service, kodyRulesService } = buildService({
+            existingRules: [
+                {
+                    uuid: 'rule-pin-gone',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursor/rules/old.mdc',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+            allFiles: [], // file no longer in repo
+        });
+
+        await service.syncRepositoryMain({
+            organizationAndTeamData,
+            repository,
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'rule-pin-gone',
+                status: 'deleted',
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it('full-scan depin: leaves still-pinned rules alone (file present AND marker present)', async () => {
+        // Sanity check: the reconciliation should be a no-op for rules
+        // whose state still matches the filesystem.
+        const { service, kodyRulesService } = buildService({
+            existingRules: [
+                {
+                    uuid: 'rule-still-pinned',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+            allFiles: [{ path: '.cursorrules' }],
+            fileContents: {
+                '.cursorrules': ['# @kody-sync', 'rule body'].join('\n'),
+            },
+        });
+
+        // Stub the LLM conversion so the re-sync actually completes without
+        // calling out to a real model.
+        jest.spyOn(service as any, 'convertFileToKodyRules').mockResolvedValue([
+            {
+                title: 'A rule',
+                rule: 'body',
+                path: '**/*',
+                severity: 'medium',
+                scope: 'file',
+                examples: [],
+            },
+        ]);
+        jest.spyOn(service as any, 'processContextReferences').mockResolvedValue(undefined);
+
+        await service.syncRepositoryMain({
+            organizationAndTeamData,
+            repository,
+        });
+
+        // Exactly one write: the normal re-sync of the still-pinned rule
+        // (which writes pinnedSync=true back). No depin, no delete.
+        const calls = (kodyRulesService.createOrUpdate as jest.Mock).mock.calls;
+        expect(calls).toHaveLength(1);
+        expect(calls[0][1]).toEqual(
+            expect.objectContaining({
+                sourcePath: '.cursorrules',
+                pinnedSync: true,
+            }),
+        );
+    });
+
+    it('single-file (syncSingleFileFromMain via path arg): depins existing pinned rule when file no longer has @kody-sync (toggle off)', async () => {
+        // The single-file path is used by the "Resync this specific file"
+        // entry point. With the toggle off + no marker, the existing
+        // pinned rule should be depinned before early-returning.
+        const { service, kodyRulesService } = buildService({
+            existingRules: [
+                {
+                    uuid: 'rule-pin-stale',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+            fileContents: { '.cursorrules': 'body without marker' },
+        });
+
+        await service.syncRepositoryMain({
+            organizationAndTeamData,
+            repository,
+            path: '.cursorrules',
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'rule-pin-stale',
+                pinnedSync: false,
+            }),
+            expect.any(Object),
+        );
+    });
+
+    it('single-file: soft-deletes existing rule when the file is gone from the default branch (toggle off)', async () => {
+        // `null` content means the SCM call returned no file (file deleted).
+        // The single-file path should soft-delete the orphan rule.
+        const { service, kodyRulesService } = buildService({
+            existingRules: [
+                {
+                    uuid: 'rule-pin-gone',
+                    repositoryId: 'repo-1',
+                    sourcePath: '.cursorrules',
+                    status: 'active',
+                    pinnedSync: true,
+                },
+            ],
+            fileContents: { '.cursorrules': null },
+        });
+
+        await service.syncRepositoryMain({
+            organizationAndTeamData,
+            repository,
+            path: '.cursorrules',
+        });
+
+        expect(kodyRulesService.createOrUpdate).toHaveBeenCalledWith(
+            organizationAndTeamData,
+            expect.objectContaining({
+                uuid: 'rule-pin-gone',
+                status: 'deleted',
+            }),
+            expect.any(Object),
+        );
+    });
+});
+
 // scopePathToSourceDirectory was removed — its responsibility moved to
 // `validateAndScopeIdeRulePath` in libs/common/utils/kody-rules/file-patterns.ts.
 // See test/unit/common/kody-rules-file-patterns.spec.ts for the equivalent
