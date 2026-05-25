@@ -22,6 +22,7 @@ import { isFileMatchingGlob } from '@libs/common/utils/glob-utils';
 import { assignFileTiers, computeFileScores } from './llm/file-priority-scorer';
 import { byokToVercelModel, getModelName } from './llm/byok-to-vercel';
 import { resolveContextWindow } from './llm/model-context-window';
+import { AgentContextWindowTooSmallError } from './llm/errors';
 import {
     runAgentLoop,
     type AgentLoopSecrets,
@@ -83,6 +84,37 @@ const LARGE_PR_AGGRESSIVE_FILTER_PATTERNS = [
     '**/*.css',
     '**/*.scss',
 ];
+
+/**
+ * Preflight guard: when the agent's static overhead (system prompt +
+ * tool schemas + coverage list + PR context) already exceeds the
+ * model's context window, no PR can ever fit and the LLM call would
+ * fail immediately with a 4xx. Without this check the agent silently
+ * hangs until AGENT_TIMEOUT_MS (30 min) — see runAgentLoop's setTimeout
+ * — burning a queue slot and producing zero output.
+ *
+ * Exported so it can be unit-tested in isolation. Called from
+ * BaseCodeReviewAgentProvider.execute right after resolveContextWindow.
+ */
+export function assertContextWindowFitsOverhead(params: {
+    input: {
+        changedFiles?: FileChange[];
+        callGraph?: string;
+        prTitle?: string;
+        prBody?: string;
+    };
+    contextWindow: number;
+    modelName: string;
+}): void {
+    const overheadTokens = estimateNonDiffOverheadTokens(params.input);
+    if (overheadTokens >= params.contextWindow) {
+        throw new AgentContextWindowTooSmallError({
+            contextWindow: params.contextWindow,
+            overheadTokens,
+            modelName: params.modelName,
+        });
+    }
+}
 
 function estimateDiffTokens(files: FileChange[]): number {
     return files.reduce((sum, f) => {
@@ -565,6 +597,16 @@ export abstract class BaseCodeReviewAgentProvider {
         // tool schemas) — not just the diff.
         const contextWindow = resolveContextWindow({
             byokMaxInputTokens: byokConfig?.main?.maxInputTokens,
+            modelName,
+        });
+        // Fail fast when the configured model's context window cannot
+        // even hold the agent's static overhead. Without this, the loop
+        // would run to AGENT_TIMEOUT_MS (30 min) while the LLM 400s on
+        // every retry — see runAgentLoop. Surfaces as CONTEXT_OVERFLOW
+        // via classifyLLMError → friendlyMessage on lastReviewError.
+        assertContextWindowFitsOverhead({
+            input,
+            contextWindow,
             modelName,
         });
         const promptBudget = Math.floor(contextWindow * PROMPT_BUDGET_RATIO);

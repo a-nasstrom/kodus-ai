@@ -5,6 +5,7 @@ import {
     type DocumentationSearchAdapter,
 } from './agent-tools.factory';
 import { attachClassification, classifyLLMError } from './error-classifier';
+import { AgentPromptTooLargeError } from './errors';
 /**
  * Simple agent loop using Vercel AI SDK with native function calling.
  *
@@ -548,6 +549,59 @@ function computeStepBudgetNote(
     }
     return { note: '', phase: 'free' };
 }
+/**
+ * Rough char-per-token ratio used by the preflight estimator. Matches
+ * the same constant used by the base agent provider's prompt sizing.
+ */
+const PREFLIGHT_CHARS_PER_TOKEN = 4;
+/**
+ * Fraction of the context window held back for the model's reasoning
+ * + tool-call output. The agent emits structured findings JSON and may
+ * also produce thinking tokens; ~15% gives both room without being
+ * wasteful. Clamped to at least 2_048 tokens because below that, even
+ * a small `submitResult` payload can't fit.
+ */
+const PREFLIGHT_OUTPUT_RESERVE_RATIO = 0.15;
+const PREFLIGHT_MIN_OUTPUT_RESERVE_TOKENS = 2_048;
+
+/**
+ * Defense-in-depth preflight: before the agent loop calls generateText,
+ * estimate prompt tokens and refuse to proceed if they exceed the
+ * configured model's context window. Without this check, the Vercel AI
+ * SDK would retry the call up to `maxRetries` times against a 12K-context
+ * Llama with a 71K prompt — burning the AGENT_TIMEOUT_MS budget while
+ * each attempt fails identically.
+ *
+ * Pure function (no awaits, no I/O). Exported so it can be unit-tested.
+ * When contextWindowTokens is undefined we cannot enforce — callers that
+ * already resolve it (BaseCodeReviewAgentProvider does) will always pass
+ * a number.
+ */
+export function assertPromptFitsInContext(params: {
+    systemPrompt: string;
+    userPrompt: string;
+    contextWindowTokens: number | undefined;
+    modelName: string;
+}): void {
+    if (!params.contextWindowTokens || params.contextWindowTokens <= 0) {
+        return;
+    }
+    const promptChars =
+        (params.systemPrompt?.length ?? 0) + (params.userPrompt?.length ?? 0);
+    const estimatedTokens = Math.ceil(promptChars / PREFLIGHT_CHARS_PER_TOKEN);
+    const outputReserve = Math.max(
+        PREFLIGHT_MIN_OUTPUT_RESERVE_TOKENS,
+        Math.floor(params.contextWindowTokens * PREFLIGHT_OUTPUT_RESERVE_RATIO),
+    );
+    if (estimatedTokens + outputReserve > params.contextWindowTokens) {
+        throw new AgentPromptTooLargeError({
+            estimatedTokens,
+            contextWindowTokens: params.contextWindowTokens,
+            modelName: params.modelName,
+        });
+    }
+}
+
 export const AGENT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes max per agent
 // 10 minutes per individual LLM call — matches the undici headersTimeout
 // set in the worker bootstrap so neither layer aborts the other. Large
@@ -1056,6 +1110,19 @@ async function runAgentLoopBody(
             }),
     );
 
+    // Defense-in-depth: if the assembled prompt cannot fit, fail before
+    // the SDK retries the same doomed call up to maxRetries times.
+    // BaseCodeReviewAgentProvider has its own (coarser) overhead-only
+    // preflight; this one accounts for the actual systemPrompt +
+    // userPrompt size and catches cases where the overhead check passed
+    // but the diff content still pushes the total over the window.
+    assertPromptFitsInContext({
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        contextWindowTokens: input.contextWindowTokens,
+        modelName: (input.model as any)?.modelId ?? input.agentName ?? 'unknown',
+    });
+
     let result;
     try {
         result = await throttledGenerateText({
@@ -1069,6 +1136,14 @@ async function runAgentLoopBody(
                 generateText({
                     ...({ __kodusHardTimeoutMs: AGENT_TIMEOUT_MS } as any),
                     model: input.model,
+                    // Cap SDK-level retries to 1 on the main loop. The default
+                    // is 2 (3 total attempts); when the model genuinely can't
+                    // serve the prompt (context overflow, hard auth fail) the
+                    // extra retry burns minutes of the AGENT_TIMEOUT_MS budget
+                    // with no chance of succeeding. Cheap sub-calls
+                    // (severity classifier, dedup) keep the default since
+                    // their retries are short and cover real transient blips.
+                    maxRetries: 1,
                     abortSignal: abortController.signal,
                     system: withAnthropicCacheControl(
                         input.systemPrompt,
