@@ -535,9 +535,12 @@ REMOTE
 
 if [ -n "${SH_LICENSE_KEY:-}" ]; then
     log "Injecting SH_LICENSE_KEY..."
-    ssh_vm "cd /opt/kodus-installer && grep -qE '^API_KODUS_LICENSE_KEY=' .env \
-            && sed -i 's|^API_KODUS_LICENSE_KEY=.*|API_KODUS_LICENSE_KEY=$SH_LICENSE_KEY|' .env \
-            || echo 'API_KODUS_LICENSE_KEY=$SH_LICENSE_KEY' >> .env"
+    # KODUS_LICENSE_KEY is the customer-facing var SelfHostedLicenseService
+    # reads (NOT API_-prefixed). Injecting the wrong name leaves the install
+    # effectively unlicensed → enterprise features 403.
+    ssh_vm "cd /opt/kodus-installer && grep -qE '^KODUS_LICENSE_KEY=' .env \
+            && sed -i 's|^KODUS_LICENSE_KEY=.*|KODUS_LICENSE_KEY=$SH_LICENSE_KEY|' .env \
+            || echo 'KODUS_LICENSE_KEY=$SH_LICENSE_KEY' >> .env"
 else
     dim "  No SH_LICENSE_KEY set — stack will boot in installer default mode (no paid features)."
 fi

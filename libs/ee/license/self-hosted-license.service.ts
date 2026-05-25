@@ -294,19 +294,10 @@ export class SelfHostedLicenseService implements ILicenseService {
             // DB lookup failed, fall through to env var
         }
 
-        // Fallback to env var. The self-hosted installer injects the
-        // license as API_KODUS_LICENSE_KEY — the API_-prefixed convention
-        // used everywhere else in the codebase (API_URL, API_FRONTEND_URL,
-        // API_DATABASE_*). Reading the unprefixed KODUS_LICENSE_KEY meant
-        // the license was NEVER found from env, so every enterprise-tier
-        // feature (SSO config, user activity logs) 403'd on a correctly
-        // licensed self-hosted install. Prefer the prefixed name; keep the
-        // unprefixed one as a fallback for any setup that sets it directly.
-        return (
-            process.env.API_KODUS_LICENSE_KEY ||
-            process.env.KODUS_LICENSE_KEY ||
-            null
-        );
+        // Fallback to env var. KODUS_LICENSE_KEY is the customer-facing
+        // name self-hosted installs use — do NOT rename it (our test
+        // provisioning must set this exact var).
+        return process.env.KODUS_LICENSE_KEY || null;
     }
 
     private verifyAndDecode(token: string): SelfHostedLicensePayload | null {

@@ -197,10 +197,11 @@ env_set API_NODE_ENV "production"
 # guard — without a license the org is "not on a supported plan" and the
 # bootstrap aborts with HTTP 403. The matrix droplets get the license via
 # selfhosted/provision.sh; this script builds its own .env, so inject it
-# here too. run.sh's SSO precheck guarantees SH_LICENSE_KEY is non-empty
-# before this droplet is provisioned. (JWT is base64url — safe for the
-# sed '|' delimiter in env_set.)
-env_set API_KODUS_LICENSE_KEY "${SH_LICENSE_KEY:-}"
+# here too. The var name is KODUS_LICENSE_KEY — the customer-facing name
+# SelfHostedLicenseService reads (do NOT prefix with API_). run.sh's SSO
+# precheck guarantees SH_LICENSE_KEY is non-empty here. (JWT is base64url —
+# safe for the sed '|' delimiter in env_set.)
+env_set KODUS_LICENSE_KEY "${SH_LICENSE_KEY:-}"
 # Web container's SSR fetches go to API_BASE_URL directly. Caddy
 # terminates TLS so the cert chain is whatever ACME issued; Node trusts
 # the public LE roots out of the box. No NODE_EXTRA_CA_CERTS mount.
