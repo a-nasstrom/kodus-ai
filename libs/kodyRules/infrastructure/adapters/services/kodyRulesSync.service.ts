@@ -425,10 +425,14 @@ export class KodyRulesSyncService {
                 // normal sync path would never touch it again with the
                 // toggle off), which silently breaks the orphan-chip
                 // count.
+                // `ruleChanges` can be large; a Set keeps the per-file
+                // force-sync lookup O(1) inside the loop instead of the
+                // O(n) `Array.includes` (which made the pass O(n²)).
+                const forceSyncSet = new Set(forceSyncFiles);
                 let depinned = 0;
                 let removed = 0;
                 for (const f of ruleChanges) {
-                    if (forceSyncFiles.includes(f.filename)) continue;
+                    if (forceSyncSet.has(f.filename)) continue;
                     if (f.status === 'removed') {
                         await this.deleteRuleBySourcePath({
                             organizationAndTeamData,
