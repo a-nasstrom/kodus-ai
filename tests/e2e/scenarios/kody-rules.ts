@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunContext, Scenario } from "../lib/types.js";
 import { ensureOk, http } from "../lib/http.js";
+import { ensureLicenseSeat } from "../lib/onboarding.js";
 import { pollUntil } from "../providers/base.js";
 
 // Fixture branch pair per provider. Each fixture branch lives permanently in
@@ -79,6 +80,9 @@ export const kodyRulesCreateAndApply: Scenario = {
         await ctx.kodus.registerIntegration(session);
         const repo = await ctx.kodus.registerRepo(session);
         await ctx.kodus.finishOnboarding(session, repo);
+        // Rule application runs inside the review pipeline; on licensed
+        // self-hosted the PR author needs a seat or the review is skipped.
+        await ensureLicenseSeat(ctx.target, session, ctx.provider);
 
         const ruleName = `e2e-rule-${ctx.runId.slice(0, 8)}-${randomUUID().slice(0, 6)}`;
         // The rule must be unambiguous AND override intent-aware reasoning.

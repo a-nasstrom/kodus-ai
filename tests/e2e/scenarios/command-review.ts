@@ -1,5 +1,6 @@
 import type { RunContext, Scenario } from "../lib/types.js";
 import { http } from "../lib/http.js";
+import { ensureLicenseSeat } from "../lib/onboarding.js";
 
 // Same fixture branches as code-review-basic. The diff doesn't matter
 // for the command-review path — what's under test is whether posting
@@ -43,6 +44,9 @@ export const commandReview: Scenario = {
         await ctx.kodus.registerIntegration(session);
         const repo = await ctx.kodus.registerRepo(session);
         await ctx.kodus.finishOnboarding(session, repo);
+        // The @kody review command still runs through the prerequisites
+        // gate; on licensed self-hosted the PR author needs a seat.
+        await ensureLicenseSeat(ctx.target, session, ctx.provider);
 
         const fixture = FIXTURE_BRANCHES[ctx.provider.name];
         ctx.assert(
