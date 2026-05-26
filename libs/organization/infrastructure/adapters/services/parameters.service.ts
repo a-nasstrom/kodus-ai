@@ -111,7 +111,11 @@ export class ParametersService implements IParametersService {
             // config. Replaces the previous three-step find/update/insert,
             // which had no transaction boundary and was the source of the
             // "two active versions for the same team" production bug.
-            return this.parametersRepository.createNewActiveVersion(
+            // `await` is required so a QueryFailedError from the partial
+            // unique index (raised when two writers race past the app-level
+            // guard) propagates into the surrounding catch instead of
+            // escaping as an unhandled rejection.
+            return await this.parametersRepository.createNewActiveVersion(
                 parametersKey,
                 teamId,
                 configValue,
