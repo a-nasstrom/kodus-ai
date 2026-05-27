@@ -308,6 +308,7 @@ export class KodyRulesService implements IKodyRulesService {
                 targetRuleUuid: kodyRule?.targetRuleUuid,
                 resolvedAt: kodyRule?.resolvedAt,
                 resolvedBy: kodyRule?.resolvedBy,
+                pinnedSync: kodyRule?.pinnedSync,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };
@@ -374,6 +375,7 @@ export class KodyRulesService implements IKodyRulesService {
                 targetRuleUuid: kodyRule?.targetRuleUuid,
                 resolvedAt: kodyRule?.resolvedAt,
                 resolvedBy: kodyRule?.resolvedBy,
+                pinnedSync: kodyRule?.pinnedSync,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };
