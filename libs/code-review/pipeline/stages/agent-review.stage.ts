@@ -13,6 +13,7 @@ import {
 import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
+    getModelName,
 } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
@@ -287,13 +288,25 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
         // the org-level main.model when present — same resolution the agent
         // uses internally (`base-code-review-agent.provider.ts:541-551`).
         const mainByok = context.codeReviewConfig?.byokConfig?.main;
-        const effectiveModelName =
-            context.codeReviewConfig?.byokModel?.trim() ||
-            mainByok?.model ||
-            '';
+        const overrideModel =
+            context.codeReviewConfig?.byokModel?.trim();
+        const byokWithOverride =
+            overrideModel && mainByok
+                ? {
+                      ...context.codeReviewConfig?.byokConfig,
+                      main: { ...mainByok, model: overrideModel },
+                  }
+                : context.codeReviewConfig?.byokConfig;
+        // Use the same model-name formatter the agent uses (provider:model)
+        // so stage-emitted warnings and agent-emitted warnings share a
+        // dedup key. Otherwise dedupReviewWarnings sees them as distinct
+        // and the user sees duplicate bullets (PROMPT_COMPACTED listed
+        // twice — once with "gemini-2.5-flash" and once with
+        // "google_gemini:gemini-2.5-flash").
+        const effectiveModelName = getModelName(byokWithOverride);
         const effectiveContextWindow = resolveContextWindow({
             byokMaxInputTokens: mainByok?.maxInputTokens,
-            modelName: effectiveModelName,
+            modelName: overrideModel || mainByok?.model || '',
         });
         const adaptiveProfile = resolveAdaptiveProfile(effectiveContextWindow);
         const stageWarnings: ReviewWarning[] = [];
@@ -519,10 +532,30 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 parentSignal: context.parentSignal,
             });
 
-            // Track whether the profile said "skip heavy passes" so we can
-            // emit a HEAVY_PASSES_SKIPPED warning later (only once per run).
+            // Emit profile-driven warnings up here at the stage so they
+            // surface even when the agent's overhead preflight throws
+            // before its own emission points. These four are decided
+            // purely by the resolved profile — no PR-specific condition
+            // needed. The agent will re-emit some of them when it runs;
+            // dedupReviewWarnings folds the duplicates so the user sees
+            // each kind once. Without this, a preflight-failed run only
+            // shows 2 warnings (CALLGRAPH_DROPPED + HEAVY_PASSES_SKIPPED)
+            // while a successful run on the same profile shows 4–5 —
+            // confusing UX where the failure looks "less degraded" than
+            // the success.
+            //
+            // The agent-only warnings (LOW_SIGNAL_FILES_DROPPED with
+            // file count, DIFF_TRUNCATED with file names) are conditional
+            // on real PR state and intentionally NOT emitted here — we
+            // don't know yet whether the conditions apply.
             if (adaptiveProfile.skipHeavyPasses) {
                 emitStageWarning('HEAVY_PASSES_SKIPPED');
+            }
+            if (adaptiveProfile.compactPrompt) {
+                emitStageWarning('PROMPT_COMPACTED');
+            }
+            if (adaptiveProfile.allOptional) {
+                emitStageWarning('HUNK_HEADERS_ONLY');
             }
 
             const durationMs = Date.now() - startTime;
