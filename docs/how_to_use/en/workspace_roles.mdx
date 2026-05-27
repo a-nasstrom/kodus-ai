@@ -48,22 +48,7 @@ Each role provides different levels of access and capabilities within the worksp
 
 Here's a detailed breakdown of what each role can do, based on the actual permissions matrix:
 
-<Note>
-**Legend**: V = View, E = Edit, D = Delete, (all) = All repositories, (own) = Own repositories only, - = No access
-</Note>
-
-| Permission | Owner | Billing Manager | Repository Admin | Contributor |
-|------------|-------|----------------|------------------|-------------|
-| **Code Review Configuration Global** | V (all) / E (all) | V (all) | V (all) | V (all) |
-| **Code Review Configuration Repository** | V (all) / E (all) / D (all) | V (all) | V (own) / E (own) | V (own) |
-| **Code Review Configuration Folder** | V (all) / E (all) / D (all) | V (all) | V (own) / E (own) | V (own) |
-| **Billing / Subscription** | V (all) / E (all) / D (all) | V (all) / E (all) / D (all) | - | - |
-| **Cockpit** | V (all) / E (all) | - | V (own) | - |
-| **Issues** | V (all) / E (all) | - | V (all) / E (own) | V (own) |
-| **Activity Log** | V (all) | V (all) | V (own) | V (own) |
-| **Git Settings** | V (all) / E (all) / D (all) | V (all) | V (all) | V (all) |
-| **Pull Request** | V (all) / E (all) / D (all) | V (all) | V (all) | - |
-| **Plugins** | V (all) / E (all) / D (all) | V (all) | V (all) | - |
+<Snippet file="rbac-matrix-generated.mdx" />
 
 ## Managing Workspace Members
 

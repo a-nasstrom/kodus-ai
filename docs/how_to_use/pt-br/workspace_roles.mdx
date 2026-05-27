@@ -48,22 +48,7 @@ Cada função fornece diferentes níveis de acesso e capacidades dentro do works
 
 Aqui está um detalhamento do que cada função pode fazer, com base na matriz de permissões real:
 
-<Note>
-**Legenda**: V = Visualizar, E = Editar, D = Excluir, (all) = Todos os repositórios, (own) = Apenas repositórios próprios, - = Sem acesso
-</Note>
-
-| Permissão | Owner | Billing Manager | Repository Admin | Contributor |
-|------------|-------|----------------|------------------|-------------|
-| **Configuração Global de Code Review** | V (all) / E (all) | V (all) | V (all) | V (all) |
-| **Configuração de Repositório de Code Review** | V (all) / E (all) / D (all) | V (all) | V (own) / E (own) | V (own) |
-| **Configuração de Pasta de Code Review** | V (all) / E (all) / D (all) | V (all) | V (own) / E (own) | V (own) |
-| **Faturamento / Assinatura** | V (all) / E (all) / D (all) | V (all) / E (all) / D (all) | - | - |
-| **Cockpit** | V (all) / E (all) | - | V (own) | - |
-| **Issues** | V (all) / E (all) | - | V (all) / E (own) | V (own) |
-| **Log de Atividade** | V (all) | V (all) | V (own) | V (own) |
-| **Configurações Git** | V (all) / E (all) / D (all) | V (all) | V (all) | V (all) |
-| **Pull Request** | V (all) / E (all) / D (all) | V (all) | V (all) | - |
-| **Plugins** | V (all) / E (all) / D (all) | V (all) | V (all) | - |
+<Snippet file="rbac-matrix-generated.mdx" />
 
 ## Gerenciando Membros do Workspace
 
