@@ -1,22 +1,27 @@
 name: "E2E: cloud matrix"
 
 # Minimal token scope — CodeQL actions/missing-workflow-permissions.
-# These jobs only read the repo (checkout); provider/cloud creds come
-# from secrets, not GITHUB_TOKEN. No job writes back to the repo.
+# Job only reads the repo (checkout); provider/cloud creds come from
+# secrets, not GITHUB_TOKEN.
 permissions:
     contents: read
 
-# Runs the matrix runner against the existing cloud QA target. Cloud is a
-# permanent environment, so this job does NOT provision anything — it
-# authenticates as pre-existing test tenants (free / trial / paid) and
-# exercises real provider integrations against the QA cloud URL.
+# Runs the canonical e2e matrix against the cloud QA target. Mirrors
+# `yarn e2e:matrix matrix/fast.yml --target cloud` locally:
+#   - Same matrix YAML (tests/e2e/matrix/fast.yml) — single source of
+#     truth. Adding a scenario or cell to fast.yml is automatically
+#     picked up by CI; no parallel matrix list to keep in sync.
+#   - Same skip-missing-tokens behaviour — a cell without its provider
+#     token is SKIPPED, not failed (community forks, partial setups).
+#   - Same internal parallelism — the matrix runner (run-matrix.ts)
+#     fans out cells via Promise.allSettled, so a single job here is
+#     already concurrent across cells.
 #
 # Trigger:
-#   - workflow_call from qa-build-push-and-pr-green.yml after the GitOps PR
-#     merges and the QA cloud rolls out the new image.
-#   - schedule nightly 05:17 UTC — catch-all for drift, provider regressions,
-#     and flaky cells that don't reproduce per-deploy. Independent of merges,
-#     so a quiet day still gets one signal.
+#   - workflow_call from qa-build-push-and-pr-green.yml after the GitOps
+#     PR for the QA deploy is opened.
+#   - schedule nightly 05:17 UTC — catch-all for drift / provider
+#     regressions / flaky cells that don't reproduce per-deploy.
 #   - workflow_dispatch for manual runs.
 
 on:
@@ -33,8 +38,9 @@ on:
                 default: matrix/fast.yml
                 type: string
     schedule:
-        # 05:17 UTC = ~02:17 BRT. Off-peak; offset from the benchmark cron
-        # (which lives at 04:17 UTC) so they don't share the GH runner spike.
+        # 05:17 UTC = ~02:17 BRT. Off-peak; offset from the benchmark
+        # cron (which lives at 04:17 UTC) so they don't share a runner
+        # spike.
         - cron: "17 5 * * *"
     workflow_dispatch:
         inputs:
@@ -55,19 +61,12 @@ concurrency:
 
 jobs:
     cloud-matrix:
-        name: ${{ matrix.cell.provider }} × ${{ matrix.cell.license }}
+        name: cloud matrix (${{ inputs.matrix_file || 'matrix/fast.yml' }})
         runs-on: ubuntu-latest
-        timeout-minutes: 25
-        strategy:
-            fail-fast: false
-            matrix:
-                cell:
-                    - { provider: github, license: paid }
-                    - { provider: gitlab, license: paid }
-                    - { provider: bitbucket, license: paid }
-                    - { provider: azure-devops, license: paid }
-                    - { provider: github, license: free }
-                    - { provider: github, license: trial }
+        # fast.yml = ~30-45 min, full.yml = ~75-120 min. Cap with
+        # generous headroom; cell-level timeouts inside the runner stop
+        # individual flakes from eating the whole budget.
+        timeout-minutes: 150
         steps:
             - name: Checkout monorepo
               uses: actions/checkout@v6.0.2
@@ -81,19 +80,21 @@ jobs:
               working-directory: tests/e2e
               run: npm install --no-audit --no-fund
 
-            - name: Run cloud matrix shard
+            - name: Run cloud matrix
               env:
-                  TARGET_BASE_URL: ${{ vars.CLOUD_QA_API_URL || 'https://api-qa.kodus.io' }}
-                  TARGET_WEB_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://app-qa.kodus.io' }}
+                  # target.sh expects TARGET_BASE_URL + TARGET_WEB_URL.
+                  # vars.CLOUD_QA_* canonicalise the URLs; the matrix
+                  # runner ignores TARGET_BASE_URL for cloud target (it
+                  # derives the API from web URL + /api/proxy/api) but
+                  # target.sh requires it set, so we still export it.
+                  TARGET_BASE_URL: ${{ vars.CLOUD_QA_API_URL || 'https://qa.api.kodus.io' }}
+                  TARGET_WEB_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
+                  MATRIX_FILE: ${{ inputs.matrix_file || 'matrix/fast.yml' }}
 
+                  # Provider tokens — cells without the right token are
+                  # skipped (target.sh passes --skip-missing-tokens).
                   GH_TEST_TOKEN: ${{ secrets.GH_TEST_TOKEN }}
                   GH_TEST_REPO: ${{ secrets.GH_TEST_REPO }}
-                  # *_CLOUD overrides for the cloud target so the matrix
-                  # runner (providers/base.ts resolveTargetRepo) picks the
-                  # *-cloud fixture repo instead of the self-hosted one.
-                  # Cloud and SH integrations have different repos onboarded —
-                  # falling back to the SH repo here makes the lookup fail
-                  # ("Repo X not in integration's available list").
                   GH_TEST_REPO_CLOUD: ${{ secrets.GH_TEST_REPO_CLOUD }}
                   GH_TEST_PR_NUMBER: ${{ secrets.GH_TEST_PR_NUMBER }}
 
@@ -121,45 +122,13 @@ jobs:
                   CLOUD_TENANT_TRIAL_PASSWORD: ${{ secrets.CLOUD_TENANT_TRIAL_PASSWORD }}
                   CLOUD_TENANT_FREE_EMAIL: ${{ secrets.CLOUD_TENANT_FREE_EMAIL }}
                   CLOUD_TENANT_FREE_PASSWORD: ${{ secrets.CLOUD_TENANT_FREE_PASSWORD }}
-              run: |
-                  CELL_MATRIX=$(mktemp --suffix=.yml)
-                  cat >"$CELL_MATRIX" <<EOF
-                  id: cloud-shard-${{ matrix.cell.provider }}-${{ matrix.cell.license }}
-                  scenarios:
-                    - code-review-basic
-                    - kody-rules-create-and-apply
-                    - license-attribution
-                  cells:
-                    - target: cloud
-                      provider: ${{ matrix.cell.provider }}
-                      license: ${{ matrix.cell.license }}
-                  EOF
-                  export MATRIX_FILE="$CELL_MATRIX"
-                  ./tests/e2e/provisioning/cloud/target.sh
+              run: bash tests/e2e/provisioning/cloud/target.sh
 
             - name: Upload evidence
               if: always()
               uses: actions/upload-artifact@v4
               with:
-                  name: e2e-cloud-${{ matrix.cell.provider }}-${{ matrix.cell.license }}
+                  name: e2e-cloud-matrix
                   path: tests/e2e/evidence/
                   if-no-files-found: warn
-                  retention-days: 14
-
-    aggregate:
-        name: Aggregate evidence
-        runs-on: ubuntu-latest
-        needs: cloud-matrix
-        if: always()
-        steps:
-            - uses: actions/download-artifact@v4
-              with:
-                  pattern: e2e-cloud-*
-                  merge-multiple: true
-                  path: evidence
-
-            - uses: actions/upload-artifact@v4
-              with:
-                  name: e2e-cloud-matrix
-                  path: evidence/
                   retention-days: 30
