@@ -111,7 +111,7 @@ jobs:
             - name: Run provisioning + matrix runner
               env:
                   IMAGE_TAG: ${{ inputs.image_tag }}
-                  MATRIX_FILE: ${{ inputs.matrix_file }}
+                  SOURCE_MATRIX_FILE: ${{ inputs.matrix_file }}
                   LICENSE_MODE: ${{ matrix.cell.license }}
                   KODUS_INSTALLER_PATH: ${{ github.workspace }}/kodus-installer
                   TEST_VM_PROVIDER: digitalocean
@@ -143,21 +143,49 @@ jobs:
 
                   TARGET_FILTER_PROVIDER: ${{ matrix.cell.provider }}
               run: |
-                  # The provisioning script runs the full matrix file. To exercise
-                  # only this cell, narrow the matrix down to the current provider
-                  # using a synthesized matrix file. This keeps each shard fast.
+                  # Build a single-cell matrix YAML that mirrors the SOURCE
+                  # matrix (fast.yml / full.yml) instead of hardcoding a
+                  # subset. Scenarios are read from the source so adding one
+                  # there is automatically picked up by CI. The matrix runner
+                  # filters scenarios by `appliesTo` at runtime, so listing
+                  # ALL is safe — non-applicable scenarios are skipped, not
+                  # failed.
+                  set -euo pipefail
+                  SOURCE="tests/e2e/${SOURCE_MATRIX_FILE}"
+                  if [ ! -f "$SOURCE" ]; then
+                      echo "::error::source matrix file not found: $SOURCE"
+                      exit 1
+                  fi
+                  SCENARIOS=$(awk '
+                      /^scenarios:/ { in_block=1; next }
+                      /^[a-zA-Z]/   { in_block=0 }
+                      in_block && /^[[:space:]]*-[[:space:]]/ {
+                          sub(/^[[:space:]]*-[[:space:]]*/, "")
+                          # Strip trailing inline comment / whitespace
+                          sub(/[[:space:]]+#.*/, "")
+                          if ($0 != "") print "  - " $0
+                      }
+                  ' "$SOURCE")
+                  if [ -z "$SCENARIOS" ]; then
+                      echo "::error::no scenarios found in $SOURCE"
+                      exit 1
+                  fi
+
                   CELL_MATRIX=$(mktemp --suffix=.yml)
-                  cat >"$CELL_MATRIX" <<EOF
-                  id: shard-${{ matrix.cell.provider }}-${{ matrix.cell.license }}
-                  scenarios:
-                    - code-review-basic
-                    - kody-rules-create-and-apply
-                    - license-attribution
-                  cells:
-                    - target: self-hosted
-                      provider: ${{ matrix.cell.provider }}
-                      license: ${{ matrix.cell.license }}
-                  EOF
+                  {
+                      echo "id: shard-${{ matrix.cell.provider }}-${{ matrix.cell.license }}"
+                      echo "scenarios:"
+                      echo "$SCENARIOS"
+                      echo "cells:"
+                      echo "  - target: self-hosted"
+                      echo "    provider: ${{ matrix.cell.provider }}"
+                      echo "    license: ${{ matrix.cell.license }}"
+                  } > "$CELL_MATRIX"
+
+                  echo "::group::Generated cell matrix"
+                  cat "$CELL_MATRIX"
+                  echo "::endgroup::"
+
                   export MATRIX_FILE="$CELL_MATRIX"
                   ./tests/e2e/provisioning/self-hosted/vm.sh
 

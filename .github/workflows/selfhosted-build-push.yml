@@ -283,7 +283,11 @@ jobs:
         uses: ./.github/workflows/e2e-self-hosted-matrix.yml
         with:
             image_tag: ${{ needs.plan-release.outputs.rc_tag }}
-            matrix_file: matrix/fast.yml
+            # FULL coverage on release: adds upgrade-N-1→N, SSO,
+            # Stripe billing — the lifecycle scenarios that only matter
+            # when cutting a customer-visible release. e2e-cloud
+            # per-merge stays on fast.yml.
+            matrix_file: matrix/full.yml
         secrets: inherit
 
     promote:
