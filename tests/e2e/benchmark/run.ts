@@ -105,8 +105,9 @@ async function registerRepos(
     repoFullNames: string[],
 ): Promise<void> {
     const avail = await listOrgRepos(session);
+    const availByName = new Map(avail.map((x) => [x.full_name as string, x]));
     const found = repoFullNames.map((fn) => {
-        const r = avail.find((x) => x.full_name === fn);
+        const r = availByName.get(fn);
         if (!r) {
             throw new Error(
                 `benchmark repo ${fn} not in integration's available list (${avail.length} repos). Sample: ${JSON.stringify(avail.slice(0, 6).map((x) => x.full_name))}`,
@@ -174,11 +175,11 @@ async function ensureOnboarded(
     repoFullNames: string[],
 ): Promise<void> {
     let avail = await listOrgRepos(session);
+    const selectedNames = new Set(
+        avail.filter((r) => r.selected === true).map((r) => r.full_name as string),
+    );
     const allSelected =
-        avail.length > 0 &&
-        repoFullNames.every((fn) =>
-            avail.some((r) => r.full_name === fn && r.selected === true),
-        );
+        avail.length > 0 && repoFullNames.every((fn) => selectedNames.has(fn));
     if (!allSelected) {
         const provider0 = new GitHubProvider({ repoOverride: repoFullNames[0], target: "cloud" });
         await registerIntegration(QA, provider0, session);
