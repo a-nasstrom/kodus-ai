@@ -2,6 +2,11 @@ import { createLogger } from '@kodus/flow';
 
 import { fitPRDescription } from '@libs/code-review/utils/fit-pr-description';
 import { INTEGRATION_REQUEST_TIMEOUT_MS } from '@libs/core/infrastructure/http/integration-timeouts';
+import {
+    parkRateGate,
+    rateGateKey,
+    runWithRateGate,
+} from '@libs/core/infrastructure/http/per-key-rate-gate';
 import { hasKodyMarker } from '@libs/common/utils/codeManagement/codeCommentMarkers';
 import { decrypt, encrypt } from '@libs/common/utils/crypto';
 import {
@@ -3206,7 +3211,44 @@ export class BitbucketCloudService implements Omit<
      * `contentType.includes(...)` without a null-check, which crashes when
      * the Bitbucket edge proxy returns a response with no Content-Type.
      */
+    // Spacing between Bitbucket API calls that share one app-password.
+    // Bitbucket's per-endpoint burst window is 16-60 req/min; 400ms caps
+    // any single token at ~150 req/min spread across endpoints which —
+    // combined with the gate's single-slot serialization — keeps the
+    // onboarding backfill + live review + dashboard polling clear of the
+    // burst ceiling. Tunable via env for operators on tighter plans.
+    private static readonly RATE_GATE_MIN_INTERVAL_MS = Number(
+        process.env.BITBUCKET_RATE_GATE_MIN_INTERVAL_MS ?? 400,
+    );
+
     private safeFetch(url: string, options: any): Promise<any> {
+        // Gate every Bitbucket HTTP call through a single-slot, spaced
+        // queue keyed by the app-password (carried in the Authorization
+        // header). safeFetch is the one chokepoint the SDK routes through
+        // (see instanceBitbucketApi), so serializing here throttles
+        // backfill, review and polling alike without touching every call
+        // site. See per-key-rate-gate.ts for why this is proactive rather
+        // than relying on with429Retry alone.
+        const authHeader =
+            options?.headers?.authorization ??
+            options?.headers?.Authorization ??
+            '';
+        const gateKey = rateGateKey('bitbucket', String(authHeader));
+
+        return runWithRateGate(
+            gateKey,
+            {
+                minIntervalMs: BitbucketCloudService.RATE_GATE_MIN_INTERVAL_MS,
+            },
+            () => this.rawFetch(url, options, gateKey),
+        );
+    }
+
+    private rawFetch(
+        url: string,
+        options: any,
+        gateKey: string,
+    ): Promise<any> {
         // Bounded timeout via AbortController — the Bitbucket SDK itself
         // does not expose a timeout option, so without this a single
         // unresponsive Bitbucket API call can hang the worker for the
@@ -3219,6 +3261,21 @@ export class BitbucketCloudService implements Omit<
 
         return fetch(url, { ...options, signal: controller.signal })
             .then((response) => {
+                // Park the whole key proactively on 429 so sibling calls
+                // wait out the server cooldown instead of re-colliding.
+                // The current call still returns the 429 to the SDK; the
+                // higher-level with429Retry decides whether to retry, and
+                // its next attempt re-enters the gate and blocks on the
+                // park window set here.
+                if (response.status === 429) {
+                    parkRateGate(
+                        gateKey,
+                        Date.now() +
+                            this.parseRetryAfterMs(
+                                response.headers.get('retry-after'),
+                            ),
+                    );
+                }
                 if (!response.headers.get('content-type')) {
                     const patchedHeaders = new Headers(response.headers);
                     patchedHeaders.set('content-type', 'text/plain');
@@ -3232,6 +3289,26 @@ export class BitbucketCloudService implements Omit<
                 return response;
             })
             .finally(() => clearTimeout(timer));
+    }
+
+    // Parses a Retry-After header (delta-seconds or HTTP-date) into a
+    // forward-looking delay in ms. Falls back to a conservative cooldown
+    // when the header is absent or unparseable — Bitbucket frequently
+    // omits it on per-endpoint burst 429s, and guessing too low just
+    // re-trips the window.
+    private parseRetryAfterMs(raw: string | null): number {
+        const fallbackMs = BitbucketCloudService.RATE_GATE_MIN_INTERVAL_MS * 25;
+        if (!raw) return fallbackMs;
+        const asSeconds = Number(raw);
+        if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+            return Math.round(asSeconds * 1000);
+        }
+        const asDate = Date.parse(raw);
+        if (Number.isFinite(asDate)) {
+            const delta = asDate - Date.now();
+            return delta > 0 ? delta : fallbackMs;
+        }
+        return fallbackMs;
     }
 
     /**

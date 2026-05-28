@@ -1,3 +1,4 @@
+import { ensureLicenseSeat } from "../lib/onboarding.js";
 import type { RunContext, Scenario } from "../lib/types.js";
 
 // Fixture branch pairs per provider. Each entry maps to two branches that
@@ -84,6 +85,9 @@ export const codeReviewBasic: Scenario = {
         await ctx.kodus.registerIntegration(session);
         const repo = await ctx.kodus.registerRepo(session);
         await ctx.kodus.finishOnboarding(session, repo);
+        // Self-hosted licensed mode gates reviews per seat; grant the PR
+        // author one so the pipeline doesn't skip with USER_NOT_LICENSED.
+        await ensureLicenseSeat(ctx.target, session, ctx.provider);
 
         const fixture = FIXTURE_BRANCHES[ctx.provider.name];
         ctx.assert(

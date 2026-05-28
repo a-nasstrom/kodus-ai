@@ -7,7 +7,13 @@ import type {
     ReviewSignal,
     WebhookInfo,
 } from "../lib/types.js";
-import { BaseProvider, pollUntil, requireEnv } from "./base.js";
+import type { Target } from "../lib/types.js";
+import {
+    BaseProvider,
+    pollUntil,
+    requireEnv,
+    resolveTargetRepo,
+} from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
 import { prepareBranch } from "../lib/git.js";
 
@@ -29,11 +35,11 @@ export class BitbucketProvider extends BaseProvider {
     private readonly apiBase = "https://api.bitbucket.org/2.0";
     private readonly existingPrId?: number;
 
-    constructor() {
+    constructor(target: Target = "self-hosted") {
         super();
         this.user = requireEnv("BB_TEST_USER");
         this.appPassword = requireEnv("BB_TEST_APP_PASSWORD");
-        this.workspaceSlug = requireEnv("BB_TEST_REPO");
+        this.workspaceSlug = resolveTargetRepo("BB_TEST_REPO", target);
         const existing = process.env.BB_TEST_PR_ID;
         if (existing) this.existingPrId = Number(existing);
     }
@@ -474,5 +480,33 @@ export class BitbucketProvider extends BaseProvider {
 
     licenseGitTool(): string {
         return "bitbucket";
+    }
+
+    async pollForLicenseBlock(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec?: number },
+    ): Promise<boolean> {
+        // USER_NOT_LICENSED → on Bitbucket the stage posts a 👎 PR comment
+        // linking the emoji-meaning docs (createIssueComment with
+        // `[👎](https://docs.kodus.io/...what-each-emoji-means)`) rather than
+        // a reaction. Match the 👎 in the comment body.
+        const found = await pollUntil<boolean>(
+            async () => {
+                const resp = await http<{
+                    values?: { content?: { raw?: string } }[];
+                }>(
+                    `${this.apiBase}/repositories/${this.workspaceSlug}/pullrequests/${pr.number}/comments?pagelen=100`,
+                    { headers: this.headers() },
+                );
+                if (resp.status < 200 || resp.status >= 300) return null;
+                return (resp.body.values ?? []).some((c) =>
+                    (c.content?.raw ?? "").includes("👎"),
+                )
+                    ? true
+                    : null;
+            },
+            { intervalSec: 5, timeoutSec: opts.timeoutSec ?? 120 },
+        );
+        return found === true;
     }
 }

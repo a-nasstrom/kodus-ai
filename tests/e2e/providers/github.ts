@@ -7,7 +7,15 @@ import type {
     ReviewSignal,
     WebhookInfo,
 } from "../lib/types.js";
-import { BaseProvider, nowIso, pollUntil, requireEnv } from "./base.js";
+import { randomUUID } from "node:crypto";
+import type { Target } from "../lib/types.js";
+import {
+    BaseProvider,
+    nowIso,
+    pollUntil,
+    requireEnv,
+    resolveTargetRepo,
+} from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
 import { prepareBranch } from "../lib/git.js";
 import { logger } from "../lib/log.js";
@@ -39,7 +47,7 @@ export class GitHubProvider extends BaseProvider {
     protected readonly apiBase = "https://api.github.com";
     protected readonly existingPrNumber?: number;
 
-    constructor(opts?: { repoOverride?: string }) {
+    constructor(opts?: { repoOverride?: string; target?: Target }) {
         super();
         this.token = requireEnv("GH_TEST_TOKEN");
         // Subclasses (notably GitHubAppProvider) need to target a
@@ -49,7 +57,9 @@ export class GitHubProvider extends BaseProvider {
         // webhook. Pass repoOverride to redirect this provider's
         // entire surface (clone URL, /repos/<owner>/<repo>/*, webhook
         // listing) to the App-bound repo.
-        this.repoFullName = opts?.repoOverride ?? requireEnv("GH_TEST_REPO");
+        this.repoFullName =
+            opts?.repoOverride ??
+            resolveTargetRepo("GH_TEST_REPO", opts?.target ?? "self-hosted");
         const existing = process.env.GH_TEST_PR_NUMBER;
         if (existing) this.existingPrNumber = Number(existing);
     }
@@ -169,11 +179,77 @@ export class GitHubProvider extends BaseProvider {
     }
 
     async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
-        // Self-heal: GitHub refuses to open a second open PR for the same
-        // head→base combo. If a previous run crashed before `closePR` (or a
-        // human left a standing PR there), close it first so we can open
-        // fresh.
-        await this.closeOpenPRsBetween(args.head, args.base);
+        // GitHub's git data endpoints (create-commit / create-ref) intermittently
+        // return HTTP 500 under no fault of ours. http() only retries transport
+        // failures, not 5xx statuses, so a single hiccup would silently cost us
+        // a benchmark review. Retry the whole sequence on 5xx — each attempt
+        // mints a fresh uid/branch, so a half-applied ref from a "500 but it
+        // actually worked" never collides (422) on the next try.
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+                return await this.openPRFromBranchesOnce(args);
+            } catch (err) {
+                lastErr = err;
+                if (!/HTTP 5\d\d/.test((err as Error).message) || attempt === 3) {
+                    throw err;
+                }
+                await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+            }
+        }
+        throw lastErr;
+    }
+
+    private async openPRFromBranchesOnce(
+        args: OpenPRFromBranchesArgs,
+    ): Promise<OpenedPR> {
+        // Open the PR from a UNIQUE throwaway branch carrying a fresh empty
+        // commit on top of the fixture tip — never from the shared fixture
+        // branch. GitHub caps a repo at 100 PRs sharing a head_sha, so opening
+        // every PR off the fixture tip burns the repo out (HTTP 422). An empty
+        // commit (same tree, parent = fixture tip) gives each PR a UNIQUE
+        // head_sha with an IDENTICAL diff vs base, and a unique branch name
+        // sidesteps the "one open PR per head→base" limit. The fixture branch
+        // is never modified; closePR deletes the throwaway.
+        const tip = await http<{ object: { sha: string } }>(
+            `${this.apiBase}/repos/${this.repoFullName}/git/ref/heads/${args.head}`,
+            { headers: this.headers() },
+        );
+        ensureOk(tip, "github:openPRFromBranches:resolveHead");
+        const headSha = tip.body.object.sha;
+        const commitInfo = await http<{ tree: { sha: string } }>(
+            `${this.apiBase}/repos/${this.repoFullName}/git/commits/${headSha}`,
+            { headers: this.headers() },
+        );
+        ensureOk(commitInfo, "github:openPRFromBranches:resolveTree");
+
+        const uid = randomUUID().slice(0, 8);
+        const throwaway = `e2e/${args.head.replace(/[^a-zA-Z0-9._-]+/g, "-")}-${uid}`;
+        const commit = await http<{ sha: string }>(
+            `${this.apiBase}/repos/${this.repoFullName}/git/commits`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: {
+                    message: `[e2e] throwaway head for ${args.head} (${uid})`,
+                    tree: commitInfo.body.tree.sha,
+                    parents: [headSha],
+                },
+            },
+        );
+        ensureOk(commit, "github:openPRFromBranches:commit");
+        const ref = await http(
+            `${this.apiBase}/repos/${this.repoFullName}/git/refs`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: {
+                    ref: `refs/heads/${throwaway}`,
+                    sha: commit.body.sha,
+                },
+            },
+        );
+        ensureOk(ref, "github:openPRFromBranches:ref");
 
         const resp = await http<{ number: number; html_url: string }>(
             `${this.apiBase}/repos/${this.repoFullName}/pulls`,
@@ -183,7 +259,7 @@ export class GitHubProvider extends BaseProvider {
                 body: {
                     title: args.title,
                     body: args.body,
-                    head: args.head,
+                    head: throwaway,
                     base: args.base,
                 },
             },
@@ -192,9 +268,9 @@ export class GitHubProvider extends BaseProvider {
         return {
             number: resp.body.number,
             url: resp.body.html_url,
-            branch: args.head,
+            branch: throwaway,
             baseBranch: args.base,
-            keepBranchOnClose: true,
+            keepBranchOnClose: false,
         };
     }
 
@@ -510,6 +586,31 @@ export class GitHubProvider extends BaseProvider {
 
     licenseGitTool(): string {
         return "github";
+    }
+
+    async pollForLicenseBlock(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec?: number },
+    ): Promise<boolean> {
+        // USER_NOT_LICENSED → validate-prerequisites adds a 👎 reaction on the
+        // PR via addReactionToPR. GitHub stores 👎 as the `-1` reaction
+        // content. The 🚀 start reaction is removed when a review actually
+        // completes, so a surviving `-1` unambiguously means the seat gate
+        // blocked the review (vs. a review that ran).
+        const found = await pollUntil<boolean>(
+            async () => {
+                const resp = await http<{ content: string }[]>(
+                    `${this.apiBase}/repos/${this.repoFullName}/issues/${pr.number}/reactions?per_page=100`,
+                    { headers: this.headers() },
+                );
+                if (resp.status < 200 || resp.status >= 300) return null;
+                return (resp.body ?? []).some((r) => r.content === "-1")
+                    ? true
+                    : null;
+            },
+            { intervalSec: 5, timeoutSec: opts.timeoutSec ?? 120 },
+        );
+        return found === true;
     }
 }
 

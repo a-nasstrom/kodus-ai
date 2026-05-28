@@ -284,6 +284,7 @@ async function runReviewPhase(
         );
         const sawReview =
             review.reviewComments + review.issueComments + review.reviews > 0;
+        let blockSignalSeen: boolean | undefined;
         if (opts.expectReview) {
             ctx.assert(
                 sawReview,
@@ -294,6 +295,24 @@ async function runReviewPhase(
                 !sawReview,
                 `[${opts.label}] expected NO review on PR #${pr.number} but saw: ${JSON.stringify(review)}`,
             );
+            // Adherence: "no review comment" alone is a weak negative — a lost
+            // or mis-routed webhook produces the same silence. Require the
+            // POSITIVE block signal (Kody's 👎 from validate-prerequisites'
+            // USER_NOT_LICENSED path) so the assertion proves the seat gate
+            // actually fired. By now we've already polled the full review
+            // budget with no review, so the 👎 (posted within seconds of the
+            // webhook) is present and the detector returns promptly. Providers
+            // that don't implement the detector keep the legacy absence check.
+            if (ctx.provider.pollForLicenseBlock) {
+                blockSignalSeen = await ctx.provider.pollForLicenseBlock(
+                    { number: pr.number },
+                    { sinceIso, timeoutSec: 60 },
+                );
+                ctx.assert(
+                    blockSignalSeen,
+                    `[${opts.label}] no review appeared AND no 👎 license-block signal on PR #${pr.number} within timeout — cannot confirm the seat gate blocked the review (a lost/mis-routed webhook would look identical). This is the failure shape that masked the seat-enforcement regression.`,
+                );
+            }
         }
         return {
             phase: opts.label,
@@ -301,6 +320,7 @@ async function runReviewPhase(
             prUrl: pr.url,
             expectReview: opts.expectReview,
             sawReview,
+            blockSignalSeen,
             review,
             seatsAtStart: opts.seatsAtStart,
         };

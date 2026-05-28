@@ -7,7 +7,14 @@ import type {
     ReviewSignal,
     WebhookInfo,
 } from "../lib/types.js";
-import { BaseProvider, pollUntil, requireEnv } from "./base.js";
+import { randomUUID } from "node:crypto";
+import type { Target } from "../lib/types.js";
+import {
+    BaseProvider,
+    pollUntil,
+    requireEnv,
+    resolveTargetRepo,
+} from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
 import { prepareBranch } from "../lib/git.js";
 
@@ -41,12 +48,12 @@ export class AzureDevOpsProvider extends BaseProvider {
     private repoId?: string;
     private readonly existingPrId?: number;
 
-    constructor() {
+    constructor(target: Target = "self-hosted") {
         super();
         this.pat = requireEnv("AZ_TEST_TOKEN");
         this.org = requireEnv("AZ_TEST_ORG");
         this.project = requireEnv("AZ_TEST_PROJECT");
-        this.repo = requireEnv("AZ_TEST_REPO");
+        this.repo = resolveTargetRepo("AZ_TEST_REPO", target);
         this.apiBase = `https://dev.azure.com/${encodeURIComponent(this.org)}/${encodeURIComponent(this.project)}`;
         const existing = process.env.AZ_TEST_PR_ID;
         if (existing) this.existingPrId = Number(existing);
@@ -209,12 +216,40 @@ export class AzureDevOpsProvider extends BaseProvider {
     async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
         const repoId = await this.resolveRepoId();
 
-        // Stale-PR cleanup on the same head/base pair is handled
-        // matrix-wide by `cleanupStaleE2EArtifacts()` (called once per
-        // provider at runner start). We deliberately don't duplicate
-        // it inline here: a second sweep on every PR open would double
-        // the upstream calls and the matrix-wide pass already runs by
-        // the time we get here.
+        // Open from a UNIQUE throwaway branch created at the fixture tip, not
+        // the shared fixture branch, so overlapping runs/scenarios don't hit
+        // Azure's "an active pull request for this source/target already
+        // exists" (HTTP 409). Same SHA is fine — no GitHub-style head_sha cap.
+        // The fixture branch is never modified; closePR deletes the throwaway.
+        const srcRef = await http<{ value: { objectId: string }[] }>(
+            `${this.apiBase}/_apis/git/repositories/${repoId}/refs?filter=${encodeURIComponent(`heads/${args.head}`)}&api-version=${this.apiVersion}`,
+            { headers: this.headers() },
+        );
+        ensureOk(srcRef, "azure:openPRFromBranches:resolveHead");
+        const tipSha = srcRef.body.value?.[0]?.objectId;
+        if (!tipSha) {
+            throw new Error(
+                `azure:openPRFromBranches: head ${args.head} not found`,
+            );
+        }
+        const uid = randomUUID().slice(0, 8);
+        const throwaway = `e2e/${args.head.replace(/[^a-zA-Z0-9._-]+/g, "-")}-${uid}`;
+        const ZERO = "0".repeat(40);
+        const createRef = await http(
+            `${this.apiBase}/_apis/git/repositories/${repoId}/refs?api-version=${this.apiVersion}`,
+            {
+                method: "POST",
+                headers: this.headers(),
+                body: [
+                    {
+                        name: `refs/heads/${throwaway}`,
+                        oldObjectId: ZERO,
+                        newObjectId: tipSha,
+                    },
+                ],
+            },
+        );
+        ensureOk(createRef, "azure:openPRFromBranches:createBranch");
 
         const resp = await http<{
             pullRequestId: number;
@@ -225,7 +260,7 @@ export class AzureDevOpsProvider extends BaseProvider {
                 method: "POST",
                 headers: this.headers(),
                 body: {
-                    sourceRefName: `refs/heads/${args.head}`,
+                    sourceRefName: `refs/heads/${throwaway}`,
                     targetRefName: `refs/heads/${args.base}`,
                     title: args.title,
                     description: args.body,
@@ -239,9 +274,9 @@ export class AzureDevOpsProvider extends BaseProvider {
         return {
             number: resp.body.pullRequestId,
             url: webUrl,
-            branch: args.head,
+            branch: throwaway,
             baseBranch: args.base,
-            keepBranchOnClose: true,
+            keepBranchOnClose: false,
         };
     }
 
@@ -255,8 +290,36 @@ export class AzureDevOpsProvider extends BaseProvider {
                 body: { status: "abandoned" },
             },
         );
-        // Azure DevOps PR abandon doesn't delete the source ref; no extra
-        // step needed regardless of keepBranchOnClose.
+        // Abandon doesn't touch the source ref — delete the throwaway branch
+        // explicitly (best-effort; a leaked ref is recoverable and failing on
+        // cleanup would mask real failures).
+        if (!pr.keepBranchOnClose && pr.branch) {
+            try {
+                const ref = await http<{ value: { objectId: string }[] }>(
+                    `${this.apiBase}/_apis/git/repositories/${repoId}/refs?filter=${encodeURIComponent(`heads/${pr.branch}`)}&api-version=${this.apiVersion}`,
+                    { headers: this.headers() },
+                );
+                const sha = ref.body.value?.[0]?.objectId;
+                if (sha) {
+                    await http(
+                        `${this.apiBase}/_apis/git/repositories/${repoId}/refs?api-version=${this.apiVersion}`,
+                        {
+                            method: "POST",
+                            headers: this.headers(),
+                            body: [
+                                {
+                                    name: `refs/heads/${pr.branch}`,
+                                    oldObjectId: sha,
+                                    newObjectId: "0".repeat(40),
+                                },
+                            ],
+                        },
+                    );
+                }
+            } catch {
+                // best-effort cleanup
+            }
+        }
     }
 
     async cleanupStaleE2EArtifacts(): Promise<{ closed: number }> {
@@ -459,5 +522,34 @@ export class AzureDevOpsProvider extends BaseProvider {
         // Kodus's license.service.ts lowercases the platformType when it
         // sets gitTool, so AZURE_REPOS → "azure_repos".
         return "azure_repos";
+    }
+
+    async pollForLicenseBlock(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec?: number },
+    ): Promise<boolean> {
+        // USER_NOT_LICENSED → on Azure the stage posts a 👎 thread comment
+        // linking the emoji-meaning docs (createIssueComment with
+        // `[👎](https://docs.kodus.io/...what-each-emoji-means)`) rather than
+        // a reaction. Scan PR threads for the 👎 in any comment body.
+        const repoId = await this.resolveRepoId();
+        const found = await pollUntil<boolean>(
+            async () => {
+                const resp = await http<{ value: AzureThread[] }>(
+                    `${this.apiBase}/_apis/git/repositories/${repoId}/pullRequests/${pr.number}/threads?api-version=${this.apiVersion}`,
+                    { headers: this.headers() },
+                );
+                if (resp.status < 200 || resp.status >= 300) return null;
+                for (const thread of resp.body.value ?? []) {
+                    if (thread.isDeleted) continue;
+                    for (const c of thread.comments ?? []) {
+                        if ((c.content ?? "").includes("👎")) return true;
+                    }
+                }
+                return null;
+            },
+            { intervalSec: 5, timeoutSec: opts.timeoutSec ?? 120 },
+        );
+        return found === true;
     }
 }

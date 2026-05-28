@@ -74,6 +74,17 @@ LOCAL_SSH_KEY=$(ssh_key_path_for "$NAME")
 
 CADDY_ACME_EMAIL="${CADDY_ACME_EMAIL:-sso-e2e@kodus.io}"
 CADDY_ACME_CA="${CADDY_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}"
+# TLS strategy for the droplet's sslip.io hostnames:
+#   internal (default) → Caddy's local CA (instant, no ACME). Reliable
+#                        because sslip.io is one globally-shared registered
+#                        domain that chronically hits Let's Encrypt's
+#                        per-domain rate limit (429 "too many certificates
+#                        already issued for sslip.io"), which leaves kc.
+#                        with no cert and times out the Keycloak bootstrap.
+#   acme              → public LE certs (only when the limit is clear).
+# Internal-CA certs are untrusted, so the run sets IGNORE_TLS=1 and
+# Playwright/bootstrap tolerate them. Override with SSO_E2E_TLS_MODE=acme.
+SSO_E2E_TLS_MODE="${SSO_E2E_TLS_MODE:-internal}"
 
 # ---------- step 1: base droplet ----------
 if [ "${REUSE}" = "1" ] && state_exists "${NAME}"; then
@@ -86,6 +97,12 @@ else
         exit 1
     fi
     log "Provisioning base Kodus stack on a fresh droplet (~5 min)…"
+    # This droplet runs the full Kodus stack PLUS Keycloak (Quarkus/Java,
+    # memory-hungry) PLUS local image builds/extracts. The default
+    # s-2vcpu-4gb OOM/thrashes during the rabbitmq build + image extraction
+    # and hangs the provision. Default to 8GB here (overridable via DO_SIZE).
+    export DO_SIZE="${DO_SIZE:-s-4vcpu-8gb}"
+    log "  droplet size: ${DO_SIZE}"
     "${REPO_ROOT}/scripts/selfhosted/provision.sh" --name "${NAME}"
     SERVER_IP=$(state_get "${NAME}" .server_ip)
 fi
@@ -182,6 +199,15 @@ env_set WEB_PORT_API "3001"
 # at provision time on 2026-05-19. Force production here so the
 # Domain attribute (the thing under test) actually lands.
 env_set API_NODE_ENV "production"
+# SSO config (POST /sso-config) is gated by the enterprise-tier license
+# guard — without a license the org is "not on a supported plan" and the
+# bootstrap aborts with HTTP 403. The matrix droplets get the license via
+# selfhosted/provision.sh; this script builds its own .env, so inject it
+# here too. The var name is KODUS_LICENSE_KEY — the customer-facing name
+# SelfHostedLicenseService reads (do NOT prefix with API_). run.sh's SSO
+# precheck guarantees SH_LICENSE_KEY is non-empty here. (JWT is base64url —
+# safe for the sed '|' delimiter in env_set.)
+env_set KODUS_LICENSE_KEY "${SH_LICENSE_KEY:-}"
 # Web container's SSR fetches go to API_BASE_URL directly. Caddy
 # terminates TLS so the cert chain is whatever ACME issued; Node trusts
 # the public LE roots out of the box. No NODE_EXTRA_CA_CERTS mount.
@@ -197,11 +223,19 @@ ssh_vm "mkdir -p /opt/sso-e2e"
 # before shipping. envsubst would be cleaner, but droplet may not have
 # it; sed handles three placeholders trivially.
 TMP_CADDYFILE="$(mktemp)"
-sed \
-    -e "s|\${BASE}|${SSO_E2E_BASE}|g" \
-    -e "s|\${CADDY_ACME_EMAIL}|${CADDY_ACME_EMAIL}|g" \
-    -e "s|\${CADDY_ACME_CA}|${CADDY_ACME_CA}|g" \
-    "${REPO_ROOT}/docker/sso-e2e/droplet/Caddyfile.tpl" > "${TMP_CADDYFILE}"
+if [ "${SSO_E2E_TLS_MODE}" = "acme" ]; then
+    log "TLS mode: acme (public Let's Encrypt — may 429 on sslip.io)"
+    sed \
+        -e "s|\${BASE}|${SSO_E2E_BASE}|g" \
+        -e "s|\${CADDY_ACME_EMAIL}|${CADDY_ACME_EMAIL}|g" \
+        -e "s|\${CADDY_ACME_CA}|${CADDY_ACME_CA}|g" \
+        "${REPO_ROOT}/docker/sso-e2e/droplet/Caddyfile.tpl" > "${TMP_CADDYFILE}"
+else
+    log "TLS mode: internal (Caddy local CA — no ACME/rate-limit; Playwright ignores TLS)"
+    # Internal-CA template only needs ${BASE} substituted.
+    sed -e "s|\${BASE}|${SSO_E2E_BASE}|g" \
+        "${REPO_ROOT}/docker/sso-e2e/droplet/Caddyfile.internal.tpl" > "${TMP_CADDYFILE}"
+fi
 
 scp_vm "${TMP_CADDYFILE}" "root@${SERVER_IP}:/opt/sso-e2e/Caddyfile"
 scp_vm "${REPO_ROOT}/docker/sso-e2e/droplet/compose.yml" "root@${SERVER_IP}:/opt/sso-e2e/compose.yml"
@@ -249,38 +283,53 @@ docker compose \
     up -d --no-recreate caddy-sso-e2e kc-sso-e2e
 REMOTE_BOOT
 
-# ---------- step 5: wait for Caddy + LE cert ----------
-log "Waiting for Caddy to terminate TLS at ${API_BASE_URL} (LE cert issuance)"
-# Caddy obtains LE certs lazily on first request to each host. Hit each
-# hostname to trigger issuance, then poll until the chain validates.
+# ---------- step 5: wait for Caddy TLS ----------
+log "Waiting for Caddy to terminate TLS at ${API_BASE_URL}"
+# Prime each host so Caddy provisions its cert (LE issuance or local CA).
 CURL_DROP=(curl -sk -o /dev/null -w '%{http_code}')
 for url in "${API_BASE_URL}/health" "${APP_BASE_URL}" "${KC_BASE_URL}/realms/master"; do
     "${CURL_DROP[@]}" "${url}" >/dev/null || true
 done
 
-TLS_OK=0
-for i in $(seq 1 90); do
-    api_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 "${API_BASE_URL}/health" || echo 000)
-    if [ "${api_code}" = "200" ]; then
-        # Now verify TLS validation (without -k) — only then is the
-        # LE chain in place. Caddy may temporarily serve its internal
-        # CA cert before the ACME challenge completes.
-        if curl -s --max-time 6 -o /dev/null "${API_BASE_URL}/health"; then
-            TLS_OK=1
-            break
+if [ "${SSO_E2E_TLS_MODE}" = "acme" ]; then
+    # Public LE: only consider TLS up once it validates WITHOUT -k.
+    TLS_OK=0
+    for i in $(seq 1 90); do
+        api_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 "${API_BASE_URL}/health" || echo 000)
+        if [ "${api_code}" = "200" ]; then
+            if curl -s --max-time 6 -o /dev/null "${API_BASE_URL}/health"; then
+                TLS_OK=1
+                break
+            fi
         fi
+        sleep 4
+    done
+    if [ "${TLS_OK}" = "0" ]; then
+        warn "Public TLS not validated — Caddy likely fell back to its internal CA (LE rate limit?)."
+        warn "Re-run with SSO_E2E_TLS_MODE=internal (the default) to skip ACME entirely."
+        IGNORE_TLS=1
+    else
+        ok "Public TLS chain valid"
+        IGNORE_TLS=0
     fi
-    sleep 4
-done
-
-if [ "${TLS_OK}" = "0" ]; then
-    warn "TLS not validated yet — Caddy may have fallen back to its internal CA."
-    warn "Continuing with --ignore-certificate-errors. Set CADDY_ACME_CA="
-    warn "https://acme-staging-v02.api.letsencrypt.org/directory and re-run if hitting LE rate limits."
-    IGNORE_TLS=1
 else
-    ok "Public TLS chain valid"
-    IGNORE_TLS=0
+    # Internal CA: Caddy mints a local-CA cert for each host immediately,
+    # so there is no ACME/rate-limit step to wait on. Confirm the API
+    # answers over TLS (accepting the self-signed cert with -k). The cert
+    # is untrusted by design → Playwright ignores it (IGNORE_TLS=1) and the
+    # bootstrap curls already use -k.
+    TLS_OK=0
+    for i in $(seq 1 90); do
+        code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 6 "${API_BASE_URL}/health" || echo 000)
+        [ "${code}" = "200" ] && { TLS_OK=1; break; }
+        sleep 4
+    done
+    if [ "${TLS_OK}" = "0" ]; then
+        err "API never answered over Caddy internal-CA TLS at ${API_BASE_URL}"
+        exit 1
+    fi
+    ok "Caddy internal-CA TLS up (untrusted — Playwright will ignore)"
+    IGNORE_TLS=1
 fi
 
 # ---------- step 6: bootstrap Keycloak (pass 1, wildcard ACS) ----------

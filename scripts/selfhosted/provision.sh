@@ -535,9 +535,12 @@ REMOTE
 
 if [ -n "${SH_LICENSE_KEY:-}" ]; then
     log "Injecting SH_LICENSE_KEY..."
-    ssh_vm "cd /opt/kodus-installer && grep -qE '^API_KODUS_LICENSE_KEY=' .env \
-            && sed -i 's|^API_KODUS_LICENSE_KEY=.*|API_KODUS_LICENSE_KEY=$SH_LICENSE_KEY|' .env \
-            || echo 'API_KODUS_LICENSE_KEY=$SH_LICENSE_KEY' >> .env"
+    # KODUS_LICENSE_KEY is the customer-facing var SelfHostedLicenseService
+    # reads (NOT API_-prefixed). Injecting the wrong name leaves the install
+    # effectively unlicensed → enterprise features 403.
+    ssh_vm "cd /opt/kodus-installer && grep -qE '^KODUS_LICENSE_KEY=' .env \
+            && sed -i 's|^KODUS_LICENSE_KEY=.*|KODUS_LICENSE_KEY=$SH_LICENSE_KEY|' .env \
+            || echo 'KODUS_LICENSE_KEY=$SH_LICENSE_KEY' >> .env"
 else
     dim "  No SH_LICENSE_KEY set — stack will boot in installer default mode (no paid features)."
 fi
@@ -561,6 +564,38 @@ done
 if [ ${#HEALTH_FAILED[@]} -gt 0 ]; then
     err "Health check failed for: ${HEALTH_FAILED[*]}"
     ssh_vm "cd /opt/kodus-installer && docker compose logs api worker webhooks --tail 80 --no-color" || true
+    exit 1
+fi
+
+# ---------- wait for the review pipeline (RabbitMQ workflow queue) ----------
+# The HTTP checks above only prove web/api/webhooks ANSWER. The code-review
+# pipeline runs through RabbitMQ (@kodus/flow): the webhooks service
+# publishes a job to `workflow.jobs.code_review.queue` and the worker
+# consumes it. On a cold boot the worker declares + binds that queue only
+# after its (slow) NestJS init; until then the producer hits
+# "404 NOT_FOUND - no queue ... QueueBind", the AMQP channel is closed, and
+# the job is DROPPED — while the webhook still returns 200. Handing the
+# droplet to the test in that window means a PR opened in the first ~minute
+# gets a 200 ack but NO review, silently. (NB: the separate self-hosted
+# "0 findings" chased on 2026-05-26 turned out to be license SEAT enforcement,
+# NOT this queue race — but the cold-boot window is a real silent-drop risk
+# regardless.) So gate readiness on the queue being declared AND consumed.
+log "Waiting for review pipeline queue (RabbitMQ) to be ready..."
+QUEUE_READY=0
+for i in $(seq 1 60); do
+    line=$(ssh_vm "docker exec rabbitmq-prod rabbitmqctl list_queues -t 10 -p kodus-ai name consumers --no-table-headers 2>/dev/null | grep -E '^workflow.jobs.code_review.queue[[:space:]]'" 2>/dev/null || true)
+    consumers=$(printf '%s' "$line" | awk '{print $NF}')
+    if [ -n "$consumers" ] && [ "$consumers" -ge 1 ] 2>/dev/null; then QUEUE_READY=1; break; fi
+    sleep 3
+done
+if [ "$QUEUE_READY" = "1" ]; then
+    # Settle buffer: let the webhooks producer channel reconnect after any
+    # startup 404 before the first real PR event arrives.
+    sleep 5
+    ok "Review pipeline queue ready (consumer attached)"
+else
+    err "Review queue 'workflow.jobs.code_review.queue' never got a consumer within ~3min — worker likely failed to start. Reviews would be silently dropped, so refusing to mark the stack ready."
+    ssh_vm "docker logs kodus-worker-prod --tail 80 --no-color" || true
     exit 1
 fi
 

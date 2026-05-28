@@ -403,7 +403,10 @@ async function subFlow4() {
             "UserKnownHostsFile=/dev/null",
             "-o",
             "LogLevel=ERROR",
-            "root@45.55.63.215",
+            // Derive the droplet host from SSO_E2E_BASE (<ip>.sslip.io) —
+            // a hardcoded IP here pointed at a long-dead droplet, failing
+            // this sub-flow's SQL step with ssh exit 255 on every run.
+            `root@${SSO_E2E_BASE.replace(/\.sslip\.io$/, "")}`,
             `docker exec -i db_kodus_postgres psql -U kodusdev -d kodus_db -c "${sql}"`,
         ],
         { cwd: process.cwd().replace(/tests\/e2e\/playwright$/, ""), encoding: "utf8" },

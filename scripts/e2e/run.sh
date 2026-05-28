@@ -220,6 +220,7 @@ case "$MODE" in
     matrix)
         ASSUME_YES=0
         AUTO_PROVISION=0
+        AUTO_PROVISION_PER_PROVIDER=0
         MATRIX_FILE="matrix/fast.yml"
         TARGET_FLAG=""
         TARGET_NAME=""
@@ -227,6 +228,10 @@ case "$MODE" in
             case "$1" in
                 -y|--yes)  ASSUME_YES=1; shift ;;
                 --auto-provision) AUTO_PROVISION=1; shift ;;
+                # One isolated droplet PER self-hosted provider, so the
+                # provider units the runner schedules in parallel each hit
+                # their own backend. Implies --auto-provision.
+                --auto-provision-per-provider) AUTO_PROVISION=1; AUTO_PROVISION_PER_PROVIDER=1; shift ;;
                 --target)  TARGET_FLAG="--target $2"; TARGET_NAME="$2"; shift 2 ;;
                 --target=*) TARGET_FLAG="--target ${1#--target=}"; TARGET_NAME="${1#--target=}"; shift ;;
                 -h|--help) usage; exit 0 ;;
@@ -283,9 +288,32 @@ case "$MODE" in
         # vars the runner reads. Each step is idempotent (--reuse on
         # provision scripts, signup-409-OK on tenant seeding) so this
         # is safe to run from a cold or warm state.
+        # Distinct self-hosted providers referenced by the matrix file.
+        # Cells list `target:` then `provider:`, so track the most recent
+        # target and emit the provider only while inside a self-hosted cell.
+        SELFHOSTED_PROVIDERS=$(awk '
+            /^[[:space:]]*-?[[:space:]]*target:[[:space:]]/ { t=$NF }
+            /^[[:space:]]*provider:[[:space:]]/ { if (t=="self-hosted") print $NF }
+        ' "$E2E_DIR/$MATRIX_FILE" | sort -u)
+
         if [ "$AUTO_PROVISION" = "1" ]; then
-            log "auto-provision: ensuring matrix droplet (--reuse)"
-            "$REPO_ROOT/scripts/selfhosted/provision.sh" --name matrix --reuse
+            if [ "$AUTO_PROVISION_PER_PROVIDER" = "1" ]; then
+                [ -n "$SELFHOSTED_PROVIDERS" ] || { err "--auto-provision-per-provider: no self-hosted cells in $MATRIX_FILE"; exit 1; }
+                log "auto-provision (per-provider): $(echo $SELFHOSTED_PROVIDERS | tr '\n' ' ')"
+                # Serial provisioning is the safe default — each droplet
+                # applies the cached dev-image override (from a prior
+                # `selfhosted:deploy-all`) on creation, so all providers end
+                # up on the same image. The wall-time win comes from the
+                # parallel RUN, not parallel provisioning. (Parallelizing
+                # provisioning itself is a future optimization.)
+                for p in $SELFHOSTED_PROVIDERS; do
+                    log "auto-provision: ensuring droplet matrix-$p (--reuse)"
+                    "$REPO_ROOT/scripts/selfhosted/provision.sh" --name "matrix-$p" --reuse
+                done
+            else
+                log "auto-provision: ensuring matrix droplet (--reuse)"
+                "$REPO_ROOT/scripts/selfhosted/provision.sh" --name matrix --reuse
+            fi
 
             # SSO E2E droplet only matters if the matrix file references
             # an sso-* scenario. Cheap check: grep the YAML.
@@ -327,47 +355,67 @@ case "$MODE" in
             # cloud login HTTP 401 because TARGET_BASE_URL hit the
             # droplet's API instead of qa.web.kodus.io).
             if [ "$TARGET_NAME" != "cloud" ]; then
-                MATRIX_STATE="$STATE_DIR/selfhosted-vm-matrix.json"
-                if [ -f "$MATRIX_STATE" ]; then
-                    MATRIX_IP=$(jq -r .server_ip "$MATRIX_STATE")
-                    MATRIX_PWD=$(jq -r .tenant.password "$MATRIX_STATE")
-                    export SELFHOSTED_API_BASE_URL="http://${MATRIX_IP}:3001"
-                    [ -n "$MATRIX_PWD" ] && [ "$MATRIX_PWD" != "null" ] && export SH_TENANT_PASSWORD="$MATRIX_PWD"
+                # (instance, env-suffix) pairs to export. Per-provider: one
+                # droplet each, suffix scopes the var (SELFHOSTED_*_<SFX>).
+                # Single: one shared droplet, generic SELFHOSTED_* vars.
+                SH_EXPORT_PAIRS=""
+                if [ "$AUTO_PROVISION_PER_PROVIDER" = "1" ]; then
+                    for p in $SELFHOSTED_PROVIDERS; do
+                        sfx=$(echo "$p" | tr '[:lower:]-' '[:upper:]_')
+                        SH_EXPORT_PAIRS="$SH_EXPORT_PAIRS matrix-$p:$sfx"
+                    done
+                else
+                    SH_EXPORT_PAIRS="matrix:"
+                fi
 
-                    # Refresh the cloudflared quick-tunnel URL. Quick
-                    # tunnels get a NEW random URL every time
-                    # `cloudflared tunnel --url` restarts — the systemd
-                    # unit's Restart=on-failure (kicked by the ~2-3h
-                    # session limit Cloudflare enforces) means the URL
-                    # stored in the state file from provision time goes
-                    # stale during long runs. Re-grep the live log on
-                    # the droplet for the most recent URL before each
-                    # matrix run.
-                    SSH_KEY="$STATE_DIR/ssh-keys/matrix"
-                    if [ -f "$SSH_KEY" ]; then
-                        LATEST_TUNNEL=$(ssh -i "$SSH_KEY" \
+                for pair in $SH_EXPORT_PAIRS; do
+                    inst="${pair%%:*}"
+                    sfx="${pair#*:}"
+                    state="$STATE_DIR/selfhosted-vm-$inst.json"
+                    if [ ! -f "$state" ]; then
+                        warn "auto-provision: no state file for $inst — skipping export"
+                        continue
+                    fi
+                    ip=$(jq -r .server_ip "$state")
+                    pw=$(jq -r .tenant.password "$state")
+
+                    # Refresh the cloudflared quick-tunnel URL. Quick tunnels
+                    # get a NEW random URL whenever `cloudflared tunnel --url`
+                    # restarts (the systemd Restart=on-failure kicked by
+                    # Cloudflare's ~2-3h session limit), so the provision-time
+                    # value goes stale. Re-grep the live log before the run.
+                    key="$STATE_DIR/ssh-keys/$inst"
+                    tun=""
+                    if [ -f "$key" ]; then
+                        tun=$(ssh -i "$key" \
                             -o StrictHostKeyChecking=no \
                             -o UserKnownHostsFile=/dev/null \
                             -o LogLevel=ERROR \
                             -o ConnectTimeout=10 \
-                            "root@${MATRIX_IP}" \
+                            "root@${ip}" \
                             "grep -oE 'https://[a-zA-Z0-9-]+\\.trycloudflare\\.com' /var/log/cloudflared.log 2>/dev/null | tail -n1" 2>/dev/null || true)
-                        if [ -n "$LATEST_TUNNEL" ]; then
-                            export SELFHOSTED_TUNNEL_URL="$LATEST_TUNNEL"
-                            log "auto-provision: SELFHOSTED_TUNNEL_URL=$LATEST_TUNNEL (refreshed from droplet log)"
-                            # Persist the refreshed URL back into the
-                            # state file so other commands (status,
-                            # ssh, redeploy) see the current value too.
-                            tmp=$(mktemp)
-                            jq --arg url "$LATEST_TUNNEL" '.tunnel_url = $url' "$MATRIX_STATE" > "$tmp" && mv "$tmp" "$MATRIX_STATE"
-                        else
-                            MATRIX_TUNNEL=$(jq -r .tunnel_url "$MATRIX_STATE")
-                            [ -n "$MATRIX_TUNNEL" ] && [ "$MATRIX_TUNNEL" != "null" ] && export SELFHOSTED_TUNNEL_URL="$MATRIX_TUNNEL"
-                            warn "auto-provision: could not refresh tunnel URL via SSH; falling back to state file value ($MATRIX_TUNNEL)"
-                        fi
                     fi
-                    log "auto-provision: SELFHOSTED_API_BASE_URL=$SELFHOSTED_API_BASE_URL"
-                fi
+                    if [ -n "$tun" ]; then
+                        tmp=$(mktemp)
+                        jq --arg url "$tun" '.tunnel_url = $url' "$state" > "$tmp" && mv "$tmp" "$state"
+                    else
+                        tun=$(jq -r .tunnel_url "$state")
+                        warn "auto-provision: could not refresh tunnel for $inst; using state value ($tun)"
+                    fi
+
+                    if [ -n "$sfx" ]; then
+                        export "SELFHOSTED_API_BASE_URL_$sfx=http://${ip}:3001"
+                        [ -n "$tun" ] && [ "$tun" != "null" ] && export "SELFHOSTED_TUNNEL_URL_$sfx=$tun"
+                    else
+                        export SELFHOSTED_API_BASE_URL="http://${ip}:3001"
+                        [ -n "$tun" ] && [ "$tun" != "null" ] && export SELFHOSTED_TUNNEL_URL="$tun"
+                    fi
+                    # One shared tenant password suffices: resolveTenantForCell
+                    # signs up a fresh e2e tenant per (provider, run) using it
+                    # on each droplet, so any droplet's password works.
+                    [ -z "${SH_TENANT_PASSWORD:-}" ] && [ -n "$pw" ] && [ "$pw" != "null" ] && export SH_TENANT_PASSWORD="$pw"
+                    log "auto-provision: $inst → SELFHOSTED_API_BASE_URL${sfx:+_$sfx}=http://${ip}:3001 (tunnel ${tun:0:40})"
+                done
             fi
         fi
 

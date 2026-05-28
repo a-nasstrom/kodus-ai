@@ -431,7 +431,9 @@ async function connectProvider(
     // the Azure provider because it composes the URL from the three
     // separate env pieces and the merged string isn't a valid repo
     // name. Leave env alone.
-    const provider = makeProvider(tenant.provider);
+    // Cloud tenant seeding uses the cloud-target repo so onboarding registers
+    // the same `*-cloud` fixture repo the cloud cells open PRs against.
+    const provider = makeProvider(tenant.provider, "cloud");
     await registerIntegration(target, provider, session);
     // Wait for /code-management/auth-integration's async post-processing
     // to land before /repositories queries depend on it. The UI flow

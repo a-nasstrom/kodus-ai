@@ -1,3 +1,4 @@
+import { ensureLicenseSeat } from "../lib/onboarding.js";
 import type { LicenseMode, RunContext, Scenario } from "../lib/types.js";
 
 // Fixture branch pair per provider. Each pair is a persistent head/base
@@ -96,6 +97,10 @@ export const licenseAttribution: Scenario = {
         await ctx.kodus.registerIntegration(session);
         const repo = await ctx.kodus.registerRepo(session);
         await ctx.kodus.finishOnboarding(session, repo);
+        // Self-hosted here only runs license-paid (expectReview); grant the
+        // PR author a seat so licensed-mode enforcement doesn't skip it. The
+        // cloud free/trial no-review tiers are unaffected (self-hosted-only).
+        await ensureLicenseSeat(ctx.target, session, ctx.provider);
 
         // Tiers where the entitlement gate BLOCKS the LLM review. On
         // cloud these tenants are "trial expired without BYOK" — Kody

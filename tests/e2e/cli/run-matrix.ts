@@ -202,35 +202,62 @@ async function main() {
         ? [targetFilter]
         : Array.from(new Set(cells.map((c) => c.target))) as Target[];
 
-    // Run targets in parallel. cloud and self-hosted don't share state:
-    // cloud talks to qa.web.kodus.io, self-hosted talks to its own
-    // droplet, tenants are per-target, evidence is per-cell. Cuts the
-    // wall-clock of a mixed-target nightly roughly in half compared to
-    // the earlier sequential loop.
+    // Split the run into independently-schedulable units, then run them
+    // all in parallel.
     //
-    // We deliberately do NOT parallelize WITHIN a target — concurrent
-    // reviews against the same LLM provider hit Kimi K2.6 / Moonshot
-    // rate limits and the per-cell logs would interleave to the point
-    // of being unreadable. That's a separate evolution if we ever
-    // need finer granularity than per-target.
-    const targetOutcomes = await Promise.allSettled(
-        targetsToRun.map(async (target) => {
-            const targetCells = cells.filter((c) => c.target === target);
-            if (!targetCells.length) {
-                return { target, results: [] };
+    //   cloud           → ONE unit (all cloud cells share qa.web.kodus.io
+    //                      and the seeded cloud tenants; serial within).
+    //   self-hosted      → ONE unit PER PROVIDER, each pinned to its own
+    //                      droplet via SELFHOSTED_*_<PROVIDER> (set by
+    //                      --auto-provision-per-provider). Isolating per
+    //                      provider makes cross-provider license-state
+    //                      pollution impossible and cuts wall-time (4
+    //                      providers no longer queue behind one droplet).
+    //
+    // Cells WITHIN a unit stay serial on purpose: they share one droplet
+    // (or the cloud control plane) and license-state ordering matters
+    // (e.g. per-seat teardown affects the next cell). Concurrency is
+    // bounded to one in-flight review per unit, so the peak LLM load is
+    // the number of units, not the number of cells.
+    interface RunUnit {
+        target: Target;
+        label: string;
+        cells: MatrixCell[];
+    }
+    const runUnits: RunUnit[] = [];
+    for (const target of targetsToRun) {
+        const targetCells = cells.filter((c) => c.target === target);
+        if (!targetCells.length) continue;
+        if (target === "self-hosted") {
+            const providers = Array.from(
+                new Set(targetCells.map((c) => c.provider)),
+            );
+            for (const provider of providers) {
+                runUnits.push({
+                    target,
+                    label: `${target}/${provider}`,
+                    cells: targetCells.filter((c) => c.provider === provider),
+                });
             }
+        } else {
+            runUnits.push({ target, label: target, cells: targetCells });
+        }
+    }
+
+    const targetOutcomes = await Promise.allSettled(
+        runUnits.map(async (unit) => {
             log.info(
-                `--- [target=${target}] running ${targetCells.length} cells in parallel with other targets`,
+                `--- [${unit.label}] running ${unit.cells.length} cell(s) in parallel with ${runUnits.length - 1} other unit(s)`,
             );
             const outcome = await runMatrix({
                 artifactRoot: `${process.cwd()}/evidence`,
                 runId,
-                target,
-                cells: targetCells,
+                target: unit.target,
+                cells: unit.cells,
                 scenarios,
                 dryRun,
             });
-            return { target, results: outcome.results };
+            return { label: unit.label, results: outcome.results };
         }),
     );
     let targetCrashed = false;
