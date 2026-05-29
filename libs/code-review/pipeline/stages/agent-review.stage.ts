@@ -566,7 +566,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 metadata: {
                     prNumber,
                     suggestionsCount: result.suggestions.length,
-                    agentResults: result.agentResults.map((r) => ({
+                    agentResults: (result.agentResults ?? []).map((r) => ({
                         agent: r.agentName,
                         category: r.agentCategory,
                         replicaIndex: r.agentReplicaIndex,
@@ -705,7 +705,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Collect suggestions discarded by severity filter and verify
             const allDiscarded: Partial<CodeSuggestion>[] = [];
-            for (const agentResult of result.agentResults) {
+            for (const agentResult of result.agentResults ?? []) {
                 if (agentResult.discardedBySeverity?.length) {
                     for (const s of agentResult.discardedBySeverity) {
                         allDiscarded.push({
