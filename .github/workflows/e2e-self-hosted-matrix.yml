@@ -217,3 +217,22 @@ jobs:
                   name: e2e-self-hosted-matrix
                   path: evidence/
                   retention-days: 30
+
+            - name: Checkout monorepo (for composite action)
+              if: needs.matrix.result == 'failure'
+              uses: actions/checkout@v6.0.2
+
+            - name: Notify Discord on failure
+              if: needs.matrix.result == 'failure'
+              uses: ./.github/actions/discord-notify
+              with:
+                  # SH matrix runs as part of the release (gates promote) or
+                  # ad-hoc via dispatch. Either way, QA channel — the release
+                  # workflow's own notify-discord-failure covers the release
+                  # case with full context.
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_QA || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ E2E self-hosted matrix failed"
+                  description: |
+                      `${{ inputs.matrix_file }}` failed against image `${{ inputs.image_tag }}`.
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -150,3 +150,19 @@ jobs:
                       tests/e2e/benchmark/scorecard.json
                   if-no-files-found: warn
                   retention-days: 30
+
+            - name: Notify Discord on failure
+              if: failure()
+              uses: ./.github/actions/discord-notify
+              with:
+                  # Bench has its own audience (model quality watchers, not
+                  # infra). Falls back to general so missing channel doesn't
+                  # silence regressions.
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_BENCH || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ Model code-review benchmark failed"
+                  description: |
+                      Engine code merged to main but the per-model benchmark didn't complete.
+                      Scope: ${{ steps.scope.outputs.only_model != '' && format('only_model={0}', steps.scope.outputs.only_model) || 'FULL (5 models)' }}
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                      Trigger: ${{ github.event_name }}

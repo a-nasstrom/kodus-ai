@@ -204,6 +204,36 @@ them — adding a scenario to fast.yml automatically reaches CI.
 
 ---
 
+## Discord notifications
+
+Three channels, picked so noisy CI alerts don't drown release news and so
+each audience can mute the others.
+
+| Webhook secret | Discord channel | What goes there | When |
+|---|---|---|---|
+| `DISCORD_WEBHOOK_RELEASES` | #releases | Cloud prod deploy (backend / web / mcp), SH release success notes, changelog publish | always (success + failure) |
+| `DISCORD_WEBHOOK_SELFHOSTED` | (existing) | Self-hosted release pipeline failures inside `selfhosted-build-push.yml` | failure only |
+| `DISCORD_WEBHOOK_QA` | #qa-ci | QA backend build/deploy failures, `e2e-cloud` (per-deploy + nightly) failures, `e2e-self-hosted-matrix` ad-hoc failures, eventually `tests.yml` PR failures | failure only |
+| `DISCORD_WEBHOOK_BENCH` | #benchmark | `code-review-model-benchmark.yml` failures | failure only |
+| `DISCORD_WEBHOOK` (legacy) | (existing) | Fallback for any of the above when the per-channel secret isn't configured yet, plus the workflows still using it inline (`tests.yml`, `web-qa-deploy`, etc.) | as before |
+
+**Graceful fallback**: every workflow notifies via the composite action
+[`.github/actions/discord-notify/`](../.github/actions/discord-notify/action.yml)
+with `webhook: ${{ secrets.DISCORD_WEBHOOK_<channel> || secrets.DISCORD_WEBHOOK }}`.
+That means a missing per-channel secret routes to the legacy general
+channel instead of going silent. You can create the per-channel webhooks
+in Discord at your pace and add them as repo secrets when ready — nothing
+breaks before that.
+
+**Setup to fully activate**: in Discord create one webhook per channel,
+copy each URL, then:
+
+```bash
+gh secret set DISCORD_WEBHOOK_RELEASES -R kodustech/kodus-ai --body '<url>'
+gh secret set DISCORD_WEBHOOK_QA       -R kodustech/kodus-ai --body '<url>'
+gh secret set DISCORD_WEBHOOK_BENCH    -R kodustech/kodus-ai --body '<url>'
+```
+
 ## Troubleshooting
 
 ### Matrix cells fail with "Repo X not in integration's available list"

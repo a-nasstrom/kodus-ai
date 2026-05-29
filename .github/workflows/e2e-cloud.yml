@@ -132,3 +132,17 @@ jobs:
                   path: tests/e2e/evidence/
                   if-no-files-found: warn
                   retention-days: 30
+
+            - name: Notify Discord on failure
+              if: failure()
+              uses: ./.github/actions/discord-notify
+              with:
+                  # Per-channel secret with fallback to the general webhook so
+                  # nothing goes silent if DISCORD_WEBHOOK_QA isn't created yet.
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_QA || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ E2E cloud matrix failed"
+                  description: |
+                      `${{ inputs.matrix_file || 'matrix/fast.yml' }}` failed against QA cloud (${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}).
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                      Trigger: ${{ github.event_name }}${{ github.event_name == 'schedule' && ' (nightly catch-all)' || '' }}

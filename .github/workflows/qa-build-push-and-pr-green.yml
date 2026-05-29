@@ -290,3 +290,25 @@ jobs:
             image_tag: ${{ github.event.inputs.image_tag || github.sha }}
             matrix_file: matrix/fast.yml
         secrets: inherit
+
+    notify-build-failure:
+        # The actual build job has Trivy + AWS + Docker + GitOps steps;
+        # any of them failing leaves QA stuck on the previous image with
+        # no signal. Surface that to #qa-ci so the team notices before
+        # the next merge wonders why their changes never reached QA.
+        name: Notify Discord (build/deploy failure only)
+        needs: build_push_and_open_pr
+        if: always() && needs.build_push_and_open_pr.result == 'failure'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6.0.2
+            - uses: ./.github/actions/discord-notify
+              with:
+                  webhook: ${{ secrets.DISCORD_WEBHOOK_QA || secrets.DISCORD_WEBHOOK }}
+                  status: failure
+                  title: "❌ QA backend build/deploy failed"
+                  description: |
+                      Image `${{ github.sha }}` did not roll out to QA.
+                      Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
