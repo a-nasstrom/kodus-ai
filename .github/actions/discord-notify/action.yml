@@ -11,7 +11,7 @@ description: 'Post a status notification to a Discord channel with graceful no-w
 
 inputs:
     webhook:
-        description: 'Discord webhook URL. Typically `${{ secrets.DISCORD_WEBHOOK_<channel> || secrets.DISCORD_WEBHOOK }}` so a missing per-channel secret falls back to the general one.'
+        description: 'Discord webhook URL. Typically the per-channel secret with a fallback to the general DISCORD_WEBHOOK so a missing per-channel secret degrades gracefully.'
         required: true
     status:
         description: 'success | failure | cancelled — drives the embed color'

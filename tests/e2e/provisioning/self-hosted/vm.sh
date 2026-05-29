@@ -336,10 +336,17 @@ env_set IMAGE_TAG "$IMAGE_TAG"
 env_set WEB_HOSTNAME_API "kodus-api"
 env_set WEB_PORT_API "3001"
 env_set NEXTAUTH_URL "http://$SERVER_IP:3000"
+# Webhook URL env var names are INCONSISTENT across providers in the app:
+# github/gitlab read API_*_CODE_MANAGEMENT_WEBHOOK, but bitbucket and azure
+# read GLOBAL_*_CODE_MANAGEMENT_WEBHOOK (see github.service getGithubWebhookUrl
+# / gitlab.service vs bitbucket-cloud.service:3114 / azureRepos.service:3911,
+# and .env.schema). Setting the API_ name for all four left bitbucket+azure
+# with an empty webhook URL → 0 hooks registered → the review pipeline never
+# fires → "0 findings" timeouts. Set each provider's ACTUAL name.
 env_set API_GITHUB_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/github/webhook"
 env_set API_GITLAB_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/gitlab/webhook"
-env_set API_BITBUCKET_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/bitbucket/webhook"
-env_set API_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/azure-repos/webhook"
+env_set GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/bitbucket/webhook"
+env_set GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK "$SERVER_TUNNEL_URL/azure-repos/webhook"
 env_set API_PG_DB_PASSWORD "\$(openssl rand -hex 16)"
 env_set API_MG_DB_PASSWORD "\$(openssl rand -hex 16)"
 env_set API_DATABASE_DISABLE_SSL "true"

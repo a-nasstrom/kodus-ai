@@ -66,7 +66,11 @@ jobs:
     matrix:
         name: ${{ matrix.cell.provider }} × ${{ matrix.cell.license }}
         runs-on: ubuntu-latest
-        timeout-minutes: 40
+        # ~7min provision + 5 review scenarios (~16min) + per-seat-license-
+        # toggle (3 sequential PRs, ~10-12min real though its internal poll
+        # ceiling is 40min) + rbac. Headroom over the observed ~35min so a
+        # slow LLM round on one scenario doesn't kill the whole cell.
+        timeout-minutes: 60
         environment: ci
         strategy:
             fail-fast: false
@@ -142,6 +146,13 @@ jobs:
                   SH_LICENSE_KEY_PAID: ${{ secrets.SH_LICENSE_KEY_PAID }}
                   SH_LICENSE_KEY_FREE: ${{ secrets.SH_LICENSE_KEY_FREE }}
 
+                  # seats=1 license JWT for per-seat-license-toggle. Written to
+                  # a file below (the scenario reads SH_LICENSE_KEY_PATH, never
+                  # the raw env, to mirror the chmod-600 dev-laptop convention).
+                  # When the secret is unset the file isn't created and the
+                  # scenario auto-skips via --skip-missing-tokens.
+                  SH_LICENSE_KEY_SEATS1: ${{ secrets.SH_LICENSE_KEY_SEATS1 }}
+
                   # LLM provider — vm.sh expects these to write to the VM's .env.
                   # Team default: Moonshot Kimi K2.6 (reusing BYOK_MOONSHOT_API_KEY
                   # since that's the key we already pay for and that maps to the
@@ -160,6 +171,17 @@ jobs:
                   # ALL is safe — non-applicable scenarios are skipped, not
                   # failed.
                   set -euo pipefail
+
+                  # Materialize the seats=1 license JWT where the per-seat
+                  # scenario expects it. If the secret is empty we leave the
+                  # path unset so run-matrix --skip-missing-tokens skips the
+                  # scenario instead of crashing on a 0-byte file.
+                  if [ -n "${SH_LICENSE_KEY_SEATS1:-}" ]; then
+                      mkdir -p "$HOME/.kodus-dev"
+                      printf '%s' "$SH_LICENSE_KEY_SEATS1" > "$HOME/.kodus-dev/license-seats1.jwt"
+                      export SH_LICENSE_KEY_PATH="$HOME/.kodus-dev/license-seats1.jwt"
+                  fi
+
                   SOURCE="tests/e2e/${SOURCE_MATRIX_FILE}"
                   if [ ! -f "$SOURCE" ]; then
                       echo "::error::source matrix file not found: $SOURCE"
