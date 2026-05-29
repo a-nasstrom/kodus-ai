@@ -2701,7 +2701,10 @@ export class GitlabService implements Omit<
                 (comment) => comment.id === filters.discussionId,
             )?.notes[0];
 
-            if (filters?.discussionId === undefined) {
+            if (
+                filters?.discussionId === undefined ||
+                filters.discussionId === ''
+            ) {
                 return comments;
             } else {
                 return comments
@@ -2711,6 +2714,7 @@ export class GitlabService implements Omit<
                             id: note.id,
                             body: note.body,
                             createdAt: note.created_at,
+                            discussionId: filters.discussionId ?? comment.id,
                             originalCommit: {
                                 body: originalCommit.body,
                                 id: originalCommit.id,

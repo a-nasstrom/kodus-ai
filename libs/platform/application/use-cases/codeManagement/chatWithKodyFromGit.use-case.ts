@@ -641,17 +641,41 @@ export class ChatWithKodyFromGitUseCase {
                     pullRequestNumber,
                     repository,
                     discussionId:
-                        params.payload?.object_attributes?.discussion_id ?? '',
+                        params.payload?.object_attributes?.discussion_id,
                 },
             });
+
+        // GitLab-only: when discussion_id is missing from the webhook,
+        // getPullRequestReviewComment returns raw discussions (with notes[]).
+        // Flatten to note-shaped objects so find-by-note-id works.
+        const isGitLabWithMissingDiscussionId =
+            params.payload?.object_attributes !== undefined &&
+            !params.payload?.object_attributes?.discussion_id;
+
+        const normalizedComments = isGitLabWithMissingDiscussionId
+            ? allComments?.flatMap((d) => {
+                  const firstNote = d.notes?.[0];
+                  return (d.notes || []).map((note) => ({
+                      ...note,
+                      id: note.id,
+                      discussionId: d.id,
+                      originalCommit: firstNote
+                          ? {
+                                body: firstNote.body,
+                                id: firstNote.id,
+                            }
+                          : undefined,
+                  }));
+              })
+            : allComments;
 
         const commentId = this.getCommentId(params);
         const comment =
             params.platformType !== PlatformType.AZURE_REPOS
-                ? allComments?.find((c) => c.id === commentId)
+                ? normalizedComments?.find((c) => c.id === commentId)
                 : this.getReviewThreadByCommentId(
                       commentId,
-                      allComments,
+                      normalizedComments,
                       params,
                   );
 
@@ -674,12 +698,12 @@ export class ChatWithKodyFromGitUseCase {
 
         const originalKodyComment = this.getOriginalKodyComment(
             comment,
-            allComments,
+            normalizedComments,
             params.platformType,
         );
         const othersReplies = this.getOthersReplies(
             comment,
-            allComments,
+            normalizedComments,
             params.platformType,
         );
         const sender = this.getSender(params);
@@ -706,7 +730,8 @@ export class ChatWithKodyFromGitUseCase {
                     organizationAndTeamData,
                     inReplyToId: comment.id,
                     discussionId:
-                        params.payload?.object_attributes?.discussion_id,
+                        params.payload?.object_attributes?.discussion_id ??
+                        comment.discussionId,
                     threadId: comment.threadId,
                     body: responsePolicy.getAcknowledgmentBody(),
                     repository,
@@ -807,7 +832,8 @@ export class ChatWithKodyFromGitUseCase {
                     organizationAndTeamData,
                     inReplyToId: comment.id,
                     discussionId:
-                        params.payload?.object_attributes?.discussion_id,
+                        params.payload?.object_attributes?.discussion_id ??
+                        comment.discussionId,
                     threadId: comment.threadId,
                     body: response,
                     repository,
@@ -909,17 +935,41 @@ export class ChatWithKodyFromGitUseCase {
                     pullRequestNumber,
                     repository,
                     discussionId:
-                        params.payload?.object_attributes?.discussion_id ?? '',
+                        params.payload?.object_attributes?.discussion_id,
                 },
             });
+
+        // GitLab-only: when discussion_id is missing from the webhook,
+        // getPullRequestReviewComment returns raw discussions (with notes[]).
+        // Flatten to note-shaped objects so find-by-note-id works.
+        const isGitLabWithMissingDiscussionId =
+            params.payload?.object_attributes !== undefined &&
+            !params.payload?.object_attributes?.discussion_id;
+
+        const normalizedComments = isGitLabWithMissingDiscussionId
+            ? allComments?.flatMap((d) => {
+                  const firstNote = d.notes?.[0];
+                  return (d.notes || []).map((note) => ({
+                      ...note,
+                      id: note.id,
+                      discussionId: d.id,
+                      originalCommit: firstNote
+                          ? {
+                                body: firstNote.body,
+                                id: firstNote.id,
+                            }
+                          : undefined,
+                  }));
+              })
+            : allComments;
 
         const commentId = this.getCommentId(params);
         const comment =
             params.platformType !== PlatformType.AZURE_REPOS
-                ? allComments?.find((c) => c.id === commentId)
+                ? normalizedComments?.find((c) => c.id === commentId)
                 : this.getReviewThreadByCommentId(
                       commentId,
-                      allComments,
+                      normalizedComments,
                       params,
                   );
 
@@ -941,7 +991,9 @@ export class ChatWithKodyFromGitUseCase {
             await this.codeManagementService.createResponseToComment({
                 organizationAndTeamData,
                 inReplyToId: comment.id,
-                discussionId: params.payload?.object_attributes?.discussion_id,
+                discussionId:
+                    params.payload?.object_attributes?.discussion_id ??
+                    comment.discussionId,
                 threadId: comment.threadId ?? comment?.in_reply_to_id,
                 body: ACKNOWLEDGMENT_MESSAGES.BUSINESS_LOGIC_INVALID_CONTEXT,
                 repository,
@@ -1562,7 +1614,10 @@ export class ChatWithKodyFromGitUseCase {
             case PlatformType.GITLAB:
                 return allComments.filter(
                     (reply) =>
-                        reply.in_reply_to_id === comment.in_reply_to_id &&
+                        ((reply.in_reply_to_id !== undefined &&
+                            reply.in_reply_to_id ===
+                                comment.in_reply_to_id) ||
+                            reply.discussionId === comment.discussionId) &&
                         !this.isKodyComment(reply, platformType),
                 );
             default:
