@@ -2074,7 +2074,13 @@ export class ForgejoService implements Omit<
                 },
             );
 
-            return commits.map((c) => this.transformCommit(c));
+            return commits
+                .map((c) => this.transformCommit(c))
+                .sort(
+                    (a, b) =>
+                        new Date(a?.commit?.author?.date || '').getTime() -
+                        new Date(b?.commit?.author?.date || '').getTime(),
+                );
         } catch (error) {
             this.logger.error({
                 message: 'Error getting commits for PR',
