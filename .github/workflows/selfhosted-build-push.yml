@@ -540,12 +540,25 @@ jobs:
     # ----------------------------------------------------------------
     unfreeze-main:
         name: 🌡 Unfreeze main
+        # MUST wait for every job that may push to main, or we race with
+        # them: cli-changes and changelog-publish both run `git push
+        # origin HEAD:main`. If unfreeze fires first, another PR can
+        # land in the gap and their pushes break with non-fast-forward.
+        # `always()` keeps the unfreeze running even if any upstream
+        # failed — the freeze rule must never end up permanently active.
         needs:
             - freeze-main
             - plan-release
+            - create-rc-tag
             - build-and-push
             - e2e-matrix
             - promote
+            - cli-changes
+            - cli-release
+            - changelog-publish
+            - env-sync-installer
+            - trigger-installer-e2e
+            - cleanup-rc-tag
         if: ${{ always() && needs.freeze-main.result == 'success' }}
         runs-on: ubuntu-latest
         permissions:
