@@ -568,14 +568,24 @@ jobs:
         name: Notify Discord (failure only)
         needs:
             - plan-release
+            - create-rc-tag
             - build-and-push
             - e2e-matrix
             - promote
-        if: always() && (
-            needs.build-and-push.result == 'failure' ||
-            needs.e2e-matrix.result == 'failure' ||
-            needs.promote.result == 'failure'
-            )
+            - cli-changes
+            - cli-release
+            - changelog-publish
+            - env-sync-installer
+            - trigger-installer-e2e
+            - cleanup-rc-tag
+        # Cover ANY upstream failure in the release pipeline. The May-24
+        # release shipped images + promoted but `cli-release` failed
+        # silently on npm publish — `notify-discord-failure` skipped
+        # because its previous condition only covered build/matrix/promote.
+        # Customer pulled `:latest` but the CLI never updated. Now we fan
+        # the trigger across every job that can leave the release in a
+        # half-shipped state.
+        if: always() && contains(needs.*.result, 'failure')
         runs-on: ubuntu-latest
         environment: production
         permissions: {}
@@ -583,15 +593,24 @@ jobs:
             - name: Compose failure context
               id: ctx
               run: |
-                  if [ "${{ needs.e2e-matrix.result }}" = "failure" ]; then
-                    echo "phase=E2E matrix" >> $GITHUB_OUTPUT
-                    echo "color=0xff8800" >> $GITHUB_OUTPUT
-                  elif [ "${{ needs.promote.result }}" = "failure" ]; then
-                    echo "phase=Promotion" >> $GITHUB_OUTPUT
-                    echo "color=0xff0000" >> $GITHUB_OUTPUT
-                  else
-                    echo "phase=Build" >> $GITHUB_OUTPUT
-                    echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  # Order matters: pre-promote failures mean "release didn't
+                  # ship". Post-promote failures mean "release SHIPPED but
+                  # something downstream broke" — those are urgent in a
+                  # different way (customer pulled :latest but the CLI /
+                  # changelog / installer never updated).
+                  if   [ "${{ needs.plan-release.result }}"        = "failure" ]; then echo "phase=Plan release"        >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.create-rc-tag.result }}"       = "failure" ]; then echo "phase=Create RC tag"       >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.build-and-push.result }}"      = "failure" ]; then echo "phase=Build"               >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.e2e-matrix.result }}"          = "failure" ]; then echo "phase=E2E matrix"          >> $GITHUB_OUTPUT; echo "color=0xff8800" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.promote.result }}"             = "failure" ]; then echo "phase=Promote"             >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
+                  # Post-promote: customer-visible release is OUT.
+                  elif [ "${{ needs.cli-changes.result }}"         = "failure" ]; then echo "phase=CLI changes detection (POST-PROMOTE)"        >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.cli-release.result }}"         = "failure" ]; then echo "phase=CLI npm publish (POST-PROMOTE)"             >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.changelog-publish.result }}"   = "failure" ]; then echo "phase=Changelog publish (POST-PROMOTE)"            >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.env-sync-installer.result }}"  = "failure" ]; then echo "phase=Installer env sync (POST-PROMOTE)"           >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.trigger-installer-e2e.result }}" = "failure" ]; then echo "phase=Installer E2E dispatch (POST-PROMOTE)"     >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
+                  elif [ "${{ needs.cleanup-rc-tag.result }}"      = "failure" ]; then echo "phase=RC tag cleanup (POST-PROMOTE — cosmetic)"   >> $GITHUB_OUTPUT; echo "color=0xff00ff" >> $GITHUB_OUTPUT
+                  else echo "phase=Unknown" >> $GITHUB_OUTPUT; echo "color=0xff0000" >> $GITHUB_OUTPUT
                   fi
 
             - name: Check Discord webhook configuration
@@ -608,8 +627,13 @@ jobs:
               uses: sarisia/actions-status-discord@v1.16.0
               with:
                   webhook: ${{ secrets.DISCORD_WEBHOOK_INTERNAL || secrets.DISCORD_WEBHOOK_SELFHOSTED || secrets.DISCORD_WEBHOOK }}
-                  content: ":x: Self-hosted release `${{ needs.plan-release.outputs.rc_tag }}` failed at: **${{ steps.ctx.outputs.phase }}**. Customer-visible tag `${{ needs.plan-release.outputs.release_tag }}` was NOT created."
+                  content: ":x: Self-hosted release failed at: **${{ steps.ctx.outputs.phase }}**"
                   title: "Self-Hosted Release Failed (${{ steps.ctx.outputs.phase }})"
-                  description: "RC `${{ needs.plan-release.outputs.rc_tag }}` did not complete. The release process is gated — no customer impact, but check the workflow logs to unblock."
+                  description: |
+                      RC tag:           `${{ needs.plan-release.outputs.rc_tag }}`
+                      Final tag:        `${{ needs.plan-release.outputs.release_tag }}`
+                      Promote result:   `${{ needs.promote.result }}`
+
+                      If the phase contains POST-PROMOTE the customer-facing `:latest` is already out — the side-effect (CLI / changelog / installer) did not complete. Otherwise the customer never saw this RC.
                   username: "GitHub Actions"
                   color: ${{ steps.ctx.outputs.color }}
