@@ -57,13 +57,47 @@ on:
                 required: false
                 default: false
                 type: boolean
+            only_provider:
+                description: "Run only one provider's cells (debug). 'all' runs the full matrix."
+                required: false
+                default: all
+                type: choice
+                options:
+                    - all
+                    - github
+                    - gitlab
+                    - bitbucket
+                    - azure-devops
 
 concurrency:
     group: e2e-self-hosted-matrix-${{ inputs.image_tag }}
     cancel-in-progress: true
 
 jobs:
+    # Build the cell list, optionally narrowed to a single provider via the
+    # only_provider dispatch input. workflow_call has no only_provider input,
+    # so released runs always get the full matrix (inputs.only_provider is ''
+    # there → falls through to 'all').
+    plan:
+        runs-on: ubuntu-latest
+        outputs:
+            cells: ${{ steps.gen.outputs.cells }}
+        steps:
+            - id: gen
+              env:
+                  ONLY: ${{ inputs.only_provider || 'all' }}
+              run: |
+                  ALL='[{"provider":"github","license":"license-paid"},{"provider":"gitlab","license":"license-paid"},{"provider":"bitbucket","license":"license-paid"},{"provider":"azure-devops","license":"license-paid"},{"provider":"github","license":"license-free"}]'
+                  if [ "$ONLY" = "all" ] || [ -z "$ONLY" ]; then
+                      CELLS="$ALL"
+                  else
+                      CELLS=$(printf '%s' "$ALL" | jq -c --arg p "$ONLY" '[.[] | select(.provider == $p)]')
+                  fi
+                  echo "Selected cells: $CELLS"
+                  echo "cells=$CELLS" >> "$GITHUB_OUTPUT"
+
     matrix:
+        needs: plan
         name: ${{ matrix.cell.provider }} × ${{ matrix.cell.license }}
         runs-on: ubuntu-latest
         # ~7min provision + 5 review scenarios (~16min) + per-seat-license-
@@ -75,12 +109,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                cell:
-                    - { provider: github, license: license-paid }
-                    - { provider: gitlab, license: license-paid }
-                    - { provider: bitbucket, license: license-paid }
-                    - { provider: azure-devops, license: license-paid }
-                    - { provider: github, license: license-free }
+                cell: ${{ fromJson(needs.plan.outputs.cells) }}
         steps:
             - name: Checkout monorepo
               uses: actions/checkout@v6.0.2
