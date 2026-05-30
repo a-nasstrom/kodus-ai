@@ -80,6 +80,28 @@ jobs:
               working-directory: tests/e2e
               run: npm install --no-audit --no-fund
 
+            # Seed the cloud tenant registry. The runner resolves each cloud
+            # cell's tenant by (provider, license) from ~/.kodus-dev/cloud-
+            # tenants.json (runner.ts:readCloudTenantsFile). Locally that file
+            # exists; in CI it didn't, so every cell fell back to the per-
+            # license env vars — which only cover free/trial/paid GITHUB, so
+            # paid-bitbucket / paid-azure / community-byok had no tenant (and
+            # the github-paid fallback lacks the bitbucket/azure connected
+            # repos → "repo not in integration's available list"). Writing the
+            # file restores the exact per-provider tenants the local runs used.
+            - name: Seed cloud tenants registry
+              env:
+                  CLOUD_TENANTS_JSON: ${{ secrets.CLOUD_TENANTS_JSON }}
+              run: |
+                  if [ -z "${CLOUD_TENANTS_JSON:-}" ]; then
+                      echo "::warning::CLOUD_TENANTS_JSON secret empty — cells fall back to per-license env vars (github only)"
+                      exit 0
+                  fi
+                  mkdir -p "$HOME/.kodus-dev"
+                  printf '%s' "$CLOUD_TENANTS_JSON" > "$HOME/.kodus-dev/cloud-tenants.json"
+                  COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.kodus-dev/cloud-tenants.json','utf8')).length)")
+                  echo "Seeded $COUNT cloud tenants"
+
             - name: Run cloud matrix
               env:
                   # target.sh expects TARGET_BASE_URL + TARGET_WEB_URL.
