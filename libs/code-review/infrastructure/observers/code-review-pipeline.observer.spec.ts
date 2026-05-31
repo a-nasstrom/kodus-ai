@@ -485,12 +485,17 @@ describe('CodeReviewPipelineObserver', () => {
         );
     });
 
-    it('should log stage as PARTIAL_ERROR if context has errors for the stage', async () => {
-        // Setup context with errors
+    it('should log stage as PARTIAL_ERROR if context has errors with severity=partial for the stage', async () => {
+        // severity is required to disambiguate partial-vs-critical at the
+        // stage level — matches deriveFinalStatus in automationCodeReview.ts
+        // so the per-stage badge and the automation rollup agree. Without
+        // explicit severity, the default is 'critical' (per PipelineErrorSeverity)
+        // and the stage maps to ERROR.
         context.errors = [
             {
                 stage: 'TestStage',
                 error: new Error('Partial error'),
+                severity: 'partial',
             } as any,
         ];
 
@@ -570,6 +575,9 @@ describe('CodeReviewPipelineObserver', () => {
                     stage: 'ProcessFilesPrLevelReviewStage',
                     substage: 'kody-rules',
                     error: new Error('Timeout waiting for LLM response'),
+                    // kody-rules failure is auxiliary — the main review
+                    // still has value, so the stage degrades partially.
+                    severity: 'partial',
                 },
             ];
 
@@ -602,6 +610,10 @@ describe('CodeReviewPipelineObserver', () => {
                     stage: 'FinishCommentsStage',
                     substage: 'resolve-comment',
                     error: new Error('GitHub API rate limit exceeded'),
+                    // Posting comments fails but the review itself
+                    // completed — partial degradation, not a critical
+                    // failure of the review.
+                    severity: 'partial',
                 },
             ];
 

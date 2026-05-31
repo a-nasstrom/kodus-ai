@@ -504,6 +504,13 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             codeReviewTimeline,
                             enrichedData,
                             suggestionsCount,
+                            // Adaptive-fit fidelity warnings (small
+                            // context window forced a degraded path).
+                            // Persisted by automationCodeReview's
+                            // _buildExecutionData; undefined for
+                            // full-fidelity runs.
+                            reviewWarnings:
+                                execution.dataExecution?.reviewWarnings,
                         };
 
                         enrichedPullRequests.push(enrichedPR);

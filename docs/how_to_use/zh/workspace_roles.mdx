@@ -46,22 +46,7 @@ Kodus 工作区支持**基于角色的访问控制(RBAC)**,允许您管理组织
 
 以下是每个角色可以执行的操作的详细分解,基于实际权限矩阵:
 
-<Note>
-**图例**: V = 查看, E = 编辑, D = 删除, (all) = 所有代码库, (own) = 仅自己的代码库, - = 无访问权限
-</Note>
-
-| 权限 | 所有者 | 计费管理员 | 代码库管理员 | 贡献者 |
-|------------|-------|----------------|------------------|-------------|
-| **代码审查配置全局** | V (all) / E (all) | V (all) | V (all) | V (all) |
-| **代码审查配置代码库** | V (all) / E (all) / D (all) | V (all) | V (own) / E (own) | V (own) |
-| **代码审查配置文件夹** | V (all) / E (all) / D (all) | V (all) | V (own) / E (own) | V (own) |
-| **计费/订阅** | V (all) / E (all) / D (all) | V (all) / E (all) / D (all) | - | - |
-| **驾驶舱** | V (all) / E (all) | - | V (own) | - |
-| **工单** | V (all) / E (all) | - | V (all) / E (own) | V (own) |
-| **活动日志** | V (all) | V (all) | V (own) | V (own) |
-| **Git 设置** | V (all) / E (all) / D (all) | V (all) | V (all) | V (all) |
-| **拉取请求** | V (all) / E (all) / D (all) | V (all) | V (all) | - |
-| **插件** | V (all) / E (all) / D (all) | V (all) | V (all) | - |
+<Snippet file="rbac-matrix-generated.mdx" />
 
 ## 管理工作区成员
 

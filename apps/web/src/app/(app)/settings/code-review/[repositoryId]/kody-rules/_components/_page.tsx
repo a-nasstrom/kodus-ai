@@ -28,7 +28,6 @@ import {
     KodyRuleWithInheritanceDetails,
     type KodyRule,
 } from "@services/kodyRules/types";
-import { KodyLearningStatus } from "@services/parameters/types";
 import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,7 +39,6 @@ import { safeArray } from "src/core/utils/safe-array";
 import { CodeReviewPagesBreadcrumb } from "../../../_components/breadcrumb";
 import { CentralizedConfigReadOnlyAlert } from "../../../_components/centralized-config-readonly-alert";
 import { GenerateRulesOptions } from "../../../_components/generate-rules-options";
-import GeneratingConfig from "../../../_components/generating-config";
 import { KodyRuleAddOrUpdateItemModal } from "../../../_components/modal";
 import { PendingMemoriesModal } from "../../../_components/pending-memories-modal";
 import { PendingKodyRulesModal } from "../../../_components/pending-rules-modal";
@@ -103,42 +101,6 @@ const KodyRulesPageContent = () => {
     const config = useFullCodeReviewConfig();
     const pathname = usePathname();
     const router = useRouter();
-
-    // While rule generation runs in the background (kicked off detached by
-    // finish-onboarding), poll the server so the page flips to the real
-    // rules as soon as they are ready. Give up after a few minutes so a
-    // crashed run doesn't spin forever — the KodyLearning cron regenerates
-    // stuck teams, and the user can still refresh manually.
-    const isGeneratingRules =
-        platformConfig.kodyLearningStatus ===
-        KodyLearningStatus.GENERATING_RULES;
-    const [ruleGenerationPollTimedOut, setRuleGenerationPollTimedOut] =
-        useState(false);
-
-    useEffect(() => {
-        if (!isGeneratingRules || ruleGenerationPollTimedOut) {
-            return;
-        }
-
-        const POLL_INTERVAL_MS = 5_000;
-        const GIVE_UP_MS = 5 * 60 * 1000;
-        const startedAt = Date.now();
-        let timer: ReturnType<typeof setTimeout>;
-
-        const tick = () => {
-            if (Date.now() - startedAt >= GIVE_UP_MS) {
-                setRuleGenerationPollTimedOut(true);
-                return;
-            }
-            // Re-pull server data; once generation finishes,
-            // kodyLearningStatus flips to ENABLED and this effect stops.
-            router.refresh();
-            timer = setTimeout(tick, POLL_INTERVAL_MS);
-        };
-
-        timer = setTimeout(tick, POLL_INTERVAL_MS);
-        return () => clearTimeout(timer);
-    }, [isGeneratingRules, ruleGenerationPollTimedOut, router]);
 
     const searchParams = useSearchParams();
     const { repositoryId, directoryId } = useCodeReviewRouteParams();
@@ -284,13 +246,19 @@ const KodyRulesPageContent = () => {
     // the count. Onboarding / Kody-generated rules share the
     // "sourcePath is set" shape but come from unrelated flows and don't
     // count here.
+    //
+    // Rules with `pinnedSync=true` are EXCLUDED: their source file
+    // carries `@kody-sync`, so the backend keeps syncing them even
+    // when the repo toggle is off. They're actively maintained, not
+    // orphans. See `kodyRulesSync.service.ts:shouldForceSync`.
     const autoSyncedActiveCount = useMemo(
         () =>
             kodyRules.filter(
                 (rule) =>
                     (rule.status === KodyRulesStatus.ACTIVE ||
                         rule.status === KodyRulesStatus.PAUSED) &&
-                    inferRuleOrigin(rule) === "Auto-sync",
+                    inferRuleOrigin(rule) === "Auto-sync" &&
+                    !rule.pinnedSync,
             ).length,
         [kodyRules],
     );
@@ -385,11 +353,15 @@ const KodyRulesPageContent = () => {
 
         // Banner CTA quick-filter (forces "Auto-sync only") wins over the
         // popover filters so the orphan review experience stays focused.
+        // Same exclusion as `autoSyncedActiveCount`: pinned-sync rules
+        // are actively maintained via `@kody-sync` so they shouldn't
+        // appear in the orphan review view either.
         const bannerFilteredRules =
             onlyIdeSynced && ruleType === KodyRulesType.STANDARD
                 ? statusFilteredRules.filter(
                       (rule) =>
-                          inferRuleOrigin(rule as KodyRule) === "Auto-sync",
+                          inferRuleOrigin(rule as KodyRule) === "Auto-sync" &&
+                          !(rule as KodyRule).pinnedSync,
                   )
                 : statusFilteredRules;
 
@@ -845,14 +817,6 @@ const KodyRulesPageContent = () => {
     const pendingEntityLabel: "rules" | "memories" =
         activeTab === "memories" ? "memories" : "rules";
 
-    if (
-        platformConfig.kodyLearningStatus ===
-            KodyLearningStatus.GENERATING_CONFIG ||
-        (isGeneratingRules && !ruleGenerationPollTimedOut)
-    ) {
-        return <GeneratingConfig />;
-    }
-
     return (
         <Page.Root>
             <Page.Header>
@@ -1024,6 +988,11 @@ const KodyRulesPageContent = () => {
                                                 onToggle: toggleSelection,
                                                 isEligible: isBulkEligible,
                                             }}
+                                            syncEnabledForRepo={
+                                                isGlobalView
+                                                    ? undefined
+                                                    : ideRulesSyncEnabledForRepo
+                                            }
                                         />
                                     );
                                 }

@@ -2,27 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "src/core/providers/auth.provider";
+import { useConfig } from "src/core/providers/ConfigProvider";
 import { axiosAuthorized } from "src/core/utils/axios";
-import { createUrl, pathToApiUrl } from "src/core/utils/helpers";
-
-function getHelpdeskUrl() {
-    return createUrl(
-        process.env.WEB_HOSTNAME_HELPDESK || "localhost",
-        process.env.WEB_PORT_HELPDESK || "3004",
-        "/auth/cloud",
-        { containerName: "kodus-helpdesk-web" },
-    );
-}
+import { pathToApiUrl } from "src/core/utils/helpers";
 
 const HELPDESK_TOKEN_URL = pathToApiUrl("/auth/helpdesk-token");
 
 export default function HelpdeskPage() {
     const { accessToken } = useAuth();
+    const { helpdeskUrl } = useConfig();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [iframeReady, setIframeReady] = useState(false);
     const tokenSentRef = useRef(false);
-    const helpdeskUrl = getHelpdeskUrl();
-    const helpdeskOrigin = new URL(helpdeskUrl).origin;
+    const helpdeskOrigin = helpdeskUrl ? new URL(helpdeskUrl).origin : "";
 
     const sendToken = useCallback(async () => {
         if (tokenSentRef.current) return;
@@ -62,6 +54,14 @@ export default function HelpdeskPage() {
             sendToken();
         }
     }, [iframeReady, accessToken, sendToken]);
+
+    if (!helpdeskUrl) {
+        return (
+            <div className="text-text-secondary flex-1 p-6">
+                Helpdesk is not configured for this environment.
+            </div>
+        );
+    }
 
     return (
         <div className="flex-1 overflow-hidden pr-[60px]">

@@ -16,8 +16,15 @@ import { useGetTimezone } from "@services/organizationParameters/hooks";
 import {
     buildPullRequestUrl,
     type CodeReviewTimelineItem,
+    type ReviewWarning,
+    type ReviewWarningKind,
 } from "@services/pull-requests";
-import { ChevronDownIcon, ExternalLinkIcon, GitBranchIcon } from "lucide-react";
+import {
+    AlertTriangleIcon,
+    ChevronDownIcon,
+    ExternalLinkIcon,
+    GitBranchIcon,
+} from "lucide-react";
 import { cn } from "src/core/utils/components";
 
 import type { PullRequestExecutionGroup } from "./types";
@@ -692,6 +699,16 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                 )}
                                                             </div>
                                                         )}
+                                                        {execution.reviewWarnings &&
+                                                            execution
+                                                                .reviewWarnings
+                                                                .length > 0 && (
+                                                                <ReviewFidelityNotice
+                                                                    warnings={
+                                                                        execution.reviewWarnings
+                                                                    }
+                                                                />
+                                                            )}
                                                         <div className="relative pl-6">
                                                             <div className="bg-card-lv3/70 absolute top-2 left-[0.5625rem] h-[calc(100%-0.75rem)] w-px" />
                                                             <div className="space-y-3">
@@ -879,12 +896,19 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                                                                     )}
                                                                                             </details>
                                                                                         )}
-                                                                                    {item.status ===
-                                                                                        "partial_error" &&
+                                                                                    {(item.status ===
+                                                                                        "partial_error" ||
+                                                                                        item.status ===
+                                                                                            "error") &&
+                                                                                        // Only render the collapsible when there
+                                                                                        // are multiple distinct errors — for a
+                                                                                        // single error the stage's top-level
+                                                                                        // message already shows it, and the
+                                                                                        // collapsible just repeats the same text.
                                                                                         stageInfo
                                                                                             .partialErrors
                                                                                             .length >
-                                                                                            0 && (
+                                                                                            1 && (
                                                                                             <details className="text-warning/90 mt-2 text-xs">
                                                                                                 <summary className="cursor-pointer">
                                                                                                     View
@@ -1023,5 +1047,77 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                 </TableRow>
             )}
         </Fragment>
+    );
+};
+
+const WARNING_KIND_LABEL: Record<ReviewWarningKind, string> = {
+    PROMPT_COMPACTED: "Compact system prompt (workflow + most rules trimmed)",
+    CALLGRAPH_DROPPED: "Pre-computed call graph omitted",
+    HUNK_HEADERS_ONLY:
+        "File diffs sent as hunk headers only; agent reads on demand",
+    DIFF_TRUNCATED: "Long file diffs truncated to fit the window",
+    LOW_SIGNAL_FILES_DROPPED:
+        "Low-signal files (tests, docs, styles) dropped",
+    HEAVY_PASSES_SKIPPED:
+        "Verifier / second-chance / rescue passes skipped",
+};
+
+/**
+ * Admin-only notice surfaced inside the expanded execution row when the
+ * agent pipeline emitted adaptive-fit warnings (small context window
+ * forced a degraded review path). Intentionally NOT shown to PR authors
+ * in the GitHub comment — see commentManager.service.ts.
+ */
+const ReviewFidelityNotice = ({ warnings }: { warnings: ReviewWarning[] }) => {
+    // Group by (kind, modelName, contextWindowTokens) so the same warning
+    // emitted by multiple agents collapses into one bullet. The backend
+    // already dedups in the orchestrator, but executions persisted
+    // before that dedup landed (or future per-agent agentName variance)
+    // could still produce duplicates here.
+    const seen = new Set<string>();
+    const unique = warnings.filter((w) => {
+        const key = `${w.kind}::${w.modelName}::${w.contextWindowTokens}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+    const head = unique[0];
+    return (
+        <div className="border-warning/30 bg-warning/5 mb-4 rounded-lg border p-3">
+            <div className="mb-2 flex items-center gap-2">
+                <AlertTriangleIcon className="text-warning size-4 shrink-0" />
+                <span className="text-text-primary text-sm font-medium">
+                    Review fidelity reduced
+                </span>
+            </div>
+            <p className="text-text-tertiary mb-2 text-xs leading-snug">
+                Model{" "}
+                <code className="text-text-secondary font-mono">
+                    {head.modelName}
+                </code>{" "}
+                has a context window of{" "}
+                <span className="tabular-nums">
+                    {head.contextWindowTokens.toLocaleString()}
+                </span>{" "}
+                tokens — the pipeline applied the following counter-measures
+                to fit:
+            </p>
+            <ul className="text-text-secondary space-y-1 text-xs">
+                {unique.map((w, idx) => (
+                    <li key={`${w.kind}-${idx}`} className="flex gap-1.5">
+                        <span className="text-text-tertiary">•</span>
+                        <span>
+                            {WARNING_KIND_LABEL[w.kind] ?? w.kind}
+                            {w.detail && (
+                                <span className="text-text-tertiary">
+                                    {" "}
+                                    ({w.detail})
+                                </span>
+                            )}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </div>
     );
 };

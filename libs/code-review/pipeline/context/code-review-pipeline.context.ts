@@ -9,6 +9,7 @@ import {
 import { IPullRequestMessages } from '@libs/code-review/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { CollectCrossFileContextsResult } from '@libs/code-review/infrastructure/adapters/services/collectCrossFileContexts.service';
 import { ReviewErrorCategory } from '@libs/code-review/infrastructure/agents/llm/error-classifier';
+import type { ReviewWarning } from '@libs/code-review/infrastructure/agents/llm/review-warnings';
 import { PlatformType } from '@libs/core/domain/enums';
 import {
     AnalysisContext,
@@ -236,6 +237,16 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         agentName?: string;
         occurredAt: Date;
     };
+
+    /**
+     * Fidelity warnings emitted when the pipeline had to drop quality to
+     * fit a small model context window. Populated by AgentReviewStage
+     * from the orchestrator's deduped list. Surfaced to the user as a
+     * collapsible section in the end-review PR comment (rendered by
+     * commentManager) and captured in telemetry. Absent / empty when the
+     * review ran at full fidelity.
+     */
+    reviewWarnings?: ReviewWarning[];
 }
 
 export interface DedupTraceSuggestionSummary {

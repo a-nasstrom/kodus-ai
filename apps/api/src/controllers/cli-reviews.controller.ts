@@ -52,7 +52,7 @@ export class CliReviewsController {
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
-            resource: ResourceType.PullRequests,
+            resource: ResourceType.CliReview,
         }),
     )
     @ApiOperation({
@@ -90,7 +90,7 @@ export class CliReviewsController {
     @CheckPolicies(
         checkPermissions({
             action: Action.Read,
-            resource: ResourceType.PullRequests,
+            resource: ResourceType.CliReview,
         }),
     )
     @ApiOperation({

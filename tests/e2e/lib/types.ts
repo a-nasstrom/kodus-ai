@@ -147,6 +147,18 @@ export interface Provider {
     // Kodus's gitTool value for /license/assign (lowercase platformType).
     // Matches `assignLicense(provider.toLowerCase())` in license.service.ts.
     licenseGitTool(): string;
+    // Detects Kody's "blocked: PR author has no license seat" signal on the
+    // PR since `sinceIso`. validate-prerequisites.stage.ts emits a 👎 on
+    // USER_NOT_LICENSED — a reaction on github/gitlab, a comment carrying the
+    // docs.kodus.io emoji-meaning link on bitbucket/azure. Resolves true once
+    // the signal appears (false at timeout). This lets a scenario assert the
+    // seat gate ACTIVELY blocked the review, rather than inferring it from the
+    // mere absence of a review comment — absence also happens when a webhook
+    // is lost or routed to another tenant, so it cannot prove the block.
+    pollForLicenseBlock?(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec?: number },
+    ): Promise<boolean>;
     // Idempotent pre-flight sweep — closes/abandons every PR (or MR) on
     // the fixture repo whose title starts with `[e2e]` and is still
     // open. Called once per (provider, target) pair at matrix start,

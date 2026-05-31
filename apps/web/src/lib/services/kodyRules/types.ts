@@ -19,6 +19,14 @@ export type KodyRule = {
     repositoryId?: string;
     directoryId?: string;
     sourcePath?: string;
+    /**
+     * True when the source file currently carries an `@kody-sync`
+     * marker — the per-file override that keeps the rule synced
+     * even with the repo's auto-sync toggle off. Surfaced so the
+     * orphan chip can exclude these (they're not orphans) and the
+     * Auto-sync badge can render a pin affordance.
+     */
+    pinnedSync?: boolean;
     centralizedConfig?: {
         path: string;
         status: KodyRuleCentralizedStatus;

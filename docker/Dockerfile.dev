@@ -52,23 +52,25 @@ COPY packages/kodus-flow ./packages/kodus-flow
 # 30min during cold-cache rebuilds purely from lock waits when the mount
 # was `sharing=locked`.
 #
-# Yarn 1's in-process write lock does NOT span containers, so concurrent
-# extracts from a shared cache can race (EEXIST on the same package tgz,
-# partial writes leaving the cache inconsistent). `--mutex file:<path>`
-# inside the cache mount creates a cross-process file lock that serializes
-# the brief write windows without re-introducing global contention.
+# Yarn 1's cache is content-addressable and writes via atomic rename, so
+# concurrent extracts of the same tarball across services are safe in
+# practice. A previous attempt to use `--mutex file:/yarn-cache/.yarn-mutex`
+# made the failure mode worse: with 5 services × 3 install steps all
+# contending for one file lock, holders routinely exceeded
+# proper-lockfile's ~30s stale threshold and crashed peers with
+# ECOMPROMISED.
 RUN --mount=type=cache,target=/yarn-cache,sharing=shared \
     cd packages/kodus-common \
-  && YARN_CACHE_FOLDER=/yarn-cache yarn install --mutex file:/yarn-cache/.yarn-mutex \
+  && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn prepack
 RUN --mount=type=cache,target=/yarn-cache,sharing=shared \
     cd packages/kodus-flow \
-  && YARN_CACHE_FOLDER=/yarn-cache yarn install --mutex file:/yarn-cache/.yarn-mutex \
+  && YARN_CACHE_FOLDER=/yarn-cache yarn install \
   && YARN_CACHE_FOLDER=/yarn-cache yarn build
 
 # Install dependencies and link local packages
 RUN --mount=type=cache,target=/yarn-cache,sharing=shared \
-    YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile --mutex file:/yarn-cache/.yarn-mutex
+    YARN_CACHE_FOLDER=/yarn-cache yarn install --frozen-lockfile
 RUN rm -rf node_modules/@kodus/kodus-common && cp -r packages/kodus-common node_modules/@kodus/kodus-common
 RUN rm -rf node_modules/@kodus/flow && cp -r packages/kodus-flow node_modules/@kodus/flow
 

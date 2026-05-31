@@ -6,6 +6,7 @@ import { LicenseModule } from '@libs/ee/license/license.module';
 import { UserModule } from '@libs/identity/modules/user.module';
 import { OrganizationModule } from '@libs/organization/modules/organization.module';
 
+import { COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN } from '../domain/contracts/cockpit-developer-productivity.service.contract';
 import { SendWeeklyRecapUseCase } from '../application/use-cases/send-weekly-recap.use-case';
 import { CockpitTierGuard } from '../infrastructure/guards/cockpit-tier.guard';
 import { CockpitCodeHealthService } from '../infrastructure/services/cockpit-code-health.service';
@@ -36,6 +37,10 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CockpitValidationService,
         CockpitCodeHealthService,
         CockpitDeveloperProductivityService,
+        {
+            provide: COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN,
+            useExisting: CockpitDeveloperProductivityService,
+        },
         CockpitTierGuard,
         SendWeeklyRecapUseCase,
     ],
@@ -45,6 +50,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         CockpitValidationService,
         CockpitCodeHealthService,
         CockpitDeveloperProductivityService,
+        COCKPIT_DEVELOPER_PRODUCTIVITY_SERVICE_TOKEN,
         CockpitTierGuard,
         SendWeeklyRecapUseCase,
     ],

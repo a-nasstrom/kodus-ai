@@ -311,6 +311,11 @@ export class CodeReviewHandlerService {
                 automaticReviewStatus: result?.automaticReviewStatus,
                 statusInfo: finalStatus,
                 orphanedBaseCommit: result?.orphanedBaseCommit,
+                // Forward adaptive-fit fidelity warnings to the
+                // automation_execution.dataExecution payload (see
+                // _buildExecutionData) so the web dashboard can render
+                // them. Absent on full-fidelity runs.
+                reviewWarnings: result?.reviewWarnings,
             };
         } catch (error) {
             if (initialContext) {

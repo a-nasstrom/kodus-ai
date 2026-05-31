@@ -45,6 +45,10 @@ export const NavMenu = () => {
         Action.Read,
         ResourceType.PullRequests,
     );
+    const canReadCliReviews = usePermission(
+        Action.Read,
+        ResourceType.CliReview,
+    );
     const canReadCodeReviewSettings = usePermission(
         Action.Read,
         ResourceType.CodeReviewSettings,
@@ -125,11 +129,13 @@ export const NavMenu = () => {
                 visible: canReadPullRequests,
                 icon: <GitPullRequestIcon className="size-5" />,
             });
+        }
 
+        if (canReadCliReviews) {
             items.push({
                 label: "CLI Reviews",
                 href: "/cli-reviews",
-                visible: canReadPullRequests,
+                visible: canReadCliReviews,
                 icon: <TerminalIcon className="size-5" />,
             });
         }
@@ -147,6 +153,7 @@ export const NavMenu = () => {
         canReadPlugins,
         canReadIssues,
         canReadPullRequests,
+        canReadCliReviews,
     ]);
 
     const isActive = (

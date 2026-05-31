@@ -597,6 +597,21 @@ export class AutomationCodeReviewService implements Omit<
             });
         }
 
+        // Adaptive-fit fidelity warnings — emitted by the agent pipeline
+        // when a small context window forced a degraded path (compact
+        // prompt, dropped callGraph, etc). Persisted here so the
+        // admin-facing Pull Requests dashboard in the Kodus web app can
+        // surface them — the PR author's GitHub comment intentionally
+        // omits this (it's an operator concern, not an author concern).
+        if (
+            Array.isArray(result.reviewWarnings) &&
+            result.reviewWarnings.length > 0
+        ) {
+            Object.assign(baseData, {
+                reviewWarnings: result.reviewWarnings,
+            });
+        }
+
         return baseData;
     }
 }

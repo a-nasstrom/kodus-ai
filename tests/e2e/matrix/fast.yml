@@ -29,6 +29,10 @@ scenarios:
     # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default
     # ~/.kodus-dev/license-seats1.jwt) isn't available — see run-matrix.ts.
     - per-seat-license-toggle
+    # RBAC authorization matrix: signs up its own throwaway org, provisions one
+    # user per role, and asserts the expected 200/403 across API endpoints.
+    # appliesTo restricts it to github × paid (one cell per target).
+    - rbac-authorization
 
 cells:
     # ---------- self-hosted ----------

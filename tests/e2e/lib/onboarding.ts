@@ -477,3 +477,68 @@ export async function resetCodeReviewConfig(
         );
     }
 }
+
+// Assigns the PR author (the PAT/app user this run opens PRs as) a license
+// seat on self-hosted, so the review pipeline doesn't skip every PR.
+//
+// Why this is needed: a self-hosted droplet provisioned with a valid
+// `KODUS_LICENSE_KEY` runs in *licensed* mode, which enforces per-seat
+// access (permissionValidation.service.ts:291). When the PR author's git id
+// isn't in `getAllUsersWithLicense()`, `ValidatePrerequisitesStage` aborts
+// the review with `USER_NOT_LICENSED` — the org default
+// `auto_license_assignment.enabled=false` means there's no auto-grant — and
+// Kody only leaves a 👎 reaction. The review scenarios poll for *comments*,
+// so they misread that skip as "pipeline ran, 0 findings". Onboarding never
+// assigns a seat, so we do it explicitly here. (Before the license var-name
+// fix the key wasn't read → invalid license → Community Edition → no seat
+// enforcement, which is why this was previously latent.)
+//
+// gitId/gitTool come from the provider in the exact shape Kodus stores as
+// `pullRequest.user.id` from the webhook `sender.id` (see
+// Provider.currentUserId): the same identity the pipeline checks the seat
+// against. The body matches POST /license/assign (license.controller.ts).
+//
+// Self-hosted only — on cloud, seats are wired through Stripe/billing, not
+// SelfHostedLicenseService, and this endpoint behaves differently. Idempotent
+// and best-effort: in Community Edition (no/invalid license) assignLicense
+// returns false → the user lands in `failed` and the review runs anyway, so
+// a non-success response is expected, not an error. Scenarios that drive seat
+// state themselves (per-seat-license-toggle) must NOT call this.
+export async function ensureLicenseSeat(
+    target: TargetContext,
+    session: KodusSession,
+    provider: Provider,
+): Promise<void> {
+    if (target.target !== "self-hosted") return;
+    try {
+        const gitId = await provider.currentUserId();
+        if (!gitId) {
+            log.info(
+                `ensureLicenseSeat: provider ${provider.name} returned empty currentUserId — skipping (review may be skipped if licensed)`,
+            );
+            return;
+        }
+        const gitTool = provider.licenseGitTool();
+        const resp = await http<{
+            data?: { successful?: unknown[]; failed?: unknown[] };
+        }>(`${target.apiBaseUrl}/license/assign`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+            body: {
+                users: [{ gitId, gitTool, licenseStatus: "active" }],
+            },
+            timeoutMs: 15_000,
+        });
+        if (resp.status < 200 || resp.status >= 300) {
+            log.info(
+                `ensureLicenseSeat: non-2xx (${resp.status}) assigning seat to ${gitTool}:${gitId}; continuing — CE-mode tenants don't need it, licensed tenants will surface a skipped review`,
+            );
+        }
+    } catch (err) {
+        log.info(
+            `ensureLicenseSeat: ${
+                (err as Error).message
+            } — continuing (best-effort)`,
+        );
+    }
+}

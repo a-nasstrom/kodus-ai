@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -21,6 +21,8 @@ import {
 
 @Injectable()
 export class McpService {
+    private readonly logger = new Logger(McpService.name);
+
     constructor(
         private providerFactory: ProviderFactory,
         @InjectRepository(MCPConnectionEntity)
@@ -67,15 +69,30 @@ export class McpService {
     }
 
     async getIntegrations(query: QueryDto, organizationId: string) {
-        const promises = this.providerFactory.getProviders().map((provider) => {
-            const { page, pageSize, appName } = query;
-            return provider.getIntegrations(String(page), pageSize, {
-                appName,
-                organizationId,
-            });
-        });
+        const providers = this.providerFactory.getProviders();
+        const { page, pageSize, appName } = query;
 
-        const integrations = (await Promise.all(promises))?.flat() || [];
+        const results = await Promise.allSettled(
+            providers.map((provider) =>
+                provider.getIntegrations(String(page), pageSize, {
+                    appName,
+                    organizationId,
+                }),
+            ),
+        );
+
+        const integrations = results.flatMap((result, index) => {
+            if (result.status === 'fulfilled') {
+                return result.value ?? [];
+            }
+            this.logger.error(
+                `Failed to load integrations from provider ${providers[index].constructor.name}`,
+                result.reason instanceof Error
+                    ? result.reason.stack
+                    : String(result.reason),
+            );
+            return [];
+        });
         const connections = await this.connectionRepository.find({
             where: { organizationId },
         });

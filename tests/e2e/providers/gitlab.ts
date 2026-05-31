@@ -7,7 +7,14 @@ import type {
     ReviewSignal,
     WebhookInfo,
 } from "../lib/types.js";
-import { BaseProvider, pollUntil, requireEnv } from "./base.js";
+import { randomUUID } from "node:crypto";
+import type { Target } from "../lib/types.js";
+import {
+    BaseProvider,
+    pollUntil,
+    requireEnv,
+    resolveTargetRepo,
+} from "./base.js";
 import { ensureOk, http } from "../lib/http.js";
 import { prepareBranch } from "../lib/git.js";
 
@@ -31,10 +38,10 @@ export class GitLabProvider extends BaseProvider {
     private projectId?: number;
     private readonly existingMrIid?: number;
 
-    constructor() {
+    constructor(target: Target = "self-hosted") {
         super();
         this.token = requireEnv("GL_TEST_TOKEN");
-        this.projectPath = requireEnv("GL_TEST_REPO");
+        this.projectPath = resolveTargetRepo("GL_TEST_REPO", target);
         this.host = process.env.GL_HOST ?? "https://gitlab.com";
         this.apiBase = `${this.host}/api/v4`;
         const existing = process.env.GL_TEST_MR_IID;
@@ -190,18 +197,28 @@ export class GitLabProvider extends BaseProvider {
 
     async openPRFromBranches(args: OpenPRFromBranchesArgs): Promise<OpenedPR> {
         const projectId = await this.resolveProjectId();
+        // Open from a UNIQUE throwaway branch created at the fixture tip, not
+        // the shared fixture branch, so overlapping runs/scenarios don't hit
+        // GitLab's "an MR already exists for this source branch" conflict. Same
+        // SHA is fine — GitLab has no GitHub-style head_sha cap. The fixture
+        // branch is never modified; closePR deletes the throwaway.
+        const uid = randomUUID().slice(0, 8);
+        const throwaway = `e2e/${args.head.replace(/[^a-zA-Z0-9._-]+/g, "-")}-${uid}`;
+        const branchResp = await http(
+            `${this.apiBase}/projects/${projectId}/repository/branches?branch=${encodeURIComponent(throwaway)}&ref=${encodeURIComponent(args.head)}`,
+            { method: "POST", headers: this.headers() },
+        );
+        ensureOk(branchResp, "gitlab:openPRFromBranches:createBranch");
         const resp = await http<{ iid: number; web_url: string }>(
             `${this.apiBase}/projects/${projectId}/merge_requests`,
             {
                 method: "POST",
                 headers: this.headers(),
                 body: {
-                    source_branch: args.head,
+                    source_branch: throwaway,
                     target_branch: args.base,
                     title: args.title,
                     description: args.body,
-                    // Don't auto-delete the source branch — it's a persistent
-                    // fixture branch, not something we just pushed.
                     remove_source_branch: false,
                 },
             },
@@ -210,9 +227,9 @@ export class GitLabProvider extends BaseProvider {
         return {
             number: resp.body.iid,
             url: resp.body.web_url,
-            branch: args.head,
+            branch: throwaway,
             baseBranch: args.base,
-            keepBranchOnClose: true,
+            keepBranchOnClose: false,
         };
     }
 
@@ -250,10 +267,13 @@ export class GitLabProvider extends BaseProvider {
                 body: { state_event: "close" },
             },
         );
-        // GitLab's `closePR` doesn't delete the source branch by default —
-        // remove_source_branch on the original PR controls that on merge.
-        // For our close-without-merge path, there's nothing extra to do
-        // even when keepBranchOnClose is false.
+        // Delete the throwaway source branch (unless it's a kept fixture).
+        if (!pr.keepBranchOnClose) {
+            await http(
+                `${this.apiBase}/projects/${projectId}/repository/branches/${encodeURIComponent(pr.branch)}`,
+                { method: "DELETE", headers: this.headers() },
+            );
+        }
     }
 
     async triggerReviewOnExistingPR(
@@ -357,5 +377,33 @@ export class GitLabProvider extends BaseProvider {
 
     licenseGitTool(): string {
         return "gitlab";
+    }
+
+    async pollForLicenseBlock(
+        pr: { number: number },
+        opts: { sinceIso: string; timeoutSec?: number },
+    ): Promise<boolean> {
+        // USER_NOT_LICENSED → award emoji on the MR. NOTE: GitLab's no-license
+        // reaction is the 🔒 LOCK award (NO_LICENSE_REACTION_MAP[GITLAB] =
+        // GitlabReaction.LOCK = 'lock'), NOT 👎 — only GitHub/Forgejo use
+        // thumbs-down. Match `lock`; also accept `thumbsdown` defensively in
+        // case the map changes.
+        const projectId = await this.resolveProjectId();
+        const found = await pollUntil<boolean>(
+            async () => {
+                const resp = await http<{ name: string }[]>(
+                    `${this.apiBase}/projects/${projectId}/merge_requests/${pr.number}/award_emoji`,
+                    { headers: this.headers() },
+                );
+                if (resp.status < 200 || resp.status >= 300) return null;
+                return (resp.body ?? []).some(
+                    (a) => a.name === "lock" || a.name === "thumbsdown",
+                )
+                    ? true
+                    : null;
+            },
+            { intervalSec: 5, timeoutSec: opts.timeoutSec ?? 120 },
+        );
+        return found === true;
     }
 }

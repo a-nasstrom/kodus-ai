@@ -15,6 +15,10 @@ import {
     ReviewAgentInput,
     ReviewAgentOutput,
 } from './base-code-review-agent.provider';
+import {
+    dedupReviewWarnings,
+    type ReviewWarning,
+} from './llm/review-warnings';
 
 export interface OrchestratorInput extends ReviewAgentInput {
     reviewOptions: ReviewOptions;
@@ -33,6 +37,10 @@ export interface OrchestratorOutput {
     agentResults: ReviewAgentOutput[];
     failures: OrchestratorAgentFailure[];
     totalDurationMs: number;
+    /** Fidelity warnings collected across all per-agent fan-out, deduped
+     *  by (kind, modelName, contextWindowTokens). Empty array when no
+     *  adaptive strategy fired. */
+    warnings: ReviewWarning[];
 }
 
 /**
@@ -142,6 +150,7 @@ export class ReviewOrchestratorService {
                 agentResults: [],
                 failures: [],
                 totalDurationMs: Date.now() - startTime,
+                warnings: [],
             };
         }
 
@@ -249,11 +258,19 @@ export class ReviewOrchestratorService {
             },
         });
 
+        // Fold cross-agent warnings (same `kind` + model can fire on 4
+        // agents in parallel) into a single user-facing list before
+        // handing back to the stage.
+        const warnings = dedupReviewWarnings(
+            agentResults.flatMap((r) => r.warnings ?? []),
+        );
+
         return {
             suggestions: allSuggestions,
             agentResults,
             failures,
             totalDurationMs,
+            warnings,
         };
     }
 

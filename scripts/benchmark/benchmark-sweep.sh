@@ -45,7 +45,7 @@ EMAIL="${KODUS_BENCH_EMAIL:-benchmark@kodus.io}"
 PASSWORD="${KODUS_BENCH_PASSWORD:-Kodus@2024}"
 
 # ─── Model matrix ───────────────────────────────────────────────────────
-# Pipe-separated: label | provider | model | baseURL | apiKeyEnvVar
+# Pipe-separated: label | provider | model | baseURL | apiKeyEnvVar [| maxInputTokens]
 #
 # provider values: google_gemini | open_router | openai_compatible | novita
 #                  openai | anthropic | google_vertex | amazon_bedrock
@@ -59,6 +59,12 @@ PASSWORD="${KODUS_BENCH_PASSWORD:-Kodus@2024}"
 #   open_router + anything else (z-ai/, meta-llama/, ...) → json_object
 #   novita / unknown openai_compatible                    → json_object
 #   google_gemini                                         → native, no flag
+#
+# The 6th field `maxInputTokens` overrides the resolved context window
+# (see resolveContextWindow in model-context-window.ts) without needing
+# an actual small-window deployment. Used by the `baseline-*` entries to
+# simulate the adaptive-fit bug condition while keeping the model
+# variable constant (cheap Gemini, well-understood quality floor).
 CONFIGS=(
   "gemini-direct|google_gemini|gemini-2.5-flash||API_GOOGLE_AI_API_KEY"
   "gemini-openrouter|open_router|google/gemini-2.5-flash|https://openrouter.ai/api/v1|API_OPENROUTER_KEY"
@@ -70,6 +76,12 @@ CONFIGS=(
   # gate keeps json_schema OFF; stresses the json_object / prompt-injected
   # fallback path. Swap the model if you have a specific target in mind.
   "nojson-llama|novita|meta-llama/llama-3.1-8b-instruct|https://api.novita.ai/v3/openai|API_NOVITA_AI_API_KEY"
+  # Adaptive-fit baselines: same model, varying simulated window. The
+  # 12k entry must preflight-fail today (CONTEXT_OVERFLOW); 16k may
+  # partially succeed; full establishes the regression floor for PR2/PR3.
+  "baseline-12k|google_gemini|gemini-2.5-flash||API_GOOGLE_AI_API_KEY|12288"
+  "baseline-16k|google_gemini|gemini-2.5-flash||API_GOOGLE_AI_API_KEY|16384"
+  "baseline-full|google_gemini|gemini-2.5-flash||API_GOOGLE_AI_API_KEY"
 )
 
 # ─── Args ───────────────────────────────────────────────────────────────
@@ -105,7 +117,7 @@ if [ "$LIST_ONLY" -eq 1 ]; then
   echo "Model matrix:"
   printf '  %-20s %-18s %-32s %s\n' LABEL PROVIDER MODEL KEY-ENV
   for c in "${CONFIGS[@]}"; do
-    IFS='|' read -r label provider model baseurl keyenv <<< "$c"
+    IFS='|' read -r label provider model baseurl keyenv maxtokens <<< "$c"
     printf '  %-20s %-18s %-32s %s\n' "$label" "$provider" "$model" "$keyenv"
   done
   exit 0
@@ -137,9 +149,13 @@ mkdir -p "$RESULTS_DIR"
 
 # ─── Per-config helpers ─────────────────────────────────────────────────
 build_main_json() {
-  # args: provider model apikey baseurl
-  jq -nc --arg p "$1" --arg m "$2" --arg k "$3" --arg b "$4" \
-    '{provider:$p, model:$m, apiKey:$k} + (if $b == "" then {} else {baseURL:$b} end)'
+  # args: provider model apikey baseurl maxInputTokens
+  # maxInputTokens is optional — omit (empty string) to let
+  # resolveContextWindow fall back to LiteLLM lookup by model name.
+  jq -nc --arg p "$1" --arg m "$2" --arg k "$3" --arg b "$4" --arg t "$5" \
+    '{provider:$p, model:$m, apiKey:$k}
+      + (if $b == "" then {} else {baseURL:$b} end)
+      + (if $t == "" then {} else {maxInputTokens:($t|tonumber)} end)'
 }
 
 test_byok() {
@@ -214,7 +230,7 @@ wait_for_reviews() {
 # ─── Sweep ──────────────────────────────────────────────────────────────
 RAN=0
 for c in "${CONFIGS[@]}"; do
-  IFS='|' read -r label provider model baseurl keyenv <<< "$c"
+  IFS='|' read -r label provider model baseurl keyenv maxtokens <<< "$c"
   selected "$label" || continue
   RAN=$((RAN + 1))
 
@@ -230,7 +246,7 @@ for c in "${CONFIGS[@]}"; do
     continue
   fi
 
-  main_json=$(build_main_json "$provider" "$model" "$apikey" "$baseurl")
+  main_json=$(build_main_json "$provider" "$model" "$apikey" "$baseurl" "${maxtokens:-}")
 
   echo "  testing credentials..."
   tb=$(test_byok "$main_json")

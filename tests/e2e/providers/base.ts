@@ -5,6 +5,7 @@ import type {
     OpenedPR,
     ProviderRepoRef,
     ReviewSignal,
+    Target,
     WebhookInfo,
 } from "../lib/types.js";
 
@@ -25,6 +26,7 @@ export abstract class BaseProvider implements Provider {
     abstract listWebhooks(): Promise<WebhookInfo[]>;
     abstract openPR(args: OpenPRArgs): Promise<OpenedPR>;
     abstract closePR(pr: OpenedPR): Promise<void>;
+    abstract cleanupStaleE2EArtifacts(): Promise<{ closed: number }>;
     abstract triggerReviewOnExistingPR(prNumber: number): Promise<{
         triggerId: string;
         sinceIso: string;
@@ -46,6 +48,18 @@ export function requireEnv(name: string): string {
         throw new Error(`Required env var ${name} is not set`);
     }
     return v;
+}
+
+// Resolve a fixture-repo env var, scoped to the run target. Cloud and
+// self-hosted run in parallel in ONE process, so they can't share a single
+// GH_TEST_REPO — each target must hit its OWN repo or their webhooks/PRs
+// collide on a shared repo (the whole reason cloud↔self-hosted couldn't run
+// concurrently). Looks up `<base>_<TARGET>` (e.g. GH_TEST_REPO_CLOUD) and falls
+// back to the plain `<base>` — self-hosted keeps using the original repo, cloud
+// points at its own `*-cloud` repo. Suffix: cloud→CLOUD, self-hosted→SELF_HOSTED.
+export function resolveTargetRepo(baseEnvName: string, target: Target): string {
+    const sfx = target.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    return process.env[`${baseEnvName}_${sfx}`] || requireEnv(baseEnvName);
 }
 
 export function nowIso(): string {

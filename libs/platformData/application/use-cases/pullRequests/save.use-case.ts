@@ -294,6 +294,7 @@ export class SavePullRequestUseCase {
             'opened',
             'closed',
             'synchronize',
+            'synchronized',
             'review_requested',
             'review_request_removed',
             'assigned',
@@ -339,6 +340,7 @@ export class SavePullRequestUseCase {
         const githubFetchActions = [
             'opened',
             'synchronize',
+            'synchronized',
             'ready_for_review',
         ];
         if (githubFetchActions.includes(payload?.action)) {

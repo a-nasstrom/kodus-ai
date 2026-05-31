@@ -8,6 +8,10 @@
         "scenario": "tsx cli/run-scenario.ts",
         "matrix": "tsx cli/run-matrix.ts",
         "dry-run": "tsx cli/run-matrix.ts matrix/fast.yml --dry-run",
+        "benchmark:models": "tsx benchmark/run.ts",
+        "benchmark:scorecard": "tsx benchmark/scorecard.ts",
+        "benchmark:recollect": "tsx benchmark/recollect.ts",
+        "benchmark:provision": "tsx benchmark/provision-repos.ts",
         "test": "node --import tsx --test lib/__tests__/*.test.ts",
         "typecheck": "tsc --noEmit"
     },

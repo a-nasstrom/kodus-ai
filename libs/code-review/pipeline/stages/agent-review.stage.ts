@@ -4,9 +4,16 @@ import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
+import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
+import {
+    dedupReviewWarnings,
+    type ReviewWarning,
+} from '@libs/code-review/infrastructure/agents/llm/review-warnings';
 import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
+    getModelName,
 } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
@@ -273,6 +280,71 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             performance: true,
         };
 
+        // Resolve adaptive-fit profile once for this run. The profile drives
+        // which fidelity strategies (drop callGraph, compact prompt, etc) fire
+        // and is also passed through to BaseCodeReviewAgentProvider via
+        // ReviewAgentInput so per-agent code paths gate on the same flags.
+        // Per-repo/directory model override (byokModel) takes priority over
+        // the org-level main.model when present — same resolution the agent
+        // uses internally (`base-code-review-agent.provider.ts:541-551`).
+        const mainByok = context.codeReviewConfig?.byokConfig?.main;
+        const overrideModel =
+            context.codeReviewConfig?.byokModel?.trim();
+        const byokWithOverride =
+            overrideModel && mainByok
+                ? {
+                      ...context.codeReviewConfig?.byokConfig,
+                      main: { ...mainByok, model: overrideModel },
+                  }
+                : context.codeReviewConfig?.byokConfig;
+        // Use the same model-name formatter the agent uses (provider:model)
+        // so stage-emitted warnings and agent-emitted warnings share a
+        // dedup key. Otherwise dedupReviewWarnings sees them as distinct
+        // and the user sees duplicate bullets (PROMPT_COMPACTED listed
+        // twice — once with "gemini-2.5-flash" and once with
+        // "google_gemini:gemini-2.5-flash").
+        const effectiveModelName = getModelName(byokWithOverride);
+        const effectiveContextWindow = resolveContextWindow({
+            byokMaxInputTokens: mainByok?.maxInputTokens,
+            modelName: overrideModel || mainByok?.model || '',
+        });
+        const adaptiveProfile = resolveAdaptiveProfile(effectiveContextWindow);
+        const stageWarnings: ReviewWarning[] = [];
+        const emitStageWarning = (
+            kind: ReviewWarning['kind'],
+            detail?: string,
+        ) => {
+            stageWarnings.push({
+                kind,
+                reason: 'small_context_window',
+                contextWindowTokens: effectiveContextWindow,
+                modelName: effectiveModelName || 'unknown',
+                detail,
+            });
+        };
+
+        if (adaptiveProfile.kind !== 'full') {
+            this.logger.log({
+                message: `[AGENT] adaptive-fit profile=${adaptiveProfile.kind} window=${effectiveContextWindow} model=${effectiveModelName}`,
+                context: this.stageName,
+                metadata: {
+                    prNumber,
+                    profile: adaptiveProfile.kind,
+                    contextWindow: effectiveContextWindow,
+                    modelName: effectiveModelName,
+                    flags: {
+                        dropCallGraph: adaptiveProfile.dropCallGraph,
+                        skipHeavyPasses: adaptiveProfile.skipHeavyPasses,
+                        compactPrompt: adaptiveProfile.compactPrompt,
+                        allOptional: adaptiveProfile.allOptional,
+                        maxDiffChars: adaptiveProfile.maxDiffChars,
+                        lowSignalFilterUnconditional:
+                            adaptiveProfile.lowSignalFilterUnconditional,
+                    },
+                },
+            });
+        }
+
         const startTime = Date.now();
 
         this.logger.log({
@@ -310,7 +382,20 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Generate call graph context from AST graph in DB (via kodus-graph in E2B sandbox)
             let callGraph = '';
-            try {
+            // Adaptive fit: a 1–3K-token callGraph fragment is the cheapest
+            // thing to drop when the model's window can't hold the full
+            // prompt. `light+` profiles always skip it. The agent still has
+            // grep/readFile to investigate cross-file relationships on demand.
+            const shouldBuildCallGraph = !adaptiveProfile.dropCallGraph;
+            if (!shouldBuildCallGraph) {
+                this.logger.log({
+                    message: `[AGENT] adaptive-fit (${adaptiveProfile.kind}): skipping callGraph build to fit context window`,
+                    context: this.stageName,
+                });
+                emitStageWarning('CALLGRAPH_DROPPED');
+            }
+            if (shouldBuildCallGraph) {
+              try {
                 const sandboxType = context.sandboxHandle?.type ?? 'unknown';
                 const hasSandbox = !!context.sandboxHandle?.run;
                 this.logger.log({
@@ -389,6 +474,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     },
                 });
             }
+            } // end if (shouldBuildCallGraph)
 
             const result = await this.reviewOrchestrator.execute({
                 organizationAndTeamData: context.organizationAndTeamData,
@@ -440,12 +526,52 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     : undefined,
                 // Per-repo/directory model override resolved by ValidateConfigStage.
                 byokModel: context.codeReviewConfig?.byokModel,
+                // Adaptive-fit profile: agents read this to decide whether
+                // to compact the prompt, force all-optional tiering, drop
+                // low-signal files unconditionally, truncate per-file diffs,
+                // and skip heavy passes. Resolved once at the stage so the
+                // stage-level decisions (callGraph, heavy passes) and
+                // per-agent decisions agree.
+                adaptiveProfile,
+                // Auto-skip heavy passes (verifier, second-chance, rescue)
+                // when the profile says so. These are independent
+                // generateText calls that re-incur the full prompt overhead;
+                // on small windows they're guaranteed to refire the same
+                // preflight error. Don't override an explicit caller value.
+                skipHeavyPasses:
+                    adaptiveProfile.skipHeavyPasses || undefined,
                 // Forwarded from the workflow job timeout. The router builds
                 // an AbortController; here we pass it through so when the
                 // 1h45min budget fires, the agent-loop's local controller is
                 // aborted via parentSignal composition.
                 parentSignal: context.parentSignal,
             });
+
+            // Emit profile-driven warnings up here at the stage so they
+            // surface even when the agent's overhead preflight throws
+            // before its own emission points. These four are decided
+            // purely by the resolved profile — no PR-specific condition
+            // needed. The agent will re-emit some of them when it runs;
+            // dedupReviewWarnings folds the duplicates so the user sees
+            // each kind once. Without this, a preflight-failed run only
+            // shows 2 warnings (CALLGRAPH_DROPPED + HEAVY_PASSES_SKIPPED)
+            // while a successful run on the same profile shows 4–5 —
+            // confusing UX where the failure looks "less degraded" than
+            // the success.
+            //
+            // The agent-only warnings (LOW_SIGNAL_FILES_DROPPED with
+            // file count, DIFF_TRUNCATED with file names) are conditional
+            // on real PR state and intentionally NOT emitted here — we
+            // don't know yet whether the conditions apply.
+            if (adaptiveProfile.skipHeavyPasses) {
+                emitStageWarning('HEAVY_PASSES_SKIPPED');
+            }
+            if (adaptiveProfile.compactPrompt) {
+                emitStageWarning('PROMPT_COMPACTED');
+            }
+            if (adaptiveProfile.allOptional) {
+                emitStageWarning('HUNK_HEADERS_ONLY');
+            }
 
             const durationMs = Date.now() - startTime;
 
@@ -455,7 +581,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 metadata: {
                     prNumber,
                     suggestionsCount: result.suggestions.length,
-                    agentResults: result.agentResults.map((r) => ({
+                    agentResults: (result.agentResults ?? []).map((r) => ({
                         agent: r.agentName,
                         category: r.agentCategory,
                         replicaIndex: r.agentReplicaIndex,
@@ -561,9 +687,40 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
             }
 
+            // Surface adaptive-fit fidelity warnings (stage-level +
+            // orchestrator-deduped per-agent) so the end-review PR comment
+            // can render a collapsible "review fidelity reduced" section,
+            // and so telemetry can roll up "how often does each kind fire".
+            // Stage-level warnings (CALLGRAPH_DROPPED, HEAVY_PASSES_SKIPPED)
+            // come from this stage's own decisions; orchestrator's
+            // result.warnings come from the per-agent loops.
+            // Dedup at the merge point — a stage-level CALLGRAPH_DROPPED
+            // and an agent-level one for the same (model, window) fold
+            // into a single bullet in the user-facing notice.
+            const allWarnings = dedupReviewWarnings([
+                ...stageWarnings,
+                ...(result.warnings ?? []),
+            ]);
+            if (allWarnings.length > 0) {
+                context = this.updateContext(context, (draft) => {
+                    draft.reviewWarnings = allWarnings;
+                });
+                this.logger.log({
+                    message: `[AGENT] Review fidelity warnings: ${allWarnings
+                        .map((w) => w.kind)
+                        .join(', ')}`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        warningKinds: allWarnings.map((w) => w.kind),
+                        warningCount: allWarnings.length,
+                    },
+                });
+            }
+
             // Collect suggestions discarded by severity filter and verify
             const allDiscarded: Partial<CodeSuggestion>[] = [];
-            for (const agentResult of result.agentResults) {
+            for (const agentResult of result.agentResults ?? []) {
                 if (agentResult.discardedBySeverity?.length) {
                     for (const s of agentResult.discardedBySeverity) {
                         allDiscarded.push({

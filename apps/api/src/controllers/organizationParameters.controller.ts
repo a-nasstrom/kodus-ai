@@ -209,6 +209,13 @@ export class OrganizationParametersController {
     }
 
     @Delete('/delete-byok-config')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Delete,
+            resource: ResourceType.OrganizationSettings,
+        }),
+    )
     @ApiOperation({
         summary: 'Delete BYOK config',
         description: 'Delete main or fallback BYOK configuration.',

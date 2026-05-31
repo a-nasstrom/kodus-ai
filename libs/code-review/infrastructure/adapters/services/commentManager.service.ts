@@ -854,7 +854,10 @@ You must always respond in ${languageResultPrompt}.`;
                 // path's suffix wiring doesn't run here, so we append the
                 // partial-errors notice ourselves. Without this the user
                 // sees their template's "all good" message + no approval
-                // and assumes auto-approve is broken.
+                // and assumes auto-approve is broken. Adaptive-fit
+                // fidelity warnings are intentionally NOT rendered in
+                // the PR comment — they surface in the web app's Pull
+                // Requests admin dashboard via dataExecution.reviewWarnings.
                 const notice = this.resolvePartialErrorsNotice(
                     codeReviewConfig?.languageResultPrompt ??
                         LanguageValue.ENGLISH,
@@ -1564,6 +1567,14 @@ You must always respond in ${languageResultPrompt}.`;
                     `No result text found for language: ${language}`,
                 );
             }
+
+            // Adaptive-fit fidelity warnings are NOT rendered in the
+            // GitHub PR comment — PR authors don't care that the review
+            // was compacted, only that it failed (and CONTEXT_OVERFLOW
+            // failures already render via the `withErrors` template +
+            // friendlyMessage). The warnings ARE persisted to
+            // automation_execution.dataExecution.reviewWarnings for the
+            // admin-facing Pull Requests dashboard in the Kodus web app.
 
             // Add unique tag with timestamp to identify this comment as completed
             const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -2394,6 +2405,8 @@ ${reviewOptions}
                     commentBody = `${commentBody}${notice}`;
                 }
             }
+            // Adaptive-fit fidelity warnings are NOT appended to the PR
+            // comment (admin-only signal — see updateOverallComment).
         } else {
             commentBody = await this.generateLastReviewCommenBody(
                 organizationAndTeamData,

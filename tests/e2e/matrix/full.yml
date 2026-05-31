@@ -47,6 +47,9 @@ scenarios:
     # card 4242 4242 4242 4242 completes synchronously, then we poll the
     # billing API until the webhook lands.
     - stripe-billing
+    # RBAC authorization matrix (also in fast.yml). Signs up a throwaway org,
+    # provisions one user per role, asserts 200/403 across API endpoints.
+    - rbac-authorization
 
 cells:
     # ---------- self-hosted (mirrors fast.yml) ----------

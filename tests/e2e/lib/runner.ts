@@ -51,7 +51,20 @@ function appliesToCell(scenario: Scenario, cell: MatrixCell): boolean {
     return true;
 }
 
-function envForTarget(target: Target): TargetContext {
+// Per-provider env-var suffix: uppercase, non-alnum → `_`.
+// github → GITHUB, azure-devops → AZURE_DEVOPS, github-app → GITHUB_APP.
+// Used so each self-hosted provider can point at its OWN droplet via
+// SELFHOSTED_API_BASE_URL_<SUFFIX> (set by --auto-provision-per-provider),
+// enabling the per-provider parallel matrix. Falls back to the shared
+// SELFHOSTED_* vars for the single-droplet (serial) path.
+export function selfhostedEnvSuffix(provider: ProviderName): string {
+    return provider.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+}
+
+function envForTarget(
+    target: Target,
+    provider?: ProviderName,
+): TargetContext {
     if (target === "cloud") {
         // QA cloud routes API traffic through the web app's reverse proxy
         // at `/api/proxy/api/*` — the standalone `api-qa.kodus.io` host is
@@ -73,26 +86,36 @@ function envForTarget(target: Target): TargetContext {
             `${webBaseUrl.replace(/\/$/, "")}/api/proxy/api`;
         return { target, apiBaseUrl, webBaseUrl };
     }
-    // Self-hosted prefers the target-scoped envs (SELFHOSTED_*) that
-    // auto-provision exports, falling back to the legacy generic
-    // TARGET_* envs for users running outside auto-provision.
+    // Self-hosted resolution order, most specific first:
+    //   1. SELFHOSTED_*_<PROVIDER>  — set by --auto-provision-per-provider,
+    //      one droplet per provider (enables parallel isolated runs)
+    //   2. SELFHOSTED_*             — shared single-droplet auto-provision
+    //   3. TARGET_*                 — legacy generic envs (manual runs)
+    const sfx = provider ? selfhostedEnvSuffix(provider) : undefined;
+    const perProvider = (base: string): string | undefined =>
+        sfx ? process.env[`${base}_${sfx}`] : undefined;
+
     const apiBaseUrl =
+        perProvider("SELFHOSTED_API_BASE_URL") ??
         process.env.SELFHOSTED_API_BASE_URL ??
         process.env.TARGET_BASE_URL ??
         (() => {
             throw new Error(
-                "SELFHOSTED_API_BASE_URL (preferred) or TARGET_BASE_URL is required for self-hosted target (e.g. http://1.2.3.4:3001)",
+                `SELFHOSTED_API_BASE_URL_${sfx ?? "<PROVIDER>"} or SELFHOSTED_API_BASE_URL or TARGET_BASE_URL is required for self-hosted target (e.g. http://1.2.3.4:3001)`,
             );
         })();
     const webBaseUrl =
+        perProvider("SELFHOSTED_WEB_URL") ??
         process.env.SELFHOSTED_WEB_URL ??
         process.env.TARGET_WEB_URL ??
         apiBaseUrl.replace(/:3001$/, ":3000");
     const tunnelUrl =
-        process.env.SELFHOSTED_TUNNEL_URL ?? process.env.TARGET_TUNNEL_URL;
+        perProvider("SELFHOSTED_TUNNEL_URL") ??
+        process.env.SELFHOSTED_TUNNEL_URL ??
+        process.env.TARGET_TUNNEL_URL;
     if (!tunnelUrl) {
         throw new Error(
-            "SELFHOSTED_TUNNEL_URL (preferred) or TARGET_TUNNEL_URL is required for self-hosted target (e.g. https://xxx.trycloudflare.com)",
+            `SELFHOSTED_TUNNEL_URL_${sfx ?? "<PROVIDER>"} or SELFHOSTED_TUNNEL_URL or TARGET_TUNNEL_URL is required for self-hosted target (e.g. https://xxx.trycloudflare.com)`,
         );
     }
     return { target, apiBaseUrl, webBaseUrl, tunnelUrl };
@@ -246,7 +269,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
         );
         for (const providerName of uniqueProviders) {
             try {
-                const provider = makeProvider(providerName);
+                const provider = makeProvider(providerName, opts.target);
                 const { closed } = await provider.cleanupStaleE2EArtifacts();
                 if (closed > 0) {
                     log.info(
@@ -276,7 +299,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
                   webBaseUrl: "https://dry-run.invalid",
                   tunnelUrl: "https://dry-run.invalid",
               }
-            : envForTarget(cell.target);
+            : envForTarget(cell.target, cell.provider);
         const tenant = opts.dryRun
             ? { email: "dry-run@kodus.test", password: "dry-run" }
             : await resolveTenantForCell(
@@ -310,7 +333,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             log.info(`RUN   ${cellLabel}`);
             const t0 = Date.now();
             try {
-                const provider = makeProvider(cell.provider);
+                const provider = makeProvider(cell.provider, cell.target);
                 const scenarioArtifactDir = join(
                     artifactDir,
                     `${scenario.id}-${cell.target}-${cell.provider}-${cell.license}`,
