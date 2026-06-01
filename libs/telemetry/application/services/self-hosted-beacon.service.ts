@@ -24,6 +24,16 @@ interface TelemetryStateValue {
     in_flight_started_at: string | null; // ISO-8601 UTC
 }
 
+export const SELF_HOSTED_BEACON_SERVICE_TOKEN = Symbol.for(
+    'SelfHostedBeaconService',
+);
+
+export interface ISelfHostedBeaconService {
+    isDisabled(): boolean;
+    run(): Promise<void>;
+    preview(): Promise<Record<string, unknown>>;
+}
+
 /**
  * Orchestrator for the self-hosted heartbeat. Handles:
  *
@@ -38,7 +48,7 @@ interface TelemetryStateValue {
  * never break a host flow.
  */
 @Injectable()
-export class SelfHostedBeaconService {
+export class SelfHostedBeaconService implements ISelfHostedBeaconService {
     private readonly logger = createLogger(SelfHostedBeaconService.name);
 
     constructor(

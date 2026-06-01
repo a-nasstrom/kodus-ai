@@ -16,7 +16,10 @@ import {
     HEARTBEAT_COLLECTOR_SERVICE_TOKEN,
     HeartbeatCollectorService,
 } from '../application/services/heartbeat-collector.service';
-import { SelfHostedBeaconService } from '../application/services/self-hosted-beacon.service';
+import {
+    SELF_HOSTED_BEACON_SERVICE_TOKEN,
+    SelfHostedBeaconService,
+} from '../application/services/self-hosted-beacon.service';
 import {
     BEACON_HTTP_PROVIDER_TOKEN,
     BeaconHttpProvider,
@@ -42,8 +45,11 @@ import {
             provide: HEARTBEAT_COLLECTOR_SERVICE_TOKEN,
             useExisting: HeartbeatCollectorService,
         },
-        SelfHostedBeaconService,
+        {
+            provide: SELF_HOSTED_BEACON_SERVICE_TOKEN,
+            useClass: SelfHostedBeaconService,
+        },
     ],
-    exports: [SelfHostedBeaconService],
+    exports: [SELF_HOSTED_BEACON_SERVICE_TOKEN],
 })
 export class SelfHostedBeaconModule {}
