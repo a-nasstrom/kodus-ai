@@ -122,11 +122,55 @@ export async function login(
     return { accessToken, organizationId, teamId };
 }
 
+// The cloud tenants are PERSISTENT (Stripe ties each license tier to a real
+// account, so we can't sign up a fresh one per run like self-hosted does).
+// Over time a tenant accumulates code-management integrations from earlier
+// runs of OTHER providers on the same org — we observed e2e-paid-gh stacked
+// with GITLAB → BITBUCKET → AZURE_REPOS → GITHUB. Kodus's getTypeIntegration
+// resolves by CATEGORY (not platform), picking the FIRST code-management
+// integration, so the stale gitlab/bitbucket one wins and the github review
+// never fires (0 webhook, no review) — deterministically, every run.
+//
+// Before registering our integration, drop any code-management integration
+// whose platform differs from the one we're about to connect. delete-
+// integration removes one at a time (the category's current first), so loop
+// until the active platform is ours or there's nothing left. Self-hosted
+// uses a fresh tenant, so this is a no-op there (at most our own platform).
+async function clearConflictingIntegrations(
+    target: TargetContext,
+    provider: Provider,
+    session: KodusSession,
+): Promise<void> {
+    const wanted = provider.integrationType.toUpperCase();
+    for (let i = 0; i < 8; i++) {
+        const resp = await http<{ data?: Array<{ platformName?: string; category?: string }> }>(
+            `${target.apiBaseUrl}/integration/connections?teamId=${encodeURIComponent(session.teamId)}`,
+            { headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 15_000 },
+        );
+        const active = (resp.body?.data ?? []).find(
+            (c) => (c.category ?? "CODE_MANAGEMENT") === "CODE_MANAGEMENT",
+        );
+        const platform = (active?.platformName ?? "").toUpperCase();
+        if (!platform || platform === wanted) return; // clean or already ours
+        log.info(`Dropping stale ${platform} integration before connecting ${wanted}`);
+        await http(
+            `${target.apiBaseUrl}/code-management/delete-integration?teamId=${encodeURIComponent(session.teamId)}`,
+            { method: "DELETE", headers: { Authorization: `Bearer ${session.accessToken}` }, timeoutMs: 20_000 },
+        );
+        await new Promise((r) => setTimeout(r, 1_500));
+    }
+}
+
 export async function registerIntegration(
     target: TargetContext,
     provider: Provider,
     session: KodusSession,
 ): Promise<void> {
+    // Cloud only: persistent tenants accumulate cross-provider integrations
+    // that hijack getTypeIntegration. Self-hosted's fresh tenant never does.
+    if (target.target === "cloud") {
+        await clearConflictingIntegrations(target, provider, session);
+    }
     log.info(`Registering ${provider.integrationType} integration`);
     const extras = provider.authExtraFields?.() ?? {};
     // OAuth path (GitHub App today): the backend expects `code` =
