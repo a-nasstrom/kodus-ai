@@ -224,7 +224,7 @@ out = {
     "appState": {"gridSize": None, "viewBackgroundColor": "#ffffff"},
     "files": {},
 }
-path = "/Users/gabrielmalinosqui/dev/kodus/kodus-ai/docs/agent-review-loop.excalidraw"
+path = os.path.join(os.path.dirname(__file__), "..", "docs", "agent-review-loop.excalidraw")
 os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, "w") as f:
     json.dump(out, f, indent=2)

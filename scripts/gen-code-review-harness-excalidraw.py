@@ -258,7 +258,7 @@ out = {
     "appState": {"gridSize": None, "viewBackgroundColor": "#ffffff"},
     "files": {},
 }
-path = "/Users/gabrielmalinosqui/dev/kodus/kodus-ai/docs/code-review-harness.excalidraw"
+path = os.path.join(os.path.dirname(__file__), "..", "docs", "code-review-harness.excalidraw")
 import os
 os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, "w") as f:
