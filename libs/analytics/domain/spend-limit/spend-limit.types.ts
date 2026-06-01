@@ -1,3 +1,4 @@
+import { ManualPricingOverrides } from '../token-usage/types/pricing.types';
 import { TokenUsageBreakdown } from '../token-usage/types/tokenUsage.types';
 
 /**
@@ -47,4 +48,31 @@ export interface SpendLimitEvaluation extends SpendLimitStatus {
     organizationId: string;
     periodKey: string;
     byModel: ModelSpend[];
+}
+
+/**
+ * Persisted spend-limit configuration for an organization, stored as the
+ * `SPEND_LIMIT_CONFIG` org parameter. The config *page* lives on the BYOK
+ * screen, but the data lives here (not in the shared BYOK config) so the whole
+ * feature stays self-contained.
+ */
+export interface SpendLimitConfig {
+    enabled: boolean;
+    monthlyLimitUsd: number;
+    /** Org-entered per-model price overrides (per-token US$). */
+    modelPricing?: ManualPricingOverrides;
+    /**
+     * Thresholds already alerted this period, keyed by periodKey (YYYY-MM).
+     * Drives the cron's once-per-threshold idempotency; a new month is a new
+     * key, so state resets for free.
+     */
+    thresholdsSent?: Record<string, number[]>;
+    /** "Over limit — won't notify again" final notice sent, keyed by periodKey. */
+    finalNoticeSent?: Record<string, boolean>;
+}
+
+/** Result of checking whether every configured model can be priced. */
+export interface PriceabilityResult {
+    priceable: boolean;
+    unpriceable: string[];
 }
