@@ -4,6 +4,16 @@ import { Injectable } from '@nestjs/common';
 const DEFAULT_ENDPOINT = 'https://telemetry.kodus.io/v1/heartbeat';
 const TIMEOUT_MS = 5_000;
 
+export const BEACON_HTTP_PROVIDER_TOKEN = Symbol.for('BeaconHttpProvider');
+
+export interface IBeaconHttpProvider {
+    isDisabled(): boolean;
+    send(
+        payload: Record<string, unknown>,
+        kodusVersion: string,
+    ): Promise<boolean>;
+}
+
 /**
  * Pure HTTP transport for the self-hosted beacon. One responsibility: POST a
  * pre-built payload to the receiver and surface only "did it land" — the
@@ -14,7 +24,7 @@ const TIMEOUT_MS = 5_000;
  * flip it at runtime without restarting the worker.
  */
 @Injectable()
-export class BeaconHttpProvider {
+export class BeaconHttpProvider implements IBeaconHttpProvider {
     private readonly logger = createLogger(BeaconHttpProvider.name);
 
     isDisabled(): boolean {

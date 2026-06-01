@@ -7,8 +7,14 @@ import { GlobalParametersKey } from '@libs/core/domain/enums/global-parameters-k
 import { GLOBAL_PARAMETERS_SERVICE_TOKEN } from '@libs/organization/domain/global-parameters/contracts/global-parameters.service.contract';
 import { IGlobalParametersService } from '@libs/organization/domain/global-parameters/contracts/global-parameters.service.contract';
 
-import { BeaconHttpProvider } from '../../infrastructure/providers/beacon-http.provider';
-import { HeartbeatCollectorService } from './heartbeat-collector.service';
+import {
+    BEACON_HTTP_PROVIDER_TOKEN,
+    IBeaconHttpProvider,
+} from '../../infrastructure/providers/beacon-http.provider';
+import {
+    HEARTBEAT_COLLECTOR_SERVICE_TOKEN,
+    IHeartbeatCollectorService,
+} from './heartbeat-collector.service';
 
 interface TelemetryStateValue {
     instance_id: string;
@@ -38,8 +44,10 @@ export class SelfHostedBeaconService {
     constructor(
         @Inject(GLOBAL_PARAMETERS_SERVICE_TOKEN)
         private readonly globalParameters: IGlobalParametersService,
-        private readonly collector: HeartbeatCollectorService,
-        private readonly transport: BeaconHttpProvider,
+        @Inject(HEARTBEAT_COLLECTOR_SERVICE_TOKEN)
+        private readonly collector: IHeartbeatCollectorService,
+        @Inject(BEACON_HTTP_PROVIDER_TOKEN)
+        private readonly transport: IBeaconHttpProvider,
     ) {}
 
     /**

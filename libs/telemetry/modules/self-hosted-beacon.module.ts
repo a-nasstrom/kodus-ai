@@ -12,9 +12,15 @@ import {
     PullRequestsSchema,
 } from '@libs/platformData/infrastructure/adapters/repositories/schemas/pullRequests.model';
 
-import { HeartbeatCollectorService } from '../application/services/heartbeat-collector.service';
+import {
+    HEARTBEAT_COLLECTOR_SERVICE_TOKEN,
+    HeartbeatCollectorService,
+} from '../application/services/heartbeat-collector.service';
 import { SelfHostedBeaconService } from '../application/services/self-hosted-beacon.service';
-import { BeaconHttpProvider } from '../infrastructure/providers/beacon-http.provider';
+import {
+    BEACON_HTTP_PROVIDER_TOKEN,
+    BeaconHttpProvider,
+} from '../infrastructure/providers/beacon-http.provider';
 
 @Module({
     imports: [
@@ -27,7 +33,15 @@ import { BeaconHttpProvider } from '../infrastructure/providers/beacon-http.prov
     ],
     providers: [
         BeaconHttpProvider,
+        {
+            provide: BEACON_HTTP_PROVIDER_TOKEN,
+            useExisting: BeaconHttpProvider,
+        },
         HeartbeatCollectorService,
+        {
+            provide: HEARTBEAT_COLLECTOR_SERVICE_TOKEN,
+            useExisting: HeartbeatCollectorService,
+        },
         SelfHostedBeaconService,
     ],
     exports: [SelfHostedBeaconService],
