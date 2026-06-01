@@ -1,7 +1,7 @@
 import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 
-const ENDPOINT = 'https://telemetry.kodus.io/v1/heartbeat';
+const DEFAULT_ENDPOINT = 'https://telemetry.kodus.io/v1/heartbeat';
 const TIMEOUT_MS = 5_000;
 
 /**
@@ -33,7 +33,7 @@ export class BeaconHttpProvider {
         const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
         try {
-            const response = await fetch(ENDPOINT, {
+            const response = await fetch(this.endpoint(), {
                 body: JSON.stringify(payload),
                 headers: {
                     'Content-Type': 'application/json',
@@ -66,5 +66,9 @@ export class BeaconHttpProvider {
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    private endpoint(): string {
+        return process.env.KODUS_TELEMETRY_ENDPOINT?.trim() || DEFAULT_ENDPOINT;
     }
 }

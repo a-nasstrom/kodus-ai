@@ -14,6 +14,8 @@ interface TelemetryStateValue {
     instance_id: string;
     first_seen_at: string; // ISO-8601 UTC
     last_sent_day: string | null; // YYYY-MM-DD UTC
+    in_flight_day: string | null; // YYYY-MM-DD UTC
+    in_flight_started_at: string | null; // ISO-8601 UTC
 }
 
 /**
@@ -21,6 +23,7 @@ interface TelemetryStateValue {
  *
  *   - opt-out resolution (`KODUS_TELEMETRY_DISABLED`, `DO_NOT_TRACK`)
  *   - daily dedupe via `last_sent_day` in `global_parameters[telemetry_state]`
+ *   - best-effort multi-worker dedupe via `in_flight_day`
  *   - lazy creation + persistence of `instance_id`
  *   - assembling the wire payload from `HeartbeatCollectorService`
  *   - delegating transport to `BeaconHttpProvider`
@@ -50,6 +53,8 @@ export class SelfHostedBeaconService {
 
     /** Daily entrypoint. Idempotent within the same UTC day. */
     async run(): Promise<void> {
+        let claimedState: TelemetryStateValue | null = null;
+
         try {
             if (this.transport.isDisabled()) {
                 return;
@@ -61,6 +66,19 @@ export class SelfHostedBeaconService {
             if (state.last_sent_day === today) {
                 return;
             }
+
+            if (hasFreshInFlightClaim(state, today, new Date())) {
+                return;
+            }
+
+            const nextClaimedState: TelemetryStateValue = {
+                ...state,
+                in_flight_day: today,
+                in_flight_started_at: new Date().toISOString(),
+            };
+
+            await this.persistState(nextClaimedState);
+            claimedState = nextClaimedState;
 
             const metrics = await this.collector.collect({
                 firstSeenAt: new Date(state.first_seen_at),
@@ -80,14 +98,27 @@ export class SelfHostedBeaconService {
 
             if (ok) {
                 await this.persistState({
-                    ...state,
+                    ...claimedState,
                     last_sent_day: today,
+                    in_flight_day: null,
+                    in_flight_started_at: null,
                 });
+            } else {
+                await this.persistState(clearInFlightClaim(claimedState));
             }
         } catch (error) {
             // Defense in depth: any unexpected throw is swallowed so the cron
             // never fails the worker. The transport already swallows network
             // errors; this catches storage / collector bugs.
+            if (claimedState) {
+                try {
+                    await this.persistState(clearInFlightClaim(claimedState));
+                } catch {
+                    // If cleanup also fails, keep the original error as the
+                    // useful signal. A stale in-flight claim expires.
+                }
+            }
+
             this.logger.warn({
                 message: 'self-hosted beacon run failed (swallowed)',
                 context: SelfHostedBeaconService.name,
@@ -133,6 +164,8 @@ export class SelfHostedBeaconService {
                 instance_id: value.instance_id,
                 first_seen_at: value.first_seen_at,
                 last_sent_day: value.last_sent_day ?? null,
+                in_flight_day: value.in_flight_day ?? null,
+                in_flight_started_at: value.in_flight_started_at ?? null,
             };
         }
 
@@ -140,6 +173,8 @@ export class SelfHostedBeaconService {
             instance_id: randomUUID(),
             first_seen_at: new Date().toISOString(),
             last_sent_day: null,
+            in_flight_day: null,
+            in_flight_started_at: null,
         };
 
         await this.persistState(fresh);
@@ -156,4 +191,31 @@ export class SelfHostedBeaconService {
 
 function utcDayString(date: Date): string {
     return date.toISOString().slice(0, 10);
+}
+
+function hasFreshInFlightClaim(
+    state: TelemetryStateValue,
+    today: string,
+    now: Date,
+): boolean {
+    if (
+        state.in_flight_day !== today ||
+        !state.in_flight_started_at ||
+        Number.isNaN(Date.parse(state.in_flight_started_at))
+    ) {
+        return false;
+    }
+
+    const startedAt = new Date(state.in_flight_started_at).getTime();
+    return now.getTime() - startedAt < 30 * 60 * 1000;
+}
+
+function clearInFlightClaim(
+    state: TelemetryStateValue,
+): TelemetryStateValue {
+    return {
+        ...state,
+        in_flight_day: null,
+        in_flight_started_at: null,
+    };
 }
