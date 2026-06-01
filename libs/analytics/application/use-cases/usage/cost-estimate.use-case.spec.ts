@@ -1,4 +1,5 @@
 import { CostEstimateUseCase } from './cost-estimate.use-case';
+import { ModelCostCalculator } from './model-cost-calculator';
 import { ModelPricingInfo } from './token-pricing.use-case';
 
 type UsageRow = {
@@ -69,10 +70,16 @@ describe('CostEstimateUseCase', () => {
         tokenUsageService = { getUsageByPr: jest.fn() };
         pullRequestsService = { findOne: jest.fn() };
         tokenPricingUseCase = { execute: jest.fn() };
+        // Real calculator over the mocked pricing source: cost math is now
+        // owned by ModelCostCalculator, so the end-to-end assertions below
+        // exercise it through the use case.
+        const modelCostCalculator = new ModelCostCalculator(
+            tokenPricingUseCase as any,
+        );
         useCase = new CostEstimateUseCase(
             tokenUsageService as any,
             pullRequestsService as any,
-            tokenPricingUseCase as any,
+            modelCostCalculator as any,
         );
     });
 
