@@ -211,6 +211,28 @@ jobs:
                       export SH_LICENSE_KEY_PATH="$HOME/.kodus-dev/license-seats1.jwt"
                   fi
 
+                  # Materialize ~/.kodus-dev/config for the SSO E2E scenarios.
+                  # sso-cookie-domain / sso-multi-user shell out to
+                  # scripts/sso-e2e/droplet/provision.sh → selfhosted/provision.sh,
+                  # which — finding no ~/.kodus-dev/config — runs the INTERACTIVE
+                  # setup.sh and aborts in ~1s on the non-TTY runner. Writing the
+                  # config from the secrets we already pass lets the script find a
+                  # ready config instead. Plain values (not op:// refs) skip the
+                  # 1Password resolver in _common.sh. Harmless for non-SSO cells
+                  # (nothing else reads it). Written to the file directly (never
+                  # echoed) so secret values don't hit the log.
+                  mkdir -p "$HOME/.kodus-dev"
+                  {
+                      echo "DIGITALOCEAN_TOKEN=${DIGITALOCEAN_TOKEN:-}"
+                      echo "SH_LICENSE_KEY=${SH_LICENSE_KEY_PAID:-}"
+                      echo "GH_DEV_TOKEN=${GH_TEST_TOKEN:-}"
+                      echo "API_OPEN_AI_API_KEY=${API_OPEN_AI_API_KEY:-}"
+                      echo "API_OPENAI_FORCE_BASE_URL=${API_OPENAI_FORCE_BASE_URL:-}"
+                      echo "API_LLM_PROVIDER_MODEL=${API_LLM_PROVIDER_MODEL:-}"
+                      echo "KODUS_INSTALLER_PATH=${KODUS_INSTALLER_PATH:-}"
+                  } > "$HOME/.kodus-dev/config"
+                  chmod 600 "$HOME/.kodus-dev/config"
+
                   SOURCE="tests/e2e/${SOURCE_MATRIX_FILE}"
                   if [ ! -f "$SOURCE" ]; then
                       echo "::error::source matrix file not found: $SOURCE"
