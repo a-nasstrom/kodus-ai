@@ -22,7 +22,7 @@
  */
 
 import * as dotenv from 'dotenv';
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient } from 'mongodb';
 import * as path from 'path';
 
 const argv = process.argv.slice(2);
@@ -81,23 +81,29 @@ async function main() {
     const db = client.db(process.env.API_MG_DB_DATABASE ?? 'kodus');
 
     try {
-        // Workflow jobs live in `workflow_jobs`. Match by id (string or
-        // ObjectId, since different setups index it differently).
-        const jobsColl = db.collection('workflow_jobs');
-        const job = await jobsColl.findOne({
-            $or: [
-                { _id: jobId } as any,
-                ...(ObjectId.isValid(jobId)
-                    ? [{ _id: new ObjectId(jobId) } as any]
-                    : []),
-                { jobId },
-                { id: jobId },
-                { correlationId: jobId },
-            ],
-        });
+        // Public review jobs are persisted in Postgres (`workflow_jobs`) and
+        // surfaced through the public status endpoint. Read the job from the
+        // API rather than guessing at the storage layout — the endpoint already
+        // returns `publicPr`, `publicDiff` and the worker `result`.
+        const apiBase = (
+            flag('api') ??
+            process.env.PUBLIC_REVIEW_API ??
+            'http://localhost:3001'
+        ).replace(/\/+$/, '');
+        const jobRes = await fetch(
+            `${apiBase}/cli/public/review/jobs/${jobId}`,
+        );
+        if (!jobRes.ok) {
+            console.error(
+                `No public review job found with id "${jobId}" (GET ${apiBase}/cli/public/review/jobs/${jobId} -> ${jobRes.status}).`,
+            );
+            process.exit(2);
+        }
+        const jobBody: any = await jobRes.json();
+        const job: any = jobBody?.data ?? jobBody;
 
-        if (!job) {
-            console.error(`No workflow job found with id "${jobId}".`);
+        if (!job || !job.jobId) {
+            console.error(`No public review job found with id "${jobId}".`);
             process.exit(2);
         }
 
@@ -108,20 +114,19 @@ async function main() {
             process.exit(3);
         }
 
-        const payload: any = job.payload ?? {};
-        const publicPr = payload.publicPr;
-        const publicDiff = payload.publicDiff;
+        const publicPr = job.publicPr;
+        const publicDiff = job.publicDiff;
         if (!publicPr || !publicDiff) {
             console.error(
-                'Job payload is missing publicPr / publicDiff. Only public-demo jobs can be promoted.',
+                'Job is missing publicPr / publicDiff. Only public-demo jobs can be promoted.',
             );
             process.exit(4);
         }
 
-        const result = job.metadata?.result;
+        const result = job.result;
         if (!result) {
             console.error(
-                'Job metadata.result is missing — was this job processed by the worker?',
+                'Job result is missing — was this job processed by the worker?',
             );
             process.exit(5);
         }
@@ -149,7 +154,7 @@ async function main() {
                     pr: publicPr,
                     diff: publicDiff,
                     result,
-                    sourceJobId: String(job._id ?? jobId),
+                    sourceJobId: String(job.jobId ?? jobId),
                     updatedAt: now,
                 },
                 $setOnInsert: { createdAt: now },
@@ -167,7 +172,7 @@ async function main() {
                     ok: true,
                     slug,
                     published,
-                    sourceJobId: String(job._id ?? jobId),
+                    sourceJobId: String(job.jobId ?? jobId),
                     pr: `${publicPr.owner}/${publicPr.repo}#${publicPr.prNumber}`,
                     title: publicPr.title,
                     issuesCount,
