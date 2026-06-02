@@ -69,7 +69,9 @@ describe('SpendLimitAlertService', () => {
             spentUsd: 760,
             periodKey: '2026-06',
         });
-        expect(first.recipients).toEqual([{ kind: 'role', role: 'owner' }]);
+        // No recipients: the audience is resolved from the event's
+        // audienceRoles + notification config at dispatch time.
+        expect(first.recipients).toBeUndefined();
 
         const saved = configService.saveConfig.mock.calls[0][1];
         expect(saved.thresholdsSent['2026-06']).toEqual([50, 75]);

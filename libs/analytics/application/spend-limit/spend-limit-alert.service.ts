@@ -2,7 +2,6 @@ import { createLogger } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
-import { Role } from '@libs/identity/domain/permissions/enums/permissions.enum';
 import { NotificationService } from '@libs/notifications/application/notification.service';
 import { NotificationEvent } from '@libs/notifications/domain/catalog/events';
 
@@ -56,7 +55,6 @@ export class SpendLimitAlertService {
                     spentUsd: evaluation.spentUsd,
                     periodKey,
                 },
-                recipients: [{ kind: 'role', role: Role.OWNER }],
             });
         }
 
@@ -69,7 +67,6 @@ export class SpendLimitAlertService {
                     spentUsd: evaluation.spentUsd,
                     periodKey,
                 },
-                recipients: [{ kind: 'role', role: Role.OWNER }],
             });
         }
 
