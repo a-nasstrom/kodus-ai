@@ -41,6 +41,10 @@ export function UserNav() {
         ResourceType.OrganizationSettings,
     );
     const canReadLogs = usePermission(Action.Read, ResourceType.Logs);
+    const canReadTokenUsage = usePermission(
+        Action.Read,
+        ResourceType.TokenUsage,
+    );
     const { isBYOK, isTrial, isEnterprise } = useSubscriptionStatus();
 
     const handleChangeWorkspace = (teamId: string) => {
@@ -119,7 +123,7 @@ export function UserNav() {
                     </Link>
                 )}
 
-                {canReadLogs && (
+                {canReadTokenUsage && (
                         <Link href="/token-usage">
                             <DropdownMenuItem leftIcon={<ChartColumn />}>
                                 Token Usage
