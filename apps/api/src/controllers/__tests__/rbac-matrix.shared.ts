@@ -111,10 +111,13 @@ function parseObjectArg(
     const out: Record<string, string> = {};
     for (const prop of obj.properties) {
         if (ts.isPropertyAssignment(prop)) {
-            out[prop.name.getText(source)] = memberName(
+            // String-literal values (e.g. @Controller({ path: 'usage' })) must
+            // be unquoted; member-access values (Action.Read) keep their name.
+            out[prop.name.getText(source)] = ts.isStringLiteralLike(
                 prop.initializer,
-                source,
-            );
+            )
+                ? prop.initializer.text
+                : memberName(prop.initializer, source);
         }
     }
     return out;

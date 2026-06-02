@@ -174,18 +174,21 @@ async function hit(
     entry: ManifestEntry,
     token: string,
 ): Promise<number> {
-    const method = entry.httpMethod as
+    // SSE endpoints are GET over HTTP; the guard runs before the stream opens,
+    // so a denied role still gets a clean 403 (no hanging stream). They're
+    // classified non-GET below (deny-only), so the allow-side never streams.
+    const verb = (entry.httpMethod === "SSE" ? "GET" : entry.httpMethod) as
         | "GET"
         | "POST"
         | "PUT"
         | "PATCH"
         | "DELETE";
     const res = await http(`${target.apiBaseUrl}${concreteUrl(entry.urlPath)}`, {
-        method,
+        method: verb,
         headers: { Authorization: `Bearer ${token}` },
         // Empty body for mutations: passes the guard, fails validation
         // downstream (no real mutation) — enough to read the policy verdict.
-        body: method === "GET" ? undefined : {},
+        body: verb === "GET" ? undefined : {},
         timeoutMs: 20_000,
     });
     return res.status;

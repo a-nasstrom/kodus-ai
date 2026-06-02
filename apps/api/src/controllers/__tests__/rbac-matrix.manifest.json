@@ -1421,7 +1421,7 @@
   {
     "key": "tokenUsage.controller.ts#getCostEstimate",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/cost-estimate",
+    "urlPath": "/usage/cost-estimate",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1432,7 +1432,7 @@
   {
     "key": "tokenUsage.controller.ts#getDaily",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/daily",
+    "urlPath": "/usage/tokens/daily",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1443,7 +1443,7 @@
   {
     "key": "tokenUsage.controller.ts#getDailyByDeveloper",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/daily-by-developer",
+    "urlPath": "/usage/tokens/daily-by-developer",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1454,7 +1454,7 @@
   {
     "key": "tokenUsage.controller.ts#getDailyUsageByPr",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/daily-by-pr",
+    "urlPath": "/usage/tokens/daily-by-pr",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1465,7 +1465,7 @@
   {
     "key": "tokenUsage.controller.ts#getPricing",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/pricing",
+    "urlPath": "/usage/tokens/pricing",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1476,7 +1476,7 @@
   {
     "key": "tokenUsage.controller.ts#getSummary",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/summary",
+    "urlPath": "/usage/tokens/summary",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1487,7 +1487,7 @@
   {
     "key": "tokenUsage.controller.ts#getUsageByDeveloper",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/by-developer",
+    "urlPath": "/usage/tokens/by-developer",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
@@ -1498,7 +1498,7 @@
   {
     "key": "tokenUsage.controller.ts#getUsageByPr",
     "httpMethod": "GET",
-    "urlPath": "/'usage'/tokens/by-pr",
+    "urlPath": "/usage/tokens/by-pr",
     "expected": {
       "owner": "allow",
       "billing_manager": "allow",
