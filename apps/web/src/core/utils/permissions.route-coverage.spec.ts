@@ -53,7 +53,10 @@ const ALL_PATTERNS: string[] = Object.values(resourceRoutes).flat();
 function pathMatchesAnyPattern(pathname: string): boolean {
     return ALL_PATTERNS.some((route) => {
         if (route.endsWith("/*")) {
-            return pathname.startsWith(route.slice(0, -2));
+            const base = route.slice(0, -2);
+            // Exact or true sub-path only — a sibling sharing the prefix
+            // (e.g. /cli-reviews vs /cli) must not count as covered.
+            return pathname === base || pathname.startsWith(base + "/");
         }
         return pathname === route;
     });

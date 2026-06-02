@@ -78,7 +78,14 @@ export const canAccessRoute = ({
         if (!route.includes(":")) {
             if (route.endsWith("/*")) {
                 const baseRoute = route.replace("/*", "");
-                return pathname.startsWith(baseRoute);
+                // Match the base route itself or a true sub-path only — NOT a
+                // sibling that merely shares the prefix string (e.g. `/cli/*`
+                // must not grant `/cli-reviews`). A bare startsWith would be an
+                // authorization bypass.
+                return (
+                    pathname === baseRoute ||
+                    pathname.startsWith(baseRoute + "/")
+                );
             }
 
             const matches = pathname === route;

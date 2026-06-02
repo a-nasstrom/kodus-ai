@@ -64,4 +64,16 @@ describe("canAccessRoute", () => {
             expect(access(UserRole.CONTRIBUTOR, "/settings/git")).toBe(false);
         });
     });
+
+    describe("prefix-collision must not bypass authorization", () => {
+        // `/cli/*` is public (All base routes); `/cli-reviews/*` is CliReview.
+        // A naive startsWith would grant `/cli-reviews` to anyone via `/cli`.
+        // billing_manager has NO CliReview grant, so it must be denied.
+        it("billing_manager (no CliReview) cannot reach /cli-reviews via the /cli prefix", () => {
+            expect(access(UserRole.BILLING_MANAGER, "/cli-reviews")).toBe(false);
+        });
+        it("the public /cli/* still grants the actual /cli sub-path", () => {
+            expect(access(UserRole.BILLING_MANAGER, "/cli/authorize")).toBe(true);
+        });
+    });
 });

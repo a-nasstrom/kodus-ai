@@ -10,7 +10,7 @@
   {
     "route": "/cli-reviews",
     "expected": {
-      "billing_manager": "allow",
+      "billing_manager": "deny",
       "repo_admin": "allow",
       "contributor": "allow"
     }
