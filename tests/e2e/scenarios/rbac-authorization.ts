@@ -31,9 +31,14 @@ import type { RunContext, Scenario, TargetContext } from "../lib/types.js";
 // passed). If MOST endpoints are owner-blocked, the org wasn't tier-unlocked
 // and the run fails loudly instead of reporting a hollow green.
 //
-// Isolation: signs up its OWN throwaway org (signup creator is OWNER + ACTIVE),
-// so every write — including mutations fired with empty/dummy payloads — is
-// contained in a disposable org.
+// IDEMPOTENT BY CONSTRUCTION (safe on shared QA, cannot touch other orgs):
+//   - GET endpoints are read-only — fired for every role.
+//   - Mutations (POST/PUT/PATCH/DELETE) are fired ONLY for roles the manifest
+//     marks `deny`, asserting the 403 that PolicyGuard returns BEFORE the
+//     handler runs — so no mutation handler ever executes. The allow-side of
+//     mutations is proven by the static manifest (rbac-matrix.manifest.spec.ts),
+//     never fired live. Net: the scenario performs zero state changes beyond
+//     signing up its own throwaway org + inviting its own users.
 // ---------------------------------------------------------------------------
 
 const PASSWORD = "E2eRbac!2026x";
@@ -245,13 +250,40 @@ export const rbacAuthorization: Scenario = {
             sessions.find((s) => s.role === role)!.accessToken;
 
         const failures: string[] = [];
-        const tierSkipped: string[] = []; // owner-blocked => non-RBAC guard
-        let asserted = 0;
+        const tierSkipped: string[] = []; // owner-blocked GET => non-RBAC guard
+        let asserted = 0; // verdicts checked live
+        let mutationAllowDeferred = 0; // allow-side mutations left to the manifest
+        let getCount = 0;
 
         for (const entry of manifest) {
-            // OWNER canary: owner has every permission, so a 401/403 here is a
-            // non-RBAC guard (tier/license/feature). Report and skip RBAC
-            // assertion rather than mis-asserting against a confounded 403.
+            // IDEMPOTENCY: a mutation only runs its handler when the guard
+            // ALLOWS it — that's the only side-effectful path. So for
+            // mutations we fire ONLY the roles the manifest marks `deny` and
+            // assert 403, which PolicyGuard returns BEFORE the handler (zero
+            // side effect, fully idempotent, can't touch any org). The
+            // allow-side of mutations is proven by the static manifest
+            // (rbac-matrix.manifest.spec.ts) and never fired here.
+            if (entry.httpMethod !== "GET") {
+                for (const role of NON_OWNER_ROLES) {
+                    if (entry.expected[role] !== "deny") {
+                        mutationAllowDeferred++;
+                        continue;
+                    }
+                    const status = await hit(ctx.target, entry, tokenOf(role));
+                    if (status !== 403) {
+                        failures.push(
+                            `${role} should be DENIED on ${entry.httpMethod} ${entry.urlPath} (expected 403, got ${status})`,
+                        );
+                    }
+                    asserted++;
+                }
+                continue;
+            }
+
+            // GET is read-only (safe + idempotent). OWNER canary: owner has
+            // every permission, so a 401/403 here is a non-RBAC guard
+            // (tier/license/feature) — report and skip rather than mis-assert.
+            getCount++;
             const ownerStatus = await hit(ctx.target, entry, tokenOf("owner"));
             if (ownerStatus === 401 || ownerStatus === 403) {
                 tierSkipped.push(
@@ -282,26 +314,30 @@ export const rbacAuthorization: Scenario = {
         // Loud, non-silent reporting of what couldn't be RBAC-tested (tier).
         if (tierSkipped.length) {
             console.log(
-                `[rbac] ${tierSkipped.length} endpoint(s) skipped — owner blocked by a non-RBAC guard (org not tier-unlocked?):\n  ${tierSkipped.join("\n  ")}`,
+                `[rbac] ${tierSkipped.length} GET endpoint(s) skipped — owner blocked by a non-RBAC guard (org not tier-unlocked?):\n  ${tierSkipped.join("\n  ")}`,
             );
         }
+        console.log(
+            `[rbac] live verdicts asserted: ${asserted} (all GET allow/deny + every mutation deny). Mutation allow-side (${mutationAllowDeferred}) is covered by rbac-matrix.manifest.spec.ts — never fired live, so the run stays idempotent.`,
+        );
 
         ctx.assert(
             failures.length === 0,
             `RBAC mismatches (${failures.length}):\n  ${failures.join("\n  ")}`,
         );
 
-        // If most endpoints were owner-blocked, the org wasn't tier-unlocked
-        // (not trial/licensed) — tier-gated RBAC was NOT actually validated.
-        // Fail loudly rather than report a hollow green.
+        // If most GETs were owner-blocked, the org wasn't tier-unlocked (not
+        // trial/licensed) — tier-gated RBAC was NOT actually validated. Fail
+        // loudly rather than report a hollow green.
         ctx.assert(
-            tierSkipped.length < manifest.length / 2,
-            `Over half the endpoints (${tierSkipped.length}/${manifest.length}) had owner blocked — the test org is not trial/licensed, so tier-gated RBAC was NOT validated. Run against a trial (fresh cloud) or licensed target.`,
+            getCount > 0 && tierSkipped.length < getCount / 2,
+            `Over half the GET endpoints (${tierSkipped.length}/${getCount}) had owner blocked — the test org is not trial/licensed, so tier-gated RBAC was NOT validated. Run against a trial (fresh cloud) or licensed target.`,
         );
 
         return {
             endpoints: manifest.length,
             cellsAsserted: asserted,
+            mutationAllowDeferred,
             tierSkipped: tierSkipped.length,
         };
     },
