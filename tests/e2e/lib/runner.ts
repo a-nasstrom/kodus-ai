@@ -272,8 +272,18 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
     // tenant's repo and 409 its next run — visit every distinct repo,
     // not just every provider. `opts.dryRun` short-circuits.
     if (!opts.dryRun) {
-        const cloudEntries =
-            opts.target === "cloud" ? readCloudTenantsFile() : [];
+        // Index the cloud tenants by (provider, license) once so the
+        // per-cell repo lookup below is an O(1) Map.get instead of a
+        // .find() scan inside the loop.
+        const repoByProviderLicense = new Map<string, string | undefined>();
+        if (opts.target === "cloud") {
+            for (const e of readCloudTenantsFile()) {
+                repoByProviderLicense.set(
+                    `${e.provider}::${e.license}`,
+                    e.repoFullName,
+                );
+            }
+        }
         const fixtures = new Map<
             string,
             { provider: ProviderName; repo?: string }
@@ -282,11 +292,7 @@ export async function runMatrix(opts: RunOptions): Promise<RunOutcome> {
             if (c.target !== opts.target) continue;
             const repo =
                 opts.target === "cloud"
-                    ? cloudEntries.find(
-                          (e) =>
-                              e.provider === c.provider &&
-                              e.license === c.license,
-                      )?.repoFullName
+                    ? repoByProviderLicense.get(`${c.provider}::${c.license}`)
                     : undefined;
             fixtures.set(`${c.provider}::${repo ?? "default"}`, {
                 provider: c.provider,
