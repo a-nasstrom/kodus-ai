@@ -35,11 +35,24 @@ yarn install
 ```
 
 ### 3. Configure Environment Variables
+
+**Kodus engineers (1Password):**
+
+```bash
+yarn env:pull
+```
+
+Pulls secrets from the `Kodus Dev` 1Password vault into a fresh `.env`.
+First-time setup (install `op` CLI, get vault access) is in
+[`scripts/env/README.md`](./scripts/env/README.md#pulling-values-from-1password).
+
+**External contributors:**
+
 ```bash
 cp .env.example .env
 ```
 
-Configure your `.env` file with the required variables. Refer to the [Orchestrator documentation](https://docs.kodus.io/how_to_deploy/en/local_quickstart/orchestrator) for detailed configuration instructions.
+Then fill in required values by hand — comments in `.env.example` say which are required. Refer to the [Orchestrator documentation](https://docs.kodus.io/how_to_deploy/en/local_quickstart/orchestrator) for detailed configuration instructions.
 
 ### 4. Set Up Docker Networks
 ```bash

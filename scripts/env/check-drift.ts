@@ -31,6 +31,11 @@ const targets: Target[] = [
         committed: join(REPO_ROOT, '.env.example'),
     },
     {
+        name: 'kodus-ai/.env.template',
+        generated: join(REPO_ROOT, '.env-preview', 'kodus-ai.env.template'),
+        committed: join(REPO_ROOT, '.env.template'),
+    },
+    {
         name: 'docs/_snippets/env-vars-generated.mdx',
         generated: join(REPO_ROOT, '.env-preview', 'env-vars-generated.mdx'),
         committed: join(

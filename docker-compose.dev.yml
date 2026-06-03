@@ -19,7 +19,12 @@ x-app-service-template: &app-service-defaults
             - API_CLOUD_MODE=${API_CLOUD_MODE:-false}
     image: kodus-ai-dev:latest
     env_file:
-        - ${ENV_FILE:-.env}
+        # .env.local (per-dev overrides, gitignored) is loaded LAST so it
+        # wins over the generated .env — same cascade the app uses at
+        # runtime. Optional: absent for most devs.
+        - path: ${ENV_FILE:-.env}
+        - path: .env.local
+          required: false
     environment:
         - CHOKIDAR_USEPOLLING=false
         - API_DEVELOPMENT_MODE=${API_DEVELOPMENT_MODE:-true}
@@ -347,7 +352,10 @@ services:
         ports:
             - '${WEB_PORT:-3000}:3000'
         env_file:
-            - ${ENV_FILE:-.env}
+            # See kodus-api: .env.local is the per-dev override layer.
+            - path: ${ENV_FILE:-.env}
+            - path: .env.local
+              required: false
         volumes:
             - ./apps/web:/usr/src/app:delegated
             # Mount shared monorepo libs at the location apps/web's
@@ -408,7 +416,10 @@ services:
         ports:
             - '${TRY_PORT:-3002}:3002'
         env_file:
-            - ${ENV_FILE:-.env}
+            # See kodus-api: .env.local is the per-dev override layer.
+            - path: ${ENV_FILE:-.env}
+            - path: .env.local
+              required: false
         volumes:
             - ./apps/try:/usr/src/app:delegated
             - try_node_modules_cache:/usr/src/app/node_modules
