@@ -118,6 +118,7 @@
 | `API_VERTEX_AI_LOCATION` | – | string | ☁️ Cloud |  |
 | `API_GOOGLE_AI_PROVIDER` | – | enum(gemini,vertex) | ☁️ Cloud | Google AI provider: gemini (AI Studio) or vertex (Vertex AI). |
 | `API_NOVITA_AI_API_KEY` | – | secret | ☁️ Cloud |  |
+| `API_MOONSHOT_API_KEY` | – | secret | ☁️ Cloud | Moonshot AI (Kimi) — used by the public-demo trial flow in libs/code-review/infrastructure/agents/llm/byok-to-vercel.ts when the default model name matches /^kimi[-_.]/. Wires through the OpenAI- compatible adapter pointed at https://api.moonshot.ai/v1. The eval scripts (evals/{investigation,promotion}/run-eval.js) also reference this key by name. Cloud-only — self-hosted has no Moonshot demo path. |
 | `API_GROQ_BASE_URL` | – | url | ☁️ Cloud |  |
 | `API_GROQ_API_KEY` | – | secret | ☁️ Cloud |  |
 | `API_CEREBRAS_BASE_URL` | – | url | ☁️ Cloud |  |
