@@ -6,6 +6,7 @@ import { login, signUp } from "../lib/onboarding.js";
 import { pollUntil } from "../providers/base.js";
 import {
     deepIncludesString,
+    httpRetryTransient,
     disable,
     getStatus,
     init,
@@ -22,6 +23,8 @@ import {
     ghMergeChange,
     ghMergePRNumber,
     ghPutFile,
+    ghWaitFileContains,
+    ghWaitFileGone,
 } from "../lib/gh-contents.js";
 import type { KodusSession, RunContext, Scenario, TargetContext } from "../lib/types.js";
 
@@ -196,7 +199,7 @@ export const centralizedConfigSync: Scenario = {
         provider: ["github"],
         license: ["paid", "license-paid"],
     },
-    timeoutSec: 900,
+    timeoutSec: 1200,
     async run(ctx: RunContext) {
         // Per-target source repo, same convention as resolveTargetRepo
         // (GH_TEST_REPO_CLOUD etc.): cloud and self-hosted cells run in
@@ -318,6 +321,16 @@ export const centralizedConfigSync: Scenario = {
             await ghPutFile(sourceRepoFullName!, FILES.memoryGlobal, memoryYml(MEMORY_TITLE, MEM1), `e2e ${uniq}: seed memory`);
             await ghPutFile(sourceRepoFullName!, FILES.ruleRepo, ruleYml(RULE_REPO_TITLE, RRM1), `e2e ${uniq}: seed repo rule`);
 
+            // Read-your-writes: don't ask Kodus to sync until GitHub serves
+            // the seeded content back — a lagging tree read would make the
+            // sync legitimately import stale state and fail the assertions.
+            await ghWaitFileContains(sourceRepoFullName!, FILES.global, G1);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.repo, R1);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.dir, D1);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.ruleGlobal, RM1);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.memoryGlobal, MEM1);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.ruleRepo, RRM1);
+
             const sync1 = await sync(ctx.target, teamKey);
             ctx.assert(sync1.success, `sync #1 failed: ${JSON.stringify(sync1)}`);
 
@@ -361,6 +374,8 @@ export const centralizedConfigSync: Scenario = {
             // --------------------------------------------------------------
             await ghPutFile(sourceRepoFullName!, FILES.global, configYml(G2), `e2e ${uniq}: update global config`);
             await ghPutFile(sourceRepoFullName!, FILES.ruleGlobal, ruleYml(RULE_GLOBAL_TITLE, RM2), `e2e ${uniq}: update global rule`);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.global, G2);
+            await ghWaitFileContains(sourceRepoFullName!, FILES.ruleGlobal, RM2);
             const sync2 = await sync(ctx.target, teamKey);
             ctx.assert(sync2.success, `sync #2 failed: ${JSON.stringify(sync2)}`);
 
@@ -391,6 +406,8 @@ export const centralizedConfigSync: Scenario = {
             // --------------------------------------------------------------
             await ghDeleteFile(sourceRepoFullName!, FILES.dir, `e2e ${uniq}: remove dir-scope config`);
             await ghDeleteFile(sourceRepoFullName!, FILES.ruleRepo, `e2e ${uniq}: remove repo rule`);
+            await ghWaitFileGone(sourceRepoFullName!, FILES.dir);
+            await ghWaitFileGone(sourceRepoFullName!, FILES.ruleRepo);
             const sync3 = await sync(ctx.target, teamKey);
             ctx.assert(sync3.success, `sync #3 failed: ${JSON.stringify(sync3)}`);
 
@@ -421,23 +438,42 @@ export const centralizedConfigSync: Scenario = {
             // NO manual sync call. The pull-request.closed listener must pick
             // it up. Generous budget: webhook delivery + listener + sync.
             // --------------------------------------------------------------
+            // A single GitHub webhook delivery can genuinely get lost — that
+            // is a transient infrastructure event, not a Kodus regression.
+            // One retry with a SECOND merged PR separates the two: a lost
+            // delivery passes on the retry; a broken listener fails both.
             const mergeStart = Date.now();
+            const waitAutoSync = (needle: string) =>
+                pollUntil<boolean>(
+                    async () => {
+                        const cfg = await fetchCodeReviewConfig(
+                            ctx.target,
+                            session,
+                        );
+                        return deepIncludesString(cfg, needle) ? true : null;
+                    },
+                    { intervalSec: 5, timeoutSec: 180 },
+                );
             const merged = await ghMergeChange(
                 sourceRepoFullName!,
                 [{ path: FILES.global, content: configYml(G3) }],
                 `e2e ${uniq}: merge-trigger global config v3`,
             );
             evidence.mergeTriggerPr = merged.prNumber;
-            const autoSynced = await pollUntil<boolean>(
-                async () => {
-                    const cfg = await fetchCodeReviewConfig(ctx.target, session);
-                    return deepIncludesString(cfg, G3) ? true : null;
-                },
-                { intervalSec: 5, timeoutSec: 240 },
-            );
+            let autoSynced = await waitAutoSync(G3);
+            if (!autoSynced) {
+                const G3b = sent("global_v3retry");
+                const retryMerged = await ghMergeChange(
+                    sourceRepoFullName!,
+                    [{ path: FILES.global, content: configYml(G3b) }],
+                    `e2e ${uniq}: merge-trigger retry (first delivery lost?)`,
+                );
+                evidence.mergeTriggerRetryPr = retryMerged.prNumber;
+                autoSynced = await waitAutoSync(G3b);
+            }
             ctx.assert(
                 autoSynced,
-                `Auto-sync on merge did not propagate ${G3} within 240s of merging PR #${merged.prNumber}. Either the webhook never reached this org (shared-repo routing picks the most recently updated org — a concurrent run may have stolen it) or the pull-request.closed centralized-config listener is broken.`,
+                `Auto-sync on merge did not propagate even after a retry merge (PRs #${merged.prNumber}${evidence.mergeTriggerRetryPr ? ` + #${evidence.mergeTriggerRetryPr}` : ""}). Two consecutive lost deliveries are implausible — the pull-request.closed centralized-config listener (or webhook→org routing) is broken.`,
             );
             evidence.mergeTriggerLatencySec = Math.round(
                 (Date.now() - mergeStart) / 1000,
@@ -450,7 +486,7 @@ export const centralizedConfigSync: Scenario = {
             // PR is what makes it active (and deletion mirrors it).
             // --------------------------------------------------------------
             const pendingTitle = `e2e-pending-rule-${uniq}`;
-            const createResp = await http(
+            const createResp = await httpRetryTransient(
                 `${ctx.target.apiBaseUrl}/kody-rules/create-or-update`,
                 {
                     method: "POST",
@@ -487,7 +523,7 @@ export const centralizedConfigSync: Scenario = {
             const mutationPr = await pollUntil<{ number: number }>(
                 async () => {
                     const open = await ghListOpenPRs(sourceRepoFullName!);
-                    return open[0] ?? null;
+                    return open.find((p) => /kody rule/i.test(p.title)) ?? null;
                 },
                 { intervalSec: 3, timeoutSec: 45 },
             );
@@ -523,7 +559,7 @@ export const centralizedConfigSync: Scenario = {
                 ruleUuid,
                 `Could not resolve uuid for "${pendingTitle}" after it became active`,
             );
-            const delResp = await http(
+            const delResp = await httpRetryTransient(
                 `${ctx.target.apiBaseUrl}/kody-rules/delete-rule-in-organization-by-id?ruleId=${encodeURIComponent(ruleUuid!)}&teamId=${encodeURIComponent(session.teamId)}`,
                 {
                     method: "DELETE",
@@ -538,7 +574,7 @@ export const centralizedConfigSync: Scenario = {
             const deletePr = await pollUntil<{ number: number }>(
                 async () => {
                     const open = await ghListOpenPRs(sourceRepoFullName!);
-                    return open[0] ?? null;
+                    return open.find((p) => /kody rule/i.test(p.title)) ?? null;
                 },
                 { intervalSec: 3, timeoutSec: 45 },
             );
@@ -624,6 +660,25 @@ export const centralizedConfigSync: Scenario = {
                 }
             }
             await revokeTeamKeyByName(ctx.target, session, keyName);
+            // Drop this org's code-management integration so it leaves the
+            // source repo's webhook→org candidate pool. Throwaway orgs
+            // accumulate one per run; without this, merge-trigger routing
+            // ("most recently updated org wins") degrades over time as dead
+            // orgs keep competing for deliveries.
+            try {
+                await http(
+                    `${ctx.target.apiBaseUrl}/code-management/delete-integration?teamId=${encodeURIComponent(session.teamId)}`,
+                    {
+                        method: "DELETE",
+                        headers: {
+                            Authorization: `Bearer ${session.accessToken}`,
+                        },
+                        timeoutMs: 20_000,
+                    },
+                );
+            } catch {
+                /* best effort */
+            }
         }
     },
 };

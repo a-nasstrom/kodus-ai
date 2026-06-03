@@ -175,6 +175,51 @@ export async function ghClosePR(repo: string, prNumber: number): Promise<void> {
     ensureOk(resp, `gh:closePR #${prNumber}`);
 }
 
+// Read-your-writes guards: the contents API is usually consistent, but the
+// tree/ref reads Kodus's sync performs can briefly lag a burst of PUTs. Wait
+// until the file is visible (and carries the expected content) before asking
+// Kodus to sync, so a stale tree never produces a phantom assertion failure.
+export async function ghWaitFileContains(
+    repo: string,
+    path: string,
+    needle: string,
+    timeoutSec = 30,
+): Promise<void> {
+    const deadline = Date.now() + timeoutSec * 1000;
+    while (Date.now() < deadline) {
+        const resp = await http<{ content?: string }>(
+            `${API}/repos/${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`,
+            { headers: headers(), timeoutMs: 20_000 },
+        );
+        if (resp.status === 200 && resp.body.content) {
+            const text = Buffer.from(resp.body.content, "base64").toString(
+                "utf8",
+            );
+            if (text.includes(needle)) return;
+        }
+        await new Promise((r) => setTimeout(r, 2_000));
+    }
+    throw new Error(
+        `ghWaitFileContains: ${repo}/${path} did not show expected content within ${timeoutSec}s`,
+    );
+}
+
+export async function ghWaitFileGone(
+    repo: string,
+    path: string,
+    timeoutSec = 30,
+): Promise<void> {
+    const deadline = Date.now() + timeoutSec * 1000;
+    while (Date.now() < deadline) {
+        const sha = await getFileSha(repo, path);
+        if (!sha) return;
+        await new Promise((r) => setTimeout(r, 2_000));
+    }
+    throw new Error(
+        `ghWaitFileGone: ${repo}/${path} still present after ${timeoutSec}s`,
+    );
+}
+
 // Newest-first list of open PRs. Used to locate the PR Kodus itself opened
 // (PENDING rule-mutation flow / init-pr) without depending on its branch
 // naming convention.

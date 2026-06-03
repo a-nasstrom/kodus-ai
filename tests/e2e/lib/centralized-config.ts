@@ -26,6 +26,27 @@ function unwrap<T>(body: unknown): T {
     return ((b as { data?: T })?.data ?? b) as T;
 }
 
+// The QA proxy intermittently answers 502/503/504/408/524 while the upstream
+// is still fine (same class onboarding.ts's PROXY_PENDING_STATUSES handles).
+// All centralized-config mutations are idempotent or guarded server-side
+// (init refuses when already enabled, sync re-reads the repo, disable/key
+// mint are safe), so one retry after a short pause removes that whole flake
+// class without masking real failures.
+const PROXY_TRANSIENT = new Set([502, 503, 504, 408, 524]);
+
+export async function httpRetryTransient<T = unknown>(
+    url: string,
+    opts: Parameters<typeof http>[1],
+): Promise<Awaited<ReturnType<typeof http<T>>>> {
+    const first = await http<T>(url, opts);
+    if (!PROXY_TRANSIENT.has(first.status)) return first;
+    log.info(
+        `transient HTTP ${first.status} from ${url.split("?")[0]} — retrying once in 5s`,
+    );
+    await new Promise((r) => setTimeout(r, 5_000));
+    return http<T>(url, opts);
+}
+
 // Mint a team CLI key with the config:repo:manage capability. The signup user
 // is OWNER of their org, which is exactly the role POST /teams/:teamId/cli-keys
 // requires (PolicyGuard checkRole OWNER). Returns the raw `kodus_…` secret —
@@ -35,7 +56,7 @@ export async function mintTeamKey(
     session: KodusSession,
     name: string,
 ): Promise<string> {
-    const resp = await http<{ key?: string }>(
+    const resp = await httpRetryTransient<{ key?: string }>(
         `${target.apiBaseUrl}/teams/${encodeURIComponent(session.teamId)}/cli-keys`,
         {
             method: "POST",
@@ -159,7 +180,7 @@ export async function getStatus(
     target: TargetContext,
     teamKey: string,
 ): Promise<CentralizedStatus> {
-    const resp = await http<CentralizedStatus>(
+    const resp = await httpRetryTransient<CentralizedStatus>(
         `${target.apiBaseUrl}/cli/config/centralized/status`,
         { headers: teamKeyHeaders(teamKey), timeoutMs: 20_000 },
     );
@@ -173,7 +194,7 @@ export async function init(
     repositoryId: string,
     syncOption: "pr" | "manual" = "manual",
 ): Promise<{ success: boolean; message: string; prUrl?: string }> {
-    const resp = await http<{ success: boolean; message: string; prUrl?: string }>(
+    const resp = await httpRetryTransient<{ success: boolean; message: string; prUrl?: string }>(
         `${target.apiBaseUrl}/cli/config/centralized/init`,
         {
             method: "POST",
@@ -190,7 +211,7 @@ export async function sync(
     target: TargetContext,
     teamKey: string,
 ): Promise<{ success: boolean; message: string }> {
-    const resp = await http<{ success: boolean; message: string }>(
+    const resp = await httpRetryTransient<{ success: boolean; message: string }>(
         `${target.apiBaseUrl}/cli/config/centralized/sync`,
         {
             method: "POST",
@@ -208,7 +229,7 @@ export async function disable(
     target: TargetContext,
     teamKey: string,
 ): Promise<{ success: boolean; message: string }> {
-    const resp = await http<{ success: boolean; message: string }>(
+    const resp = await httpRetryTransient<{ success: boolean; message: string }>(
         `${target.apiBaseUrl}/cli/config/centralized/disable`,
         {
             method: "POST",
