@@ -58,6 +58,9 @@ scenarios:
     # Chromium per role and asserts the Token Usage menu item + /token-usage
     # screen actually RENDER, and denied roles get a rendered /forbidden page.
     - rbac-ui-render
+    # Public PR-review demo API (also in fast.yml). Anonymous, cloud-only;
+    # appliesTo pins it to one cell (cloud × github × paid).
+    - public-pr-demo
 
 cells:
     # ---------- self-hosted (mirrors fast.yml) ----------
