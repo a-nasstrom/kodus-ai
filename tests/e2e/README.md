@@ -121,6 +121,7 @@ yarn e2e:matrix matrix/full.yml
 | `TARGET_TUNNEL_URL` | Public tunnel URL for webhooks (self-hosted only) | `target=self-hosted` |
 | `GH_TEST_TOKEN` | GitHub PAT, `repo` + `admin:repo_hook` | `provider=github` |
 | `GH_TEST_REPO` | GitHub test repo `owner/repo` | `provider=github` |
+| `CENTRALIZED_CONFIG_TEST_REPO` | Seeded centralized-config source repo `owner/repo` (`kodus-e2e/kodus-config-e2e`) | scenario `centralized-config-sync` (else it skips) |
 | `GL_TEST_TOKEN` | GitLab PAT, `api` + `write_repository` | `provider=gitlab` |
 | `GL_TEST_REPO` | GitLab project path | `provider=gitlab` |
 | `BB_TEST_USER`, `BB_TEST_APP_PASSWORD` | Bitbucket app password | `provider=bitbucket` |

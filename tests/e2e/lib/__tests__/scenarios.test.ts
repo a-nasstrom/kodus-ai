@@ -2,15 +2,17 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { allScenarios, resolveScenarios } from "../../scenarios/index.js";
 
-test("allScenarios: includes the 13 release-gate scenarios", () => {
+test("allScenarios: includes the registered release-gate scenarios", () => {
     const ids = Object.keys(allScenarios).sort();
     assert.deepEqual(ids, [
+        "centralized-config-sync",
         "code-review-basic",
         "command-review",
         "kody-rules-create-and-apply",
         "license-attribution",
         "onboarding-webhook-registration",
         "per-seat-license-toggle",
+        "public-pr-demo",
         "rbac-authorization",
         "rbac-frontend-routes",
         "rbac-ui-render",
@@ -19,6 +21,13 @@ test("allScenarios: includes the 13 release-gate scenarios", () => {
         "stripe-billing",
         "upgrade-n-1-to-n",
     ]);
+});
+
+test("centralized-config-sync: single cell per target — github × paid/license-paid", () => {
+    const s = allScenarios["centralized-config-sync"];
+    assert.deepEqual(s.appliesTo.target, ["cloud", "self-hosted"]);
+    assert.deepEqual(s.appliesTo.provider, ["github"]);
+    assert.deepEqual(s.appliesTo.license, ["paid", "license-paid"]);
 });
 
 test("command-review: cloud + self-hosted × github + github-app + 3 others × paid/trial/license-paid", () => {

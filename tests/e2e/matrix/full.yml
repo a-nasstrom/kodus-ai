@@ -23,6 +23,9 @@ scenarios:
     # from the command. Covers all 4 providers.
     - command-review
     - kody-rules-create-and-apply
+    # Centralized config (config-as-code) init→sync→disable on a throwaway org.
+    # github × {paid, license-paid}; skipped unless CENTRALIZED_CONFIG_TEST_REPO is set.
+    - centralized-config-sync
     - license-attribution
     # Per-seat gate: appliesTo restricts to self-hosted × github × license-paid
     # (one cell). Skipped automatically when SH_LICENSE_KEY_PATH (default

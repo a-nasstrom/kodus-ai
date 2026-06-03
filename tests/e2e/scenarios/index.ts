@@ -1,4 +1,5 @@
 import type { Scenario } from "../lib/types.js";
+import centralizedConfigSync from "./centralized-config-sync.js";
 import codeReviewBasic from "./code-review-basic.js";
 import commandReview from "./command-review.js";
 import kodyRulesCreateAndApply from "./kody-rules.js";
@@ -17,6 +18,7 @@ import upgradeNMinusOneToN from "./upgrade.js";
 export const allScenarios: Record<string, Scenario> = {
     [onboardingWebhookRegistration.id]: onboardingWebhookRegistration,
     [codeReviewBasic.id]: codeReviewBasic,
+    [centralizedConfigSync.id]: centralizedConfigSync,
     [commandReview.id]: commandReview,
     [kodyRulesCreateAndApply.id]: kodyRulesCreateAndApply,
     [licenseAttribution.id]: licenseAttribution,
@@ -44,6 +46,7 @@ export function resolveScenarios(ids: string[]): Scenario[] {
 }
 
 export {
+    centralizedConfigSync,
     codeReviewBasic,
     commandReview,
     kodyRulesCreateAndApply,
