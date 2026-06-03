@@ -109,6 +109,38 @@ jobs:
                       echo "Manual dispatch: only_model='$ONLY_MODEL_INPUT'"
                   fi
 
+            - name: Wait for QA backend to be healthy (avoid deploy-race 403s)
+              env:
+                  CLOUD_WEB_BASE_URL: ${{ vars.CLOUD_QA_WEB_URL || 'https://qa.web.kodus.io' }}
+              run: |
+                  set -uo pipefail
+                  BASE="${CLOUD_WEB_BASE_URL%/}/api/proxy/api"
+                  # On push to main this runs alongside the QA GitOps deploy, so it
+                  # can hit the backend mid-rollout: the gateway then answers every
+                  # request with an nginx "403 Forbidden" (or 5xx) and ALL model
+                  # logins fail with `onboarding:login: HTTP 403`, reding the run.
+                  # Probe /auth/login with a throwaway bad credential until the auth
+                  # layer answers at the APP level (400/401/404) instead of the
+                  # gateway (403/5xx/000). A healthy QA passes on the first attempt.
+                  echo "Probing $BASE/auth/login for app-level readiness…"
+                  for i in $(seq 1 60); do
+                      code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                          -X POST "$BASE/auth/login" \
+                          -H 'Content-Type: application/json' \
+                          -d '{"email":"readiness-probe@invalid.kodus","password":"x"}' \
+                          2>/dev/null || echo 000)
+                      case "$code" in
+                          200|201|400|401|404|422)
+                              echo "QA auth healthy (bad-cred login → HTTP $code) after $i attempt(s)."
+                              exit 0 ;;
+                          *)
+                              echo "attempt $i/60: HTTP $code (gateway/rollout) — waiting 10s…"
+                              sleep 10 ;;
+                      esac
+                  done
+                  echo "::error::QA backend never reached app-level readiness in ~10min — aborting before the benchmark to avoid deploy-race false failures."
+                  exit 1
+
             - name: Run benchmark (mechanical gate — fails if any review fails)
               working-directory: tests/e2e
               env:
