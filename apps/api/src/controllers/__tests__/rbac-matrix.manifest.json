@@ -1265,6 +1265,39 @@
     }
   },
   {
+    "key": "spendLimit.controller.ts#get",
+    "httpMethod": "GET",
+    "urlPath": "/spend-limit",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "allow"
+    }
+  },
+  {
+    "key": "spendLimit.controller.ts#status",
+    "httpMethod": "GET",
+    "urlPath": "/spend-limit/status",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "allow",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
+    "key": "spendLimit.controller.ts#update",
+    "httpMethod": "POST",
+    "urlPath": "/spend-limit",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "allow",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "ssoConfig.controller.ts#confirmDomainVerification",
     "httpMethod": "POST",
     "urlPath": "/sso-config/domain-verification/confirm",
