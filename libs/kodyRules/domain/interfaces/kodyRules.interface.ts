@@ -77,6 +77,20 @@ export interface IKodyRule {
     targetRuleUuid?: string;
     resolvedAt?: Date;
     resolvedBy?: string;
+    /**
+     * Set by the IDE-rule sync flow when the source file currently
+     * carries an `@kody-sync` marker — the per-file override that
+     * keeps a rule synchronized even with the repository's
+     * `ideRulesSyncEnabled=false`. Recomputed from file content on
+     * every sync, so flipping the toggle or editing the marker
+     * self-corrects on the next sync of that file.
+     *
+     * Consumed by the web UI to exclude such rules from the
+     * "orphan auto-sync" chip (they're not orphans, the backend
+     * keeps maintaining them) and to render a pin affordance on
+     * the Auto-sync origin badge.
+     */
+    pinnedSync?: boolean;
 }
 
 export interface IKodyRuleCentralizedConfig {
@@ -315,4 +329,5 @@ export const kodyRuleSchema = z.object({
     targetRuleUuid: z.string().optional(),
     resolvedAt: z.date().optional(),
     resolvedBy: z.string().optional(),
+    pinnedSync: z.boolean().optional(),
 });

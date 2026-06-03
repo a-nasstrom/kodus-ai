@@ -1,19 +1,26 @@
 /**
- * Failing tests covering the recursion bug in BaseCodeReviewAgentProvider
- * AND the two-pronged fix proposed in the loop-production discussion:
+ * Tests covering the recursion bug in BaseCodeReviewAgentProvider and the
+ * two-pronged guarantee: no-recursion when chunking can't help, and a
+ * defense-in-depth depth cap if anything else manages to recurse.
  *
- *   - Opção B (root cause): when chunkFilesByTokenBudget returns a single
- *     chunk that contains EVERY input file, recursing back into execute()
- *     with the same set is pointless and infinite. executeChunked should
- *     fail fast with AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET BEFORE the
- *     recursive call.
+ *   - Original "Fix B" (fail fast with AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET)
+ *     was replaced by a pre-check inside execute(): when the chunker would
+ *     return a single chunk containing every file, we skip executeChunked
+ *     and fall through to a single runAgentLoop call instead of recursing.
+ *     The agent's own assertContextWindowFitsOverhead preflight handles
+ *     the genuine "overhead larger than the model can hold" case earlier,
+ *     so there's no need to abort in executeChunked too. This avoids a
+ *     false-positive abort when small files just pack comfortably into
+ *     one chunk (caught by the adaptive-fit benchmark — see
+ *     base-code-review-agent.provider.ts pre-check around the
+ *     `estimatedPromptTokens > promptBudget` branch).
  *
- *   - Opção A (defense in depth): execute() should enforce a recursion
- *     depth limit, throwing AGENT_RECURSION_LIMIT_EXCEEDED if any future
- *     code path manages to recurse past 2 levels. recursionDepth must be
- *     forwarded by executeChunked when it calls execute() per-batch.
+ *   - Opção A (defense in depth): execute() enforces a recursion depth
+ *     limit, throwing AGENT_RECURSION_LIMIT_EXCEEDED if any future code
+ *     path manages to recurse past 2 levels. recursionDepth is forwarded
+ *     by executeChunked when it calls execute() per-batch.
  *
- *   - Log readability: batchLabel must be built from the unmodified
+ *   - Log readability: batchLabel is built from the unmodified
  *     baseIdentity.name so the agent name in logs stays bounded instead
  *     of growing one " batch X/Y" suffix per recursion level.
  *
@@ -207,6 +214,67 @@ function makeSmallInput(): ReviewAgentInput {
 }
 
 /**
+ * Marginal-overflow scenario. Diffs sum to ~93k tokens, comfortably under
+ * the legacy chunkDiffBudget of 94.5k (which only subtracted the static
+ * overhead) so the chunker packed every file into ONE chunk and the
+ * recursion guard killed the review. With the fix the chunk budget also
+ * subtracts the dynamic overhead (callGraph + coverage list + PR
+ * context), drops to ~92k, and the chunker correctly produces two chunks.
+ *
+ * Numbers: 3 files × 124_000 chars (≈31k tokens each) + 10_000-char
+ * callGraph. estimatePromptTokens ≈ 111k tokens (> promptBudget 110k →
+ * gate fires).
+ */
+function makeMarginalOverflowInput(): ReviewAgentInput {
+    return {
+        ...BASE_INPUT_FIELDS,
+        changedFiles: [
+            makeFile('src/a.ts', 124_000),
+            makeFile('src/b.ts', 124_000),
+            makeFile('src/c.ts', 124_000),
+        ],
+        callGraph: 'x'.repeat(10_000),
+    } as ReviewAgentInput;
+}
+
+/**
+ * Real-world replay using the exact numbers captured in the prod
+ * observability trace that surfaced this bug:
+ *   - 77 changed files (post aggressive filter; we use 'deep' mode here
+ *     to skip that branch and feed the chunker the same shape directly)
+ *   - average diff per file 4_800 chars (~1_200 tokens)
+ *   - callGraph 10_938 chars (~2_734 tokens)
+ *   - contextWindow 200_000, promptBudget 110_000
+ *
+ * Expected accounting (post-fix):
+ *   diff total          ≈ 92_400 tokens
+ *   + static overhead   = 15_500
+ *   + callGraph         = 2_734
+ *   + coverage list     = 1_540  (77 × 80 / 4)
+ *   + PR context        =    25  (post user-tweak with MIN(500))
+ *   ────────────────────────────
+ *   estimatedPrompt     ≈ 112_200 tokens  > 110_000 → gate fires
+ *
+ *   chunkDiffBudget OLD = 110_000 − 15_500 = 94_500
+ *     → 92_400 ≤ 94_500 → 1 chunk → guard throws (the bug)
+ *   chunkDiffBudget NEW = 110_000 − 19_800 = 90_200
+ *     → 92_400 > 90_200 → 2+ chunks → review proceeds (the fix)
+ */
+function makeProdReplayInput(): ReviewAgentInput {
+    const FILES = 77;
+    const CHARS_PER_FILE = 4_800;
+    const CALLGRAPH_CHARS = 10_938;
+    const files = Array.from({ length: FILES }, (_, i) =>
+        makeFile(`src/file_${i}.ts`, CHARS_PER_FILE),
+    );
+    return {
+        ...BASE_INPUT_FIELDS,
+        changedFiles: files,
+        callGraph: 'x'.repeat(CALLGRAPH_CHARS),
+    } as ReviewAgentInput;
+}
+
+/**
  * Wrap agent.execute() with a counter + hard cap so a runaway recursion
  * cannot hang the test runner. The cap throw is caught by executeChunked's
  * per-batch try/catch and absorbed into an empty result — exactly what
@@ -244,20 +312,32 @@ describe('BaseCodeReviewAgentProvider — recursion bug + proposed fixes', () =>
         jest.clearAllMocks();
     });
 
-    describe('Fix B — fail-fast when chunker cannot reduce file count', () => {
-        it('rejects with AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET', async () => {
-            setupExecuteSpy(agent);
-            await expect(
-                agent.execute(makePathologicalInput()),
-            ).rejects.toThrow('AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET');
+    describe('No-recursion contract — chunker returning 1 chunk falls through to a single runAgentLoop', () => {
+        // The pathological scenario produces 3 tiny files + a 400K-char
+        // callGraph. estimatePromptTokens exceeds promptBudget so the
+        // chunking branch enters, but chunkFilesByTokenBudget packs all
+        // 3 files into ONE chunk (each diff is tiny). The pre-check
+        // detects this and skips executeChunked — review proceeds as a
+        // single batch via the mocked runAgentLoop. Crucially, execute()
+        // is never re-entered, which is the historical worker-OOM
+        // regression this suite was written to lock down.
+        it('completes without recursing — single execute() call, no chunked recursion', async () => {
+            const { getCount } = setupExecuteSpy(agent);
+            const result = await agent.execute(makePathologicalInput());
+            expect(result).toBeDefined();
+            expect(getCount()).toBe(1);
         });
 
-        it('does NOT recurse — execute() is called exactly once before failing', async () => {
-            const { getCount } = setupExecuteSpy(agent);
-            await agent
-                .execute(makePathologicalInput())
-                .catch(() => undefined);
-            expect(getCount()).toBe(1);
+        it('does not throw AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET — the older guard was relaxed', async () => {
+            setupExecuteSpy(agent);
+            // The genuine "overhead larger than the window" case is now
+            // caught by assertContextWindowFitsOverhead earlier in
+            // execute(), so this scenario (overhead within window but
+            // bigger than the 55%-of-window budget) is handled by
+            // falling through to a single runAgentLoop, not aborting.
+            await expect(
+                agent.execute(makePathologicalInput()),
+            ).resolves.toBeDefined();
         });
     });
 
@@ -310,6 +390,37 @@ describe('BaseCodeReviewAgentProvider — recursion bug + proposed fixes', () =>
             const result = await agent.execute(makeSmallInput());
             expect(result).toBeDefined();
             expect(getCount()).toBe(1);
+        });
+    });
+
+    describe('Marginal-overflow scenario — dynamic overhead pushes prompt 2% over budget', () => {
+        it('splits diffs that fit under the static-only budget but overflow the full prompt — no false-positive guard trip', async () => {
+            const { getCount } = setupExecuteSpy(agent);
+            const result = await agent.execute(makeMarginalOverflowInput());
+            // 2 chunks → root + 2 per-batch executes = 3 calls.
+            // Pre-fix this returned 1 chunk and threw
+            // AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET on the second pass.
+            expect(result).toBeDefined();
+            expect(getCount()).toBeGreaterThanOrEqual(3);
+        });
+
+        it('does NOT throw AGENT_PROMPT_OVERHEAD_EXCEEDS_BUDGET on the marginal scenario', async () => {
+            setupExecuteSpy(agent);
+            await expect(
+                agent.execute(makeMarginalOverflowInput()),
+            ).resolves.toBeDefined();
+        });
+
+        // Higher-fidelity regression test using the exact numbers from
+        // the prod incident trace (77 files × ~4_800 chars, 10_938-char
+        // callGraph). Verifies the fix against the real shape, not just
+        // a constructed minimal case.
+        it('replays prod trace shape — 77 files + 10_938-char callGraph + 200k window → split, not abort', async () => {
+            const { getCount } = setupExecuteSpy(agent);
+            const result = await agent.execute(makeProdReplayInput());
+            expect(result).toBeDefined();
+            // Root execute + at least 2 batch executes
+            expect(getCount()).toBeGreaterThanOrEqual(3);
         });
     });
 });

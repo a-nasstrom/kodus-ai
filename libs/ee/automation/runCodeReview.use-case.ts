@@ -281,7 +281,9 @@ export class RunCodeReviewAutomationUseCase implements IUseCase {
             payload?.resource?.status === 'completed' ||
             false;
 
-        const isCommand = payload?.origin === 'command';
+        const isCommand =
+            typeof payload?.origin === 'string' &&
+            payload.origin.startsWith('command');
 
         // bitbucket has already been handled in the webhook validation
         if (

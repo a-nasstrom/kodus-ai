@@ -826,9 +826,16 @@ You must always respond in ${languageResultPrompt}.`;
         threadId?: number,
         finalCommentBody?: string,
         dryRun?: CodeReviewPipelineContext['dryRun'],
+        reviewFailed?: boolean,
+        reviewErrorMessage?: string,
+        reviewHasPartialErrors?: boolean,
     ): Promise<void> {
         try {
-            let commentBody = finalCommentBody;
+            // When the review failed, we cannot honor a customer-configured
+            // endReviewMessage template — those say "review completed", which
+            // would be a lie. Force the default summary path so the
+            // `withErrors` variant renders the real reason.
+            let commentBody = reviewFailed ? undefined : finalCommentBody;
 
             if (!commentBody || commentBody === '') {
                 commentBody = await this.generateLastReviewCommenBody(
@@ -837,7 +844,27 @@ You must always respond in ${languageResultPrompt}.`;
                     platformType,
                     codeSuggestions,
                     codeReviewConfig,
+                    undefined,
+                    reviewFailed,
+                    reviewErrorMessage,
+                    reviewHasPartialErrors,
                 );
+            } else if (reviewHasPartialErrors) {
+                // Custom end-review template is rendering — the default
+                // path's suffix wiring doesn't run here, so we append the
+                // partial-errors notice ourselves. Without this the user
+                // sees their template's "all good" message + no approval
+                // and assumes auto-approve is broken. Adaptive-fit
+                // fidelity warnings are intentionally NOT rendered in
+                // the PR comment — they surface in the web app's Pull
+                // Requests admin dashboard via dataExecution.reviewWarnings.
+                const notice = this.resolvePartialErrorsNotice(
+                    codeReviewConfig?.languageResultPrompt ??
+                        LanguageValue.ENGLISH,
+                );
+                if (notice) {
+                    commentBody = `${commentBody}${notice}`;
+                }
             }
 
             await this.codeManagementService.updateIssueComment(
@@ -888,6 +915,9 @@ You must always respond in ${languageResultPrompt}.`;
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         prLevelCommentResults?: Array<CommentResult>,
+        reviewFailed?: boolean,
+        reviewErrorMessage?: string,
+        reviewHasPartialErrors?: boolean,
     ): Promise<string> {
         let commentBody = await this.generatePullRequestFinishSummaryMarkdown(
             organizationAndTeamData,
@@ -895,6 +925,9 @@ You must always respond in ${languageResultPrompt}.`;
             codeSuggestions,
             codeReviewConfig,
             prLevelCommentResults,
+            reviewFailed,
+            reviewErrorMessage,
+            reviewHasPartialErrors,
         );
 
         commentBody = this.sanitizeBitbucketMarkdown(commentBody, platformType);
@@ -1410,12 +1443,54 @@ You must always respond in ${languageResultPrompt}.`;
         return { success: false };
     }
 
+    /**
+     * Build the localized `partialErrorsNotice` suffix with the dashboard
+     * URL already interpolated. Returns undefined when no notice is
+     * configured for the given language and the en-US fallback is also
+     * missing — caller should treat that as "nothing to append."
+     *
+     * Lives as its own method so the default-path renderer AND the
+     * customer-end-review-template paths can share it: both need the
+     * suffix when reviewHasPartialErrors is true, otherwise the custom
+     * template would render the optimistic copy and silently skip the
+     * "auto-approve was paused" notice — exactly the "looks like a bug"
+     * UX the suffix exists to prevent.
+     */
+    private resolvePartialErrorsNotice(language: string): string | undefined {
+        const translation = getTranslationsForLanguageByCategory(
+            language as LanguageValue,
+            TranslationsCategory.PullRequestFinishSummaryMarkdown,
+        );
+        const notice =
+            translation?.partialErrorsNotice ??
+            getTranslationsForLanguageByCategory(
+                LanguageValue.ENGLISH,
+                TranslationsCategory.PullRequestFinishSummaryMarkdown,
+            )?.partialErrorsNotice;
+        if (!notice) {
+            return undefined;
+        }
+        // Resolve the dashboard URL from the env var, with a public-domain
+        // fallback so the link never breaks even in environments where
+        // the var is missing.
+        const dashboardBase = (
+            process.env.API_USER_INVITE_BASE_URL || 'https://app.kodus.io'
+        ).replace(/\/+$/, '');
+        return notice.replace(
+            /\{\{dashboardUrl\}\}/g,
+            `${dashboardBase}/pull-requests`,
+        );
+    }
+
     private async generatePullRequestFinishSummaryMarkdown(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         commentResults?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         prLevelCommentResults?: Array<CommentResult>,
+        reviewFailed?: boolean,
+        reviewErrorMessage?: string,
+        reviewHasPartialErrors?: boolean,
     ): Promise<string> {
         try {
             const language =
@@ -1441,15 +1516,65 @@ You must always respond in ${languageResultPrompt}.`;
 
             const hasComments = hasPrLevelComments || hasFileComments;
 
-            const resultText = hasComments
-                ? translation.withComments
-                : translation.withoutComments;
+            // Failure variant takes priority: when the agent engine flagged
+            // the review as failed (critical errors on the pipeline) we
+            // cannot honestly tell the user "review completed" — even if
+            // the legacy hasComments path would also produce 0 suggestions.
+            // The dictionary's `withErrors` template includes the
+            // `{{errorMessage}}` placeholder that we fill with the human-
+            // readable reason; older dictionaries may not have the key,
+            // in which case we fall back to en-US.
+            let resultText: string | undefined;
+            if (reviewFailed) {
+                resultText =
+                    translation.withErrors ??
+                    getTranslationsForLanguageByCategory(
+                        LanguageValue.ENGLISH,
+                        TranslationsCategory.PullRequestFinishSummaryMarkdown,
+                    )?.withErrors;
+                if (resultText) {
+                    const errorMessage =
+                        reviewErrorMessage?.trim() ||
+                        'Unexpected error while running the code review.';
+                    resultText = resultText.replace(
+                        /\{\{errorMessage\}\}/g,
+                        errorMessage,
+                    );
+                }
+            }
+
+            if (!resultText) {
+                // Non-failed runs (full SUCCESS and PARTIAL_ERROR where only
+                // auxiliary work failed, e.g. kody-rules) share the same
+                // base copy. For PARTIAL_ERROR we still append a short notice
+                // explaining why auto-approve didn't fire — otherwise the
+                // user sees "review completed" + no approval and thinks
+                // approve is broken.
+                resultText = hasComments
+                    ? translation.withComments
+                    : translation.withoutComments;
+
+                if (reviewHasPartialErrors) {
+                    const notice = this.resolvePartialErrorsNotice(language);
+                    if (notice) {
+                        resultText = `${resultText}${notice}`;
+                    }
+                }
+            }
 
             if (!resultText) {
                 throw new Error(
                     `No result text found for language: ${language}`,
                 );
             }
+
+            // Adaptive-fit fidelity warnings are NOT rendered in the
+            // GitHub PR comment — PR authors don't care that the review
+            // was compacted, only that it failed (and CONTEXT_OVERFLOW
+            // failures already render via the `withErrors` template +
+            // friendlyMessage). The warnings ARE persisted to
+            // automation_execution.dataExecution.reviewWarnings for the
+            // admin-facing Pull Requests dashboard in the Kodus web app.
 
             // Add unique tag with timestamp to identify this comment as completed
             const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -2241,10 +2366,17 @@ ${reviewOptions}
         pullRequestMessagesConfig?: IPullRequestMessages,
         dryRun?: CodeReviewPipelineContext['dryRun'],
         prLevelCommentResults?: Array<CommentResult>,
+        reviewFailed?: boolean,
+        reviewErrorMessage?: string,
+        reviewHasPartialErrors?: boolean,
     ): Promise<void> {
         let commentBody: string;
 
-        if (endReviewMessage) {
+        // Same rationale as updateOverallComment: customer end-review
+        // templates assert success; when the review failed we override to
+        // the default path so the `withErrors` variant shows the real
+        // reason instead of a misleading "all good" template.
+        if (endReviewMessage && !reviewFailed) {
             const placeholderContext = await this.getTemplateContext(
                 changedFiles,
                 organizationAndTeamData,
@@ -2260,6 +2392,21 @@ ${reviewOptions}
             );
 
             commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
+
+            // Same reason as in updateOverallComment: the custom template
+            // path skips the default suffix wiring, so we append the
+            // partial-errors notice manually to keep the UX consistent
+            // (user sees template message + "auto-approve was paused").
+            if (reviewHasPartialErrors) {
+                const notice = this.resolvePartialErrorsNotice(
+                    language ?? LanguageValue.ENGLISH,
+                );
+                if (notice) {
+                    commentBody = `${commentBody}${notice}`;
+                }
+            }
+            // Adaptive-fit fidelity warnings are NOT appended to the PR
+            // comment (admin-only signal — see updateOverallComment).
         } else {
             commentBody = await this.generateLastReviewCommenBody(
                 organizationAndTeamData,
@@ -2268,6 +2415,9 @@ ${reviewOptions}
                 codeSuggestions,
                 codeReviewConfig,
                 prLevelCommentResults,
+                reviewFailed,
+                reviewErrorMessage,
+                reviewHasPartialErrors,
             );
         }
 

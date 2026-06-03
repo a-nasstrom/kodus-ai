@@ -25,6 +25,7 @@ import {
     PullRequestState,
 } from '@libs/core/domain/enums';
 import {
+    CommentResult,
     Repository,
     ReviewComment,
 } from '@libs/core/infrastructure/config/types/general/codeReview.type';
@@ -95,7 +96,6 @@ export class GitlabService implements Omit<
     | 'getAuthenticationOAuthToken'
     | 'getCommitsByReleaseMode'
     | 'getDataForCalculateDeployFrequency'
-    | 'requestChangesPullRequest'
 > {
     private readonly logger = createLogger(GitlabService.name);
 
@@ -1731,12 +1731,30 @@ export class GitlabService implements Omit<
         projectId: string,
         merge_number: number,
     ): Promise<any> {
-        const files = await gitlab.MergeRequests.allDiffs(
-            projectId,
-            merge_number,
-        );
+        try {
+            const files = await gitlab.MergeRequests.allDiffs(
+                projectId,
+                merge_number,
+            );
 
-        return files;
+            return files;
+        } catch (error) {
+            if (
+                error?.cause?.response?.status === 404 ||
+                error?.status === 404
+            ) {
+                // Fallback for GitLab < 15.7 where /diffs endpoint doesn't exist
+                const mr = await gitlab.MergeRequests.showChanges(
+                    projectId,
+                    merge_number,
+                    { accessRawDiffs: true },
+                );
+
+                return mr.changes || [];
+            }
+
+            throw error;
+        }
     }
 
     async countChangesInMergeRequest(
@@ -1903,10 +1921,28 @@ export class GitlabService implements Omit<
 
         // 4. Get the MR diffs to filter out files that came from merge commits
         // MergeRequests.allDiffs only returns files that belong to the MR (relative to target branch)
-        const mrDiffs = await gitlabAPI.MergeRequests.allDiffs(
-            repository.id,
-            prNumber,
-        );
+        // Fallback to showChanges for GitLab < 15.7 where /diffs endpoint doesn't exist
+        let mrDiffs: Array<{ new_path: string }>;
+        try {
+            mrDiffs = await gitlabAPI.MergeRequests.allDiffs(
+                repository.id,
+                prNumber,
+            );
+        } catch (error) {
+            if (
+                error?.cause?.response?.status === 404 ||
+                error?.status === 404
+            ) {
+                const mr = await gitlabAPI.MergeRequests.showChanges(
+                    repository.id,
+                    prNumber,
+                    { accessRawDiffs: true },
+                );
+                mrDiffs = mr.changes || [];
+            } else {
+                throw error;
+            }
+        }
 
         const mrFileNames = new Set(mrDiffs.map((f) => f.new_path));
 
@@ -2665,7 +2701,10 @@ export class GitlabService implements Omit<
                 (comment) => comment.id === filters.discussionId,
             )?.notes[0];
 
-            if (filters?.discussionId === undefined) {
+            if (
+                filters?.discussionId === undefined ||
+                filters.discussionId === ''
+            ) {
                 return comments;
             } else {
                 return comments
@@ -2675,6 +2714,7 @@ export class GitlabService implements Omit<
                             id: note.id,
                             body: note.body,
                             createdAt: note.created_at,
+                            discussionId: filters.discussionId ?? comment.id,
                             originalCommit: {
                                 body: originalCommit.body,
                                 id: originalCommit.id,
@@ -3318,6 +3358,89 @@ export class GitlabService implements Omit<
             });
             return null;
         }
+    }
+
+    async requestChangesPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+        criticalComments: CommentResult[];
+    }) {
+        try {
+            const {
+                organizationAndTeamData,
+                prNumber,
+                repository,
+                criticalComments,
+            } = params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            // Unapprove MR if previously approved
+            // On GitLab CE this may fail with 403 (Premium-only feature)
+            try {
+                await gitlabAPI.MergeRequestApprovals.unapprove(
+                    repository.id,
+                    prNumber,
+                );
+            } catch (unapproveError) {
+                this.logger.warn({
+                    message: `Could not unapprove MR #${prNumber} (may require GitLab Premium)`,
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService requestChangesPullRequest',
+                    error: unapproveError,
+                    metadata: params,
+                });
+            }
+
+            const listOfCriticalIssues = this.getListOfCriticalIssues(
+                criticalComments,
+            );
+
+            const requestChangeBodyTitle =
+                '# Found critical issues please review the requested changes';
+
+            const formattedBody =
+                `${requestChangeBodyTitle}\n\n${listOfCriticalIssues}`.trim();
+
+            await gitlabAPI.MergeRequestDiscussions.create(
+                repository.id,
+                prNumber,
+                formattedBody,
+            );
+
+            this.logger.log({
+                message: `Requested changes on MR #${prNumber} with ${criticalComments.length} critical issues`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService requestChangesPullRequest',
+                metadata: params,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error requesting changes on MR #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService requestChangesPullRequest',
+                error: error,
+                metadata: params,
+            });
+            throw error;
+        }
+    }
+
+    private getListOfCriticalIssues(
+        criticalComments: CommentResult[],
+    ): string {
+        return criticalComments
+            .map((comment) => {
+                const summary =
+                    comment.comment?.suggestion?.oneSentenceSummary ?? '';
+                return `- ${summary}`;
+            })
+            .join('\n');
     }
 
     async getAllCommentsInPullRequest(params: {

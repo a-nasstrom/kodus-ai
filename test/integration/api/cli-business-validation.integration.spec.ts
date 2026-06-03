@@ -24,8 +24,9 @@ import { EnqueueCliReviewUseCase } from '@libs/cli-review/application/use-cases/
 import { GetCliReviewJobStatusUseCase } from '@libs/cli-review/application/use-cases/get-cli-review-job-status.use-case';
 import { WaitForCliReviewJobUseCase } from '@libs/cli-review/application/use-cases/wait-for-cli-review-job.use-case';
 import { SubmitCliSessionCaptureUseCase } from '@libs/cli-review/application/use-cases/submit-cli-session-capture.use-case';
-import { AuthenticatedRateLimiterService } from '@libs/cli-review/infrastructure/services/authenticated-rate-limiter.service';
-import { TrialRateLimiterService } from '@libs/cli-review/infrastructure/services/trial-rate-limiter.service';
+import { AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN } from '@libs/cli-review/domain/contracts/authenticated-rate-limiter.service.contract';
+import { TRIAL_RATE_LIMITER_SERVICE_TOKEN } from '@libs/cli-review/domain/contracts/trial-rate-limiter.service.contract';
+import { GITHUB_PUBLIC_PR_SERVICE_TOKEN } from '@libs/cli-review/domain/contracts/github-public-pr.service.contract';
 import { AUTH_SERVICE_TOKEN } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@libs/integrations/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { CLI_DEVICE_SERVICE_TOKEN } from '@libs/organization/domain/cli-device/contracts/cli-device.service.contract';
@@ -36,6 +37,10 @@ import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { TriggerBusinessValidationUseCase } from '@libs/platform/application/use-cases/codeManagement/trigger-business-validation.use-case';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
 import { IngestSessionEventUseCase } from '@libs/cli-review/application/use-cases/ingest-session-event.use-case';
+import { PublicPrReviewUseCase } from '@libs/cli-review/application/use-cases/public-pr-review.use-case';
+import { ListFeaturedPublicReviewsUseCase } from '@libs/cli-review/application/use-cases/list-featured-public-reviews.use-case';
+import { GetFeaturedPublicReviewUseCase } from '@libs/cli-review/application/use-cases/get-featured-public-review.use-case';
+import { ValidateCliKeyUseCase } from '@libs/cli-review/application/use-cases/validate-cli-key.use-case';
 
 describe('CLI business-validation integration', () => {
     let controller: CliReviewController;
@@ -87,16 +92,39 @@ describe('CLI business-validation integration', () => {
                     useValue: { execute: jest.fn() },
                 },
                 {
-                    provide: TrialRateLimiterService,
+                    provide: TRIAL_RATE_LIMITER_SERVICE_TOKEN,
                     useValue: {
                         checkRateLimit: jest.fn(),
                         getRateLimitStatus: jest.fn(),
                     },
                 },
                 {
-                    provide: AuthenticatedRateLimiterService,
+                    provide: AUTHENTICATED_RATE_LIMITER_SERVICE_TOKEN,
                     useValue: mockRateLimiter,
                 },
+                // Public-demo deps — only the trial endpoints touch
+                // these; mocked so Nest can resolve the constructor.
+                {
+                    provide: GITHUB_PUBLIC_PR_SERVICE_TOKEN,
+                    useValue: { fetch: jest.fn() },
+                },
+                {
+                    provide: PublicPrReviewUseCase,
+                    useValue: { execute: jest.fn() },
+                },
+                {
+                    provide: ListFeaturedPublicReviewsUseCase,
+                    useValue: {
+                        execute: jest.fn().mockResolvedValue({ items: [] }),
+                    },
+                },
+                {
+                    provide: GetFeaturedPublicReviewUseCase,
+                    useValue: {
+                        execute: jest.fn().mockResolvedValue(null),
+                    },
+                },
+                ValidateCliKeyUseCase,
                 {
                     provide: TEAM_CLI_KEY_SERVICE_TOKEN,
                     useValue: mockTeamCliKeyService,

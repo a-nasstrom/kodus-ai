@@ -337,6 +337,7 @@ describe('AgentReviewStage', () => {
                         durationMs: 1000,
                     },
                 ],
+                failures: [],
                 totalDurationMs: 1000,
             });
 
@@ -409,5 +410,46 @@ describe('AgentReviewStage', () => {
 
             expect(result.fileAnalysisResults).toEqual([]);
         });
+
+        it('should handle undefined agentResults without throwing', async () => {
+            mockOrchestrator.execute.mockResolvedValue({
+                suggestions: [
+                    {
+                        relevantFile: 'src/auth.ts',
+                        suggestionContent: 'Missing null check',
+                        label: 'bug',
+                        severity: 'high',
+                        relevantLinesStart: 10,
+                        relevantLinesEnd: 15,
+                    },
+                ],
+                agentResults: undefined,
+                totalDurationMs: 1000,
+            });
+
+            const context = createBaseContext({
+                changedFiles: [{ filename: 'src/auth.ts' } as any],
+                sandboxHandle: {
+                    remoteCommands: {
+                        grep: jest.fn(),
+                        read: jest.fn(),
+                        listDir: jest.fn(),
+                    },
+                    cleanup: jest.fn(),
+                    type: 'e2b' as const,
+                    sandboxId: 'mock-sandbox-id',
+                    repoDir: '/home/user/repo',
+                    run: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+                    readFile: jest.fn().mockResolvedValue(''),
+                    writeFile: jest.fn().mockResolvedValue(undefined),
+                },
+            });
+
+            const result = await (stage as any).executeStage(context);
+
+            expect(result.fileAnalysisResults).toHaveLength(1);
+            expect(result.fileAnalysisResults[0].validSuggestionsToAnalyze).toHaveLength(1);
+        });
+
     });
 });

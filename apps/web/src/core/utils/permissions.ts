@@ -1,95 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { UserRole } from "@enums";
-import { ResourceType } from "@services/permissions/types";
 import type { Session } from "next-auth";
 
 import { hasPermission } from "./permission-map";
+import { canAccessRoute, resourceRoutes, roleRoutes } from "./permissions.routes";
 
-const resourceRoutes = {
-    [ResourceType.All]: [
-        "/user-waiting-for-approval/*",
-        "/settings",
-        "/forbidden/*",
-        "/library/*",
-        "/setup/*",
-        "/auth/*",
-    ],
-    [ResourceType.Billing]: ["/settings/subscription/*", "/choose-plan"],
-    [ResourceType.Cockpit]: ["/cockpit/*"],
-    [ResourceType.PullRequests]: ["/pull-requests/*"],
-    [ResourceType.Issues]: ["/issues/*"],
-    [ResourceType.CodeReviewSettings]: ["/settings/code-review/*"],
-    [ResourceType.OrganizationSettings]: ["/organization/*"],
-    [ResourceType.GitSettings]: ["/settings/git/*"],
-    [ResourceType.UserSettings]: ["/settings/subscription/*"],
-    [ResourceType.PluginSettings]: ["/settings/plugins/*"],
-    [ResourceType.Logs]: ["/user-logs/*"],
-};
-
-const roleRoutes = {
-    [UserRole.REPO_ADMIN]: [
-        ...resourceRoutes[ResourceType.All],
-        ...resourceRoutes[ResourceType.PullRequests],
-        ...resourceRoutes[ResourceType.Issues],
-        ...resourceRoutes[ResourceType.Cockpit],
-        ...resourceRoutes[ResourceType.CodeReviewSettings],
-        ...resourceRoutes[ResourceType.GitSettings],
-        ...resourceRoutes[ResourceType.PluginSettings],
-        ...resourceRoutes[ResourceType.Logs],
-    ],
-    [UserRole.BILLING_MANAGER]: [
-        ...resourceRoutes[ResourceType.All],
-        ...resourceRoutes[ResourceType.Billing],
-        ...resourceRoutes[ResourceType.CodeReviewSettings],
-        ...resourceRoutes[ResourceType.GitSettings],
-        ...resourceRoutes[ResourceType.PluginSettings],
-        ...resourceRoutes[ResourceType.Logs],
-    ],
-    [UserRole.CONTRIBUTOR]: [
-        ...resourceRoutes[ResourceType.All],
-        ...resourceRoutes[ResourceType.CodeReviewSettings],
-        ...resourceRoutes[ResourceType.Issues],
-    ],
-};
-
-const canAccessRoute = ({
-    pathname,
-    role,
-}: {
-    role: UserRole;
-    pathname: string;
-}): boolean => {
-    if (role === UserRole.OWNER) return true;
-
-    const rolePaths: string[] = roleRoutes[role] || [];
-
-    const hasAccess = rolePaths.some((route) => {
-        if (!route.includes(":")) {
-            if (route.endsWith("/*")) {
-                const baseRoute = route.replace("/*", "");
-                return pathname.startsWith(baseRoute);
-            }
-
-            const matches = pathname === route;
-            return matches;
-        }
-
-        const createRoutePattern = (route: string): string => {
-            return route
-                .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-                .replace(/:teamId/g, "[\\w-]+")
-                .replace(/:[a-zA-Z]+/g, "[\\w-]+");
-        };
-
-        const pattern = createRoutePattern(route);
-
-        const regex = new RegExp(`^${pattern}(?:/.*)?$`);
-        const matches = regex.test(pathname);
-        return matches;
-    });
-
-    return hasAccess;
-};
+// Re-exported so existing importers keep working; the actual route logic lives
+// in permissions.routes.ts (next/server-free, so it's unit-testable).
+export { canAccessRoute, resourceRoutes, roleRoutes };
 
 export function handleAuthenticated(
     req: NextRequest,

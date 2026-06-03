@@ -1,5 +1,6 @@
 export * from './application/date-range.util';
 export * from './domain/cockpit-source.enum';
+export * from './domain/contracts/cockpit-developer-productivity.service.contract';
 export * from './domain/types';
 export * from './infrastructure/services/cockpit-code-health.service';
 export * from './infrastructure/services/cockpit-developer-productivity.service';

@@ -4,9 +4,16 @@ import { createLogger } from '@kodus/flow';
 import { Output, jsonSchema } from 'ai';
 import { Inject, Injectable } from '@nestjs/common';
 import { tracedGenerateText } from '@libs/code-review/infrastructure/agents/llm/agent-loop';
+import { resolveAdaptiveProfile } from '@libs/code-review/infrastructure/agents/llm/adaptive-fit';
+import { resolveContextWindow } from '@libs/code-review/infrastructure/agents/llm/model-context-window';
+import {
+    dedupReviewWarnings,
+    type ReviewWarning,
+} from '@libs/code-review/infrastructure/agents/llm/review-warnings';
 import {
     withStructuredOutputFallback,
     NoStructuredFallbackModelError,
+    getModelName,
 } from '@libs/code-review/infrastructure/agents/llm/byok-to-vercel';
 import { buildKodyRuleLink } from '@libs/code-review/utils/build-kody-rule-link';
 import {
@@ -44,6 +51,11 @@ import {
     DedupTraceSummary,
 } from '../context/code-review-pipeline.context';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
+import {
+    ReviewErrorCategory,
+    classifyLLMError,
+    getClassification,
+} from '@libs/code-review/infrastructure/agents/llm/error-classifier';
 
 /**
  * Extract valid line ranges from a unified diff patch.
@@ -268,6 +280,71 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
             performance: true,
         };
 
+        // Resolve adaptive-fit profile once for this run. The profile drives
+        // which fidelity strategies (drop callGraph, compact prompt, etc) fire
+        // and is also passed through to BaseCodeReviewAgentProvider via
+        // ReviewAgentInput so per-agent code paths gate on the same flags.
+        // Per-repo/directory model override (byokModel) takes priority over
+        // the org-level main.model when present — same resolution the agent
+        // uses internally (`base-code-review-agent.provider.ts:541-551`).
+        const mainByok = context.codeReviewConfig?.byokConfig?.main;
+        const overrideModel =
+            context.codeReviewConfig?.byokModel?.trim();
+        const byokWithOverride =
+            overrideModel && mainByok
+                ? {
+                      ...context.codeReviewConfig?.byokConfig,
+                      main: { ...mainByok, model: overrideModel },
+                  }
+                : context.codeReviewConfig?.byokConfig;
+        // Use the same model-name formatter the agent uses (provider:model)
+        // so stage-emitted warnings and agent-emitted warnings share a
+        // dedup key. Otherwise dedupReviewWarnings sees them as distinct
+        // and the user sees duplicate bullets (PROMPT_COMPACTED listed
+        // twice — once with "gemini-2.5-flash" and once with
+        // "google_gemini:gemini-2.5-flash").
+        const effectiveModelName = getModelName(byokWithOverride);
+        const effectiveContextWindow = resolveContextWindow({
+            byokMaxInputTokens: mainByok?.maxInputTokens,
+            modelName: overrideModel || mainByok?.model || '',
+        });
+        const adaptiveProfile = resolveAdaptiveProfile(effectiveContextWindow);
+        const stageWarnings: ReviewWarning[] = [];
+        const emitStageWarning = (
+            kind: ReviewWarning['kind'],
+            detail?: string,
+        ) => {
+            stageWarnings.push({
+                kind,
+                reason: 'small_context_window',
+                contextWindowTokens: effectiveContextWindow,
+                modelName: effectiveModelName || 'unknown',
+                detail,
+            });
+        };
+
+        if (adaptiveProfile.kind !== 'full') {
+            this.logger.log({
+                message: `[AGENT] adaptive-fit profile=${adaptiveProfile.kind} window=${effectiveContextWindow} model=${effectiveModelName}`,
+                context: this.stageName,
+                metadata: {
+                    prNumber,
+                    profile: adaptiveProfile.kind,
+                    contextWindow: effectiveContextWindow,
+                    modelName: effectiveModelName,
+                    flags: {
+                        dropCallGraph: adaptiveProfile.dropCallGraph,
+                        skipHeavyPasses: adaptiveProfile.skipHeavyPasses,
+                        compactPrompt: adaptiveProfile.compactPrompt,
+                        allOptional: adaptiveProfile.allOptional,
+                        maxDiffChars: adaptiveProfile.maxDiffChars,
+                        lowSignalFilterUnconditional:
+                            adaptiveProfile.lowSignalFilterUnconditional,
+                    },
+                },
+            });
+        }
+
         const startTime = Date.now();
 
         this.logger.log({
@@ -305,7 +382,20 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             // Generate call graph context from AST graph in DB (via kodus-graph in E2B sandbox)
             let callGraph = '';
-            try {
+            // Adaptive fit: a 1–3K-token callGraph fragment is the cheapest
+            // thing to drop when the model's window can't hold the full
+            // prompt. `light+` profiles always skip it. The agent still has
+            // grep/readFile to investigate cross-file relationships on demand.
+            const shouldBuildCallGraph = !adaptiveProfile.dropCallGraph;
+            if (!shouldBuildCallGraph) {
+                this.logger.log({
+                    message: `[AGENT] adaptive-fit (${adaptiveProfile.kind}): skipping callGraph build to fit context window`,
+                    context: this.stageName,
+                });
+                emitStageWarning('CALLGRAPH_DROPPED');
+            }
+            if (shouldBuildCallGraph) {
+              try {
                 const sandboxType = context.sandboxHandle?.type ?? 'unknown';
                 const hasSandbox = !!context.sandboxHandle?.run;
                 this.logger.log({
@@ -320,11 +410,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
 
                 if (context.sandboxHandle?.run) {
-                    const repo =
-                        await this.repositoryService.findByExternalId(
-                            context.platformType,
-                            String(context.repository?.id || ''),
-                        );
+                    const repo = await this.repositoryService.findByExternalId(
+                        context.platformType,
+                        String(context.repository?.id || ''),
+                    );
 
                     this.logger.log({
                         message: `[AGENT] repo lookup: found=${!!repo}, astGraphStatus=${repo?.astGraphStatus ?? 'N/A'}, uuid=${repo?.uuid ?? 'N/A'}`,
@@ -385,6 +474,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     },
                 });
             }
+            } // end if (shouldBuildCallGraph)
 
             const result = await this.reviewOrchestrator.execute({
                 organizationAndTeamData: context.organizationAndTeamData,
@@ -419,12 +509,69 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 callGraph,
                 callGraphJson: context.callGraphJson,
                 reviewMode: context.codeReviewConfig?.reviewMode || 'normal',
+                // Trial mode has no BYOK config (organizationId='trial'
+                // isn't a UUID, so getBYOKConfig returns null). Without
+                // this override the agent falls back to gemini-3.1-pro,
+                // which makes anonymous public-demo reviews take 4–5
+                // minutes. Force Gemini 3 Flash for the trial flow —
+                // newer than 2.5 Flash, fast enough for demo latency
+                // (~30s), and the agent loop stays under control.
+                // `isTrialMode` lives on the CLI pipeline context — we
+                // can't import that type here without inverting the
+                // dep graph (cli-review depends on code-review), so
+                // the cast is intentional.
+                defaultModelOverride: (context as { isTrialMode?: boolean })
+                    .isTrialMode
+                    ? 'gemini-3-flash-preview'
+                    : undefined,
+                // Per-repo/directory model override resolved by ValidateConfigStage.
+                byokModel: context.codeReviewConfig?.byokModel,
+                // Adaptive-fit profile: agents read this to decide whether
+                // to compact the prompt, force all-optional tiering, drop
+                // low-signal files unconditionally, truncate per-file diffs,
+                // and skip heavy passes. Resolved once at the stage so the
+                // stage-level decisions (callGraph, heavy passes) and
+                // per-agent decisions agree.
+                adaptiveProfile,
+                // Auto-skip heavy passes (verifier, second-chance, rescue)
+                // when the profile says so. These are independent
+                // generateText calls that re-incur the full prompt overhead;
+                // on small windows they're guaranteed to refire the same
+                // preflight error. Don't override an explicit caller value.
+                skipHeavyPasses:
+                    adaptiveProfile.skipHeavyPasses || undefined,
                 // Forwarded from the workflow job timeout. The router builds
                 // an AbortController; here we pass it through so when the
                 // 1h45min budget fires, the agent-loop's local controller is
                 // aborted via parentSignal composition.
                 parentSignal: context.parentSignal,
             });
+
+            // Emit profile-driven warnings up here at the stage so they
+            // surface even when the agent's overhead preflight throws
+            // before its own emission points. These four are decided
+            // purely by the resolved profile — no PR-specific condition
+            // needed. The agent will re-emit some of them when it runs;
+            // dedupReviewWarnings folds the duplicates so the user sees
+            // each kind once. Without this, a preflight-failed run only
+            // shows 2 warnings (CALLGRAPH_DROPPED + HEAVY_PASSES_SKIPPED)
+            // while a successful run on the same profile shows 4–5 —
+            // confusing UX where the failure looks "less degraded" than
+            // the success.
+            //
+            // The agent-only warnings (LOW_SIGNAL_FILES_DROPPED with
+            // file count, DIFF_TRUNCATED with file names) are conditional
+            // on real PR state and intentionally NOT emitted here — we
+            // don't know yet whether the conditions apply.
+            if (adaptiveProfile.skipHeavyPasses) {
+                emitStageWarning('HEAVY_PASSES_SKIPPED');
+            }
+            if (adaptiveProfile.compactPrompt) {
+                emitStageWarning('PROMPT_COMPACTED');
+            }
+            if (adaptiveProfile.allOptional) {
+                emitStageWarning('HUNK_HEADERS_ONLY');
+            }
 
             const durationMs = Date.now() - startTime;
 
@@ -434,7 +581,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 metadata: {
                     prNumber,
                     suggestionsCount: result.suggestions.length,
-                    agentResults: result.agentResults.map((r) => ({
+                    agentResults: (result.agentResults ?? []).map((r) => ({
                         agent: r.agentName,
                         category: r.agentCategory,
                         replicaIndex: r.agentReplicaIndex,
@@ -465,8 +612,7 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                     : 'partial';
                 context = this.updateContext(context, (draft) => {
                     draft.errors.push({
-                        pipelineId:
-                            context.pipelineMetadata?.pipelineId,
+                        pipelineId: context.pipelineMetadata?.pipelineId,
                         stage: this.stageName,
                         substage: `agent:${failure.agentName}`,
                         error: failure.error,
@@ -480,9 +626,101 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 });
             }
 
+            // Pick the best failure to surface to the user (used by the
+            // end-review comment to interpolate the reason). Severity-based
+            // bookkeeping already happened in the loop above — this only
+            // chooses *which* failure's classification gets attached to the
+            // context for the message. A critical agent with a mapped (non-
+            // UNKNOWN) classification wins; fall back to any critical, then
+            // any failure.
+            const failures = result.failures ?? [];
+            if (failures.length > 0) {
+                const reviewProvider =
+                    typeof context.codeReviewConfig?.byokConfig?.main
+                        ?.provider === 'string'
+                        ? (context.codeReviewConfig.byokConfig.main
+                              .provider as string)
+                        : undefined;
+                const classifyFailure = (f: (typeof failures)[number]) =>
+                    getClassification(f.error) ??
+                    classifyLLMError(f.error, reviewProvider);
+                const criticalFailures = failures.filter((f) =>
+                    CRITICAL_AGENTS.has(f.agentName),
+                );
+                const ranked = (
+                    criticalFailures.length > 0 ? criticalFailures : failures
+                ).slice();
+                ranked.sort((a, b) => {
+                    const aMapped =
+                        classifyFailure(a).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    const bMapped =
+                        classifyFailure(b).category !==
+                        ReviewErrorCategory.UNKNOWN;
+                    if (aMapped === bMapped) return 0;
+                    return aMapped ? -1 : 1;
+                });
+                const chosen = ranked[0];
+                const classification = classifyFailure(chosen);
+
+                context = this.updateContext(context, (draft) => {
+                    draft.lastReviewError = {
+                        category: classification.category,
+                        provider: classification.provider,
+                        friendlyMessage: classification.friendlyMessage,
+                        agentName: chosen.agentName,
+                        occurredAt: new Date(),
+                    };
+                });
+
+                this.logger.log({
+                    message: `[AGENT] Review failures: ${failures.length} (critical=${criticalFailures.length}, category=${classification.category})`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        errorCategory: classification.category,
+                        provider: classification.provider,
+                        agentName: chosen.agentName,
+                        failureCount: failures.length,
+                        criticalCount: criticalFailures.length,
+                    },
+                });
+            }
+
+            // Surface adaptive-fit fidelity warnings (stage-level +
+            // orchestrator-deduped per-agent) so the end-review PR comment
+            // can render a collapsible "review fidelity reduced" section,
+            // and so telemetry can roll up "how often does each kind fire".
+            // Stage-level warnings (CALLGRAPH_DROPPED, HEAVY_PASSES_SKIPPED)
+            // come from this stage's own decisions; orchestrator's
+            // result.warnings come from the per-agent loops.
+            // Dedup at the merge point — a stage-level CALLGRAPH_DROPPED
+            // and an agent-level one for the same (model, window) fold
+            // into a single bullet in the user-facing notice.
+            const allWarnings = dedupReviewWarnings([
+                ...stageWarnings,
+                ...(result.warnings ?? []),
+            ]);
+            if (allWarnings.length > 0) {
+                context = this.updateContext(context, (draft) => {
+                    draft.reviewWarnings = allWarnings;
+                });
+                this.logger.log({
+                    message: `[AGENT] Review fidelity warnings: ${allWarnings
+                        .map((w) => w.kind)
+                        .join(', ')}`,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber,
+                        warningKinds: allWarnings.map((w) => w.kind),
+                        warningCount: allWarnings.length,
+                    },
+                });
+            }
+
             // Collect suggestions discarded by severity filter and verify
             const allDiscarded: Partial<CodeSuggestion>[] = [];
-            for (const agentResult of result.agentResults) {
+            for (const agentResult of result.agentResults ?? []) {
                 if (agentResult.discardedBySeverity?.length) {
                     for (const s of agentResult.discardedBySeverity) {
                         allDiscarded.push({
@@ -891,7 +1129,10 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
                 // reached `CreateFileCommentsStage` and the fallback
                 // comments for those files silently disappeared from the
                 // review.
-                const discardedByFile = new Map<string, Partial<CodeSuggestion>[]>();
+                const discardedByFile = new Map<
+                    string,
+                    Partial<CodeSuggestion>[]
+                >();
                 for (const s of allDiscarded) {
                     const file = s.relevantFile || '';
                     if (!file) continue;
@@ -1147,50 +1388,50 @@ export class AgentReviewStage extends BasePipelineStage<CodeReviewPipelineContex
 
             const runDedup = (model: any) =>
                 tracedGenerateText({
-                model: model as any,
-                experimental_telemetry: buildLangfuseTelemetry(
-                    'dedup-suggestions',
-                    telemetryMeta,
-                ),
-                output: Output.object({
-                    schema: jsonSchema({
-                        type: 'object',
-                        properties: {
-                            groups: {
-                                type: 'array',
-                                description:
-                                    'Groups of suggestions. Each group has a representative and its duplicates.',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        keep: {
-                                            type: 'number',
-                                            description:
-                                                'Index of the best suggestion to keep as representative',
+                    model: model as any,
+                    experimental_telemetry: buildLangfuseTelemetry(
+                        'dedup-suggestions',
+                        telemetryMeta,
+                    ),
+                    output: Output.object({
+                        schema: jsonSchema({
+                            type: 'object',
+                            properties: {
+                                groups: {
+                                    type: 'array',
+                                    description:
+                                        'Groups of suggestions. Each group has a representative and its duplicates.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            keep: {
+                                                type: 'number',
+                                                description:
+                                                    'Index of the best suggestion to keep as representative',
+                                            },
+                                            duplicates: {
+                                                type: 'array',
+                                                items: { type: 'number' },
+                                                description:
+                                                    'Indices of duplicate suggestions (same bug, same or different locations)',
+                                            },
                                         },
-                                        duplicates: {
-                                            type: 'array',
-                                            items: { type: 'number' },
-                                            description:
-                                                'Indices of duplicate suggestions (same bug, same or different locations)',
-                                        },
+                                        required: ['keep', 'duplicates'],
+                                        additionalProperties: false,
                                     },
-                                    required: ['keep', 'duplicates'],
-                                    additionalProperties: false,
+                                },
+                                unique: {
+                                    type: 'array',
+                                    items: { type: 'number' },
+                                    description:
+                                        'Indices of suggestions that have no duplicates',
                                 },
                             },
-                            unique: {
-                                type: 'array',
-                                items: { type: 'number' },
-                                description:
-                                    'Indices of suggestions that have no duplicates',
-                            },
-                        },
-                        required: ['groups', 'unique'],
-                        additionalProperties: false,
-                    }),
-                }) as any,
-                prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
+                            required: ['groups', 'unique'],
+                            additionalProperties: false,
+                        }),
+                    }) as any,
+                    prompt: `You have ${suggestions.length} code review suggestions across multiple files in a PR. Identify duplicates and group them.
 
 BE CONSERVATIVE — when in doubt, do NOT group. Only group when you are highly confident they describe the exact same bug.
 
@@ -1213,16 +1454,19 @@ ${summaries}`,
 
             let dedupResult: any;
             if (googleKey) {
-                const { createGoogleGenerativeAI } = await import(
-                    '@ai-sdk/google'
-                );
+                const { createGoogleGenerativeAI } =
+                    await import('@ai-sdk/google');
                 const model = createGoogleGenerativeAI({ apiKey: googleKey })(
                     'gemini-3-flash-preview',
                 );
                 dedupResult = await runDedup(model);
             } else {
                 dedupResult = await withStructuredOutputFallback(
-                    { byokConfig, label: 'dedup-suggestions' },
+                    {
+                        byokConfig,
+                        organizationId: telemetryMeta?.organizationId,
+                        label: 'dedup-suggestions',
+                    },
                     runDedup,
                 );
             }

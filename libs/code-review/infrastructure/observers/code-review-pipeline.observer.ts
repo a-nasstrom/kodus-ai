@@ -262,10 +262,23 @@ export class CodeReviewPipelineObserver implements IPipelineObserver {
             additionalMetadata.dedupTrace = context.dedupTrace;
         }
 
+        // Stage status respects error severity (matches deriveFinalStatus
+        // in automationCodeReview.ts so the per-stage badge and the
+        // automation rollup agree). Before this, a critical agent failure
+        // (e.g. AgentReviewStage with severity='critical') showed the
+        // stage as PARTIAL_ERROR while the rollup correctly showed ERROR —
+        // confusing UI where the stage said "Partial Error" but the same
+        // run's final stage said "Error". Default severity is 'critical'
+        // when omitted, matching PipelineErrorSeverity's documented default.
+        const hasCriticalError = errors.some(
+            (e) => (e.severity ?? 'critical') === 'critical',
+        );
         let status =
-            errors.length > 0
-                ? AutomationStatus.PARTIAL_ERROR
-                : AutomationStatus.SUCCESS;
+            errors.length === 0
+                ? AutomationStatus.SUCCESS
+                : hasCriticalError
+                  ? AutomationStatus.ERROR
+                  : AutomationStatus.PARTIAL_ERROR;
 
         let label = options?.label;
 

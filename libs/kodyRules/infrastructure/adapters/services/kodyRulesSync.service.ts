@@ -281,6 +281,54 @@ export class KodyRulesSyncService {
         }
     }
 
+    /**
+     * Flips a rule's `pinnedSync` back to false. Mirrors
+     * `deleteRuleBySourcePath` but only touches the pin flag — used when
+     * the source file still exists but no longer carries `@kody-sync`
+     * (with `ideRulesSyncEnabled=false`, the force-sync path skips that
+     * file, so without this depin pass the rule would keep a stale
+     * `pinnedSync=true` and disappear from the orphan-chip count even
+     * though the backend isn't maintaining it anymore).
+     *
+     * No-op when the rule isn't found or already has `pinnedSync !== true`
+     * — avoids unnecessary writes and audit-log noise.
+     */
+    private async depinRuleBySourcePath(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        sourcePath: string;
+    }): Promise<void> {
+        try {
+            const { organizationAndTeamData, repositoryId, sourcePath } =
+                params;
+            const entity = await this.kodyRulesService.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+            if (!entity) return;
+
+            const toDepin = entity.rules?.find(
+                (r) =>
+                    r?.repositoryId === repositoryId &&
+                    (r?.sourcePath || '').split('#')[0] === sourcePath,
+            );
+            if (!toDepin?.uuid) return;
+            if (toDepin.pinnedSync !== true) return;
+
+            await this.kodyRulesService.createOrUpdate(
+                organizationAndTeamData,
+                { ...toDepin, pinnedSync: false } as any,
+                this.systemUserInfo,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to depin rule by sourcePath',
+                context: KodyRulesSyncService.name,
+                error,
+                metadata: params,
+            });
+        }
+    }
+
     async syncFromChangedFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string; fullName?: string };
@@ -369,6 +417,39 @@ export class KodyRulesSyncService {
                     }
                 }
 
+                // Depin / soft-delete pass: rule files that changed but
+                // didn't make it into `forceSyncFiles` either lost their
+                // `@kody-sync` marker or were deleted outright. Without
+                // this, a previously-pinned rule whose marker was just
+                // removed would keep `pinnedSync=true` forever (the
+                // normal sync path would never touch it again with the
+                // toggle off), which silently breaks the orphan-chip
+                // count.
+                // `ruleChanges` can be large; a Set keeps the per-file
+                // force-sync lookup O(1) inside the loop instead of the
+                // O(n) `Array.includes` (which made the pass O(n²)).
+                const forceSyncSet = new Set(forceSyncFiles);
+                let depinned = 0;
+                let removed = 0;
+                for (const f of ruleChanges) {
+                    if (forceSyncSet.has(f.filename)) continue;
+                    if (f.status === 'removed') {
+                        await this.deleteRuleBySourcePath({
+                            organizationAndTeamData,
+                            repositoryId: repository.id,
+                            sourcePath: f.previous_filename ?? f.filename,
+                        });
+                        removed += 1;
+                    } else {
+                        await this.depinRuleBySourcePath({
+                            organizationAndTeamData,
+                            repositoryId: repository.id,
+                            sourcePath: f.filename,
+                        });
+                        depinned += 1;
+                    }
+                }
+
                 if (forceSyncFiles.length === 0) {
                     this.logger.log({
                         message:
@@ -377,6 +458,8 @@ export class KodyRulesSyncService {
                         metadata: {
                             repositoryId: repository.id,
                             organizationAndTeamData,
+                            depinned,
+                            removed,
                         },
                     });
                     return;
@@ -615,6 +698,14 @@ export class KodyRulesSyncService {
                     examples: Array.isArray(oneRule.examples)
                         ? (oneRule.examples as any)
                         : [],
+                    // Computed from current file content on every sync.
+                    // With the toggle off this is always true (we only
+                    // reach this branch for force-sync files); with the
+                    // toggle on it reflects the current marker state,
+                    // so a later toggle-off keeps pinned rules out of
+                    // the UI's orphan-chip count without needing a
+                    // separate backfill step.
+                    pinnedSync: this.shouldForceSync(decoded),
                 } as CreateKodyRuleDto;
 
                 const result =
@@ -775,6 +866,54 @@ export class KodyRulesSyncService {
                     }
                 }
 
+                // Full-scan depin / soft-delete pass: with the toggle off,
+                // the normal flow would silently leave previously-pinned
+                // rules with stale `pinnedSync=true` whenever the marker is
+                // dropped from their source file (or the file is deleted
+                // from the default branch). Walk every IDE-synced rule for
+                // this repo once and reconcile against the current
+                // filesystem snapshot.
+                //
+                // We have `allFiles` (every rule file at HEAD of the default
+                // branch) and `forceSyncFiles` (the subset that still carries
+                // `@kody-sync`). For each pinned rule:
+                //   - sourcePath not in `allFiles` → file gone → soft-delete.
+                //   - sourcePath in `allFiles` but not in `forceSyncFiles` →
+                //     marker dropped → depin (no-op if already not pinned).
+                //   - sourcePath in `forceSyncFiles` → will be re-synced
+                //     below, which writes `pinnedSync: true` again.
+                const allFilePaths = new Set(
+                    allFiles.map((f: any) => f.path),
+                );
+                const forceSyncFilePaths = new Set(forceSyncFiles);
+                const existing =
+                    await this.kodyRulesService.findByOrganizationId(
+                        organizationAndTeamData.organizationId,
+                    );
+                let depinned = 0;
+                let removed = 0;
+                for (const rule of (existing?.rules ?? []) as any[]) {
+                    if (rule?.repositoryId !== repository.id) continue;
+                    if (!isIdeRuleSource(rule?.sourcePath)) continue;
+                    if (rule.pinnedSync !== true) continue;
+                    const sp = rule.sourcePath as string;
+                    if (!allFilePaths.has(sp)) {
+                        await this.deleteRuleBySourcePath({
+                            organizationAndTeamData,
+                            repositoryId: repository.id,
+                            sourcePath: sp,
+                        });
+                        removed += 1;
+                    } else if (!forceSyncFilePaths.has(sp)) {
+                        await this.depinRuleBySourcePath({
+                            organizationAndTeamData,
+                            repositoryId: repository.id,
+                            sourcePath: sp,
+                        });
+                        depinned += 1;
+                    }
+                }
+
                 if (forceSyncFiles.length === 0) {
                     this.logger.log({
                         message:
@@ -783,6 +922,8 @@ export class KodyRulesSyncService {
                         metadata: {
                             repositoryId: repository.id,
                             organizationAndTeamData,
+                            depinned,
+                            removed,
                         },
                     });
                     return;
@@ -799,6 +940,8 @@ export class KodyRulesSyncService {
                         repositoryId: repository.id,
                         organizationAndTeamData,
                         forceSyncFiles,
+                        depinned,
+                        removed,
                     },
                 });
             }
@@ -901,6 +1044,7 @@ export class KodyRulesSyncService {
                     examples: Array.isArray(oneRule.examples)
                         ? (oneRule.examples as any)
                         : [],
+                    pinnedSync: this.shouldForceSync(decoded),
                 } as CreateKodyRuleDto;
 
                 const result = await this.kodyRulesService.createOrUpdate(
@@ -979,6 +1123,16 @@ export class KodyRulesSyncService {
         });
 
         if (!content) {
+            // File is gone from the default branch. If we were previously
+            // tracking a pinned rule for it, soft-delete so the orphan
+            // chip stops hiding it under the pinned exclusion.
+            if (!syncEnabled) {
+                await this.deleteRuleBySourcePath({
+                    organizationAndTeamData,
+                    repositoryId: repository.id,
+                    sourcePath: filePath,
+                });
+            }
             this.logger.log({
                 message: 'Requested file was not found on the default branch',
                 context: KodyRulesSyncService.name,
@@ -993,6 +1147,14 @@ export class KodyRulesSyncService {
         }
 
         if (!syncEnabled && !this.shouldForceSync(content)) {
+            // File exists but no longer carries `@kody-sync` — depin so the
+            // chip counts it as orphan again (the normal sync flow won't
+            // re-touch this file with the toggle off).
+            await this.depinRuleBySourcePath({
+                organizationAndTeamData,
+                repositoryId: repository.id,
+                sourcePath: filePath,
+            });
             this.logger.log({
                 message:
                     'Requested file is not marked with @kody-sync while IDE rules sync is disabled',
@@ -1097,6 +1259,7 @@ export class KodyRulesSyncService {
             examples: Array.isArray(oneRule.examples)
                 ? (oneRule.examples as any)
                 : [],
+            pinnedSync: this.shouldForceSync(content),
         } as CreateKodyRuleDto;
 
         const result = await this.kodyRulesService.createOrUpdate(
@@ -2565,6 +2728,15 @@ export class KodyRulesSyncService {
      * whose CURRENT status is in `onlyFromStatus` (e.g. `pause` should only
      * touch ACTIVE rules; `resume` should only touch PAUSED rules).
      *
+     * `excludePinned` (default `true`) skips rules whose source file carries
+     * an `@kody-sync` marker (`pinnedSync === true`). The bulk pause/delete
+     * actions intentionally leave those alone — the next PR-driven sync
+     * would re-import them as ACTIVE anyway, and the chip already excludes
+     * them, so the two surfaces must agree. Set to `false` to force a
+     * sweep of every IDE-synced rule including pinned (no current caller
+     * does this; the option exists so future callers don't silently get
+     * the pinned-skip behaviour without knowing).
+     *
      * Returns the count of rules whose status was changed.
      */
     private async transitionIdeSyncRulesStatus(params: {
@@ -2572,12 +2744,14 @@ export class KodyRulesSyncService {
         repositoryId: string;
         targetStatus: KodyRulesStatus;
         onlyFromStatus?: KodyRulesStatus[];
+        excludePinned?: boolean;
     }): Promise<number> {
         const {
             organizationAndTeamData,
             repositoryId,
             targetStatus,
             onlyFromStatus,
+            excludePinned = true,
         } = params;
         const entity = await this.kodyRulesService.findByOrganizationId(
             organizationAndTeamData.organizationId,
@@ -2591,6 +2765,7 @@ export class KodyRulesSyncService {
         const ideSyncRules = entity.rules.filter((r: any) => {
             if (r?.repositoryId !== repositoryId) return false;
             if (!isIdeRuleSource(r?.sourcePath)) return false;
+            if (excludePinned && r?.pinnedSync === true) return false;
             if (onlyFromStatus && !onlyFromStatus.includes(r?.status)) {
                 return false;
             }
@@ -2694,13 +2869,25 @@ export class KodyRulesSyncService {
     /**
      * Count IDE-synced rules per status for a repository — drives the
      * toggle-off modal copy ("you have N rules currently auto-synced").
+     *
+     * `pinned` counts ACTIVE+PAUSED rules whose source file carries
+     * `@kody-sync` — those won't be touched by pause/delete bulk actions
+     * (the next sync would re-import them anyway). The UI uses this to
+     * tell the user "we'll preserve M pinned rules" so the result of
+     * the action isn't surprising. DELETED-pinned isn't counted because
+     * those won't matter to the user's pending decision.
      */
     async countIdeSyncRulesForRepository(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-    }): Promise<{ active: number; paused: number; deleted: number }> {
+    }): Promise<{
+        active: number;
+        paused: number;
+        deleted: number;
+        pinned: number;
+    }> {
         const { organizationAndTeamData, repositoryId } = params;
-        const counts = { active: 0, paused: 0, deleted: 0 };
+        const counts = { active: 0, paused: 0, deleted: 0, pinned: 0 };
         const entity = await this.kodyRulesService.findByOrganizationId(
             organizationAndTeamData.organizationId,
         );
@@ -2713,6 +2900,13 @@ export class KodyRulesSyncService {
             else if (r?.status === KodyRulesStatus.PAUSED) counts.paused += 1;
             else if (r?.status === KodyRulesStatus.DELETED) {
                 counts.deleted += 1;
+            }
+            if (
+                r?.pinnedSync === true &&
+                (r?.status === KodyRulesStatus.ACTIVE ||
+                    r?.status === KodyRulesStatus.PAUSED)
+            ) {
+                counts.pinned += 1;
             }
         }
         return counts;

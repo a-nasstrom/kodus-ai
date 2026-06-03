@@ -269,7 +269,7 @@ export const columns: ColumnDef<MembersSetup>[] = [
                                 <SelectValue
                                     placeholder={
                                         row.original.userStatus ===
-                                        UserStatus.INACTIVE
+                                            UserStatus.INACTIVE
                                             ? "Inactive"
                                             : role
                                     }>
@@ -309,6 +309,7 @@ export const columns: ColumnDef<MembersSetup>[] = [
         header: "Actions",
         meta: { align: "right" },
         cell: ({ row }) => {
+            const { userId } = useAuth();
             const canEdit = usePermission(
                 Action.Update,
                 ResourceType.UserSettings,
@@ -317,6 +318,7 @@ export const columns: ColumnDef<MembersSetup>[] = [
                 Action.Delete,
                 ResourceType.UserSettings,
             );
+            const isSelf = row.original.userId === userId;
 
             const approveUserAction = async () => {
                 try {
@@ -348,17 +350,33 @@ export const columns: ColumnDef<MembersSetup>[] = [
                 }
             };
 
+            if (isSelf) {
+                return (
+                    <div className="flex w-fit items-center gap-3">
+                        {row.original.userStatus ===
+                            UserStatus.AWAITING_APPROVAL && (
+                                <Button
+                                    size="xs"
+                                    variant="helper"
+                                    className="pointer-events-none">
+                                    Needs approval
+                                </Button>
+                            )}
+                    </div>
+                );
+            }
+
             return (
                 <div className="flex w-fit items-center gap-3">
                     {row.original.userStatus ===
                         UserStatus.AWAITING_APPROVAL && (
-                        <Button
-                            size="xs"
-                            variant="helper"
-                            className="pointer-events-none">
-                            Needs approval
-                        </Button>
-                    )}
+                            <Button
+                                size="xs"
+                                variant="helper"
+                                className="pointer-events-none">
+                                Needs approval
+                            </Button>
+                        )}
 
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -370,56 +388,84 @@ export const columns: ColumnDef<MembersSetup>[] = [
                         <DropdownMenuContent align="end">
                             {row.original.userStatus ===
                                 UserStatus.AWAITING_APPROVAL && (
-                                <>
-                                    <DropdownMenuItem
-                                        leftIcon={<CheckIcon />}
-                                        className="text-success"
-                                        disabled={!canEdit}
-                                        onClick={() => approveUserAction()}>
-                                        Approve
-                                    </DropdownMenuItem>
+                                    <>
+                                        <DropdownMenuItem
+                                            leftIcon={<CheckIcon />}
+                                            className="text-success"
+                                            disabled={!canEdit}
+                                            onClick={() => approveUserAction()}>
+                                            Approve
+                                        </DropdownMenuItem>
 
-                                    <DropdownMenuSeparator />
-                                </>
+                                        <DropdownMenuSeparator />
+                                    </>
+                                )}
+
+                            {!isSelf && (
+                                <DropdownMenuItem
+                                    leftIcon={<CopyIcon />}
+                                    disabled={!canEdit}
+                                    onSelect={() => {
+                                        const inviteLink = `${window.location.origin}/invite/${row.original.userId}`;
+                                        const copied =
+                                            ClipboardHelpers.copyTextToClipboard(
+                                                inviteLink,
+                                            );
+
+                                        toast(
+                                            copied
+                                                ? {
+                                                    variant: "info",
+                                                    title: "Copied to clipboard the invite link",
+                                                    description: (
+                                                        <span className="text-text-secondary">
+                                                            for user with email{" "}
+                                                            <span className="text-text-primary">
+                                                                {
+                                                                    row.original
+                                                                        .email
+                                                                }
+                                                            </span>
+                                                        </span>
+                                                    ),
+                                                }
+                                                : {
+                                                    variant: "danger",
+                                                    title: "Couldn't copy the invite link",
+                                                    description: (
+                                                        <span className="text-text-secondary">
+                                                            Copy it manually:{" "}
+                                                            <span className="text-text-primary">
+                                                                {inviteLink}
+                                                            </span>
+                                                        </span>
+                                                    ),
+                                                },
+                                        );
+                                    }}>
+                                    Copy invite link
+                                </DropdownMenuItem>
                             )}
 
-                            <DropdownMenuItem
-                                leftIcon={<CopyIcon />}
-                                disabled={!canEdit}
-                                onClick={async () => {
-                                    await ClipboardHelpers.copyTextToClipboard(
-                                        `${window.location.origin}/invite/${row.original.userId}`,
-                                    );
+                            {!isSelf && (
+                                <>
+                                    <DropdownMenuSeparator />
 
-                                    toast({
-                                        variant: "info",
-                                        title: "Copied to clipboard the invite link",
-                                        description: (
-                                            <span className="text-text-secondary">
-                                                for user with email{" "}
-                                                <span className="text-text-primary">
-                                                    {row.original.email}
-                                                </span>
-                                            </span>
-                                        ),
-                                    });
-                                }}>
-                                Copy invite link
-                            </DropdownMenuItem>
-
-                            <DropdownMenuSeparator />
-
-                            <DropdownMenuItem
-                                className="text-danger"
-                                leftIcon={<TrashIcon />}
-                                disabled={!canDelete}
-                                onClick={() =>
-                                    magicModal.show(() => (
-                                        <DeleteModal member={row.original} />
-                                    ))
-                                }>
-                                Delete
-                            </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        className="text-danger"
+                                        leftIcon={<TrashIcon />}
+                                        disabled={!canDelete}
+                                        onClick={() =>
+                                            magicModal.show(() => (
+                                                <DeleteModal
+                                                    member={row.original}
+                                                />
+                                            ))
+                                        }>
+                                        Delete
+                                    </DropdownMenuItem>
+                                </>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>

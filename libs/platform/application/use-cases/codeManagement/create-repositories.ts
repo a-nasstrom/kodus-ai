@@ -34,6 +34,15 @@ import { CodeManagementService } from '@libs/platform/infrastructure/adapters/se
 import { BackfillHistoricalPRsUseCase } from '@libs/platformData/application/use-cases/pullRequests/backfill-historical-prs.use-case';
 import { TelemetryService } from '@libs/telemetry/application/services/telemetry.service';
 
+// Orgs with a historical-PR backfill currently in flight. registerRepo
+// is fired on every onboarding save (and can be retried client-side), so
+// without this guard a double-save kicks off two concurrent backfills
+// that each fan out over the same repos and double the provider load —
+// exactly the burst that 429s Bitbucket. In-memory + per-process is
+// enough: the backfill always runs in the API process that handled the
+// HTTP request.
+const backfillInFlight = new Set<string>();
+
 @Injectable()
 export class CreateRepositoriesUseCase implements IUseCase {
     private readonly logger = createLogger(CreateRepositoriesUseCase.name);
@@ -119,31 +128,50 @@ export class CreateRepositoriesUseCase implements IUseCase {
 
             const repositories = params.repositories || [];
 
+            const backfillKey = `${organizationId}:${teamId}`;
             if (repositories.length > 0) {
-                setImmediate(() => {
-                    this.backfillHistoricalPRsUseCase
-                        .execute({
-                            organizationAndTeamData: {
-                                organizationId,
-                                teamId,
-                            },
-                            repositories: repositories.map((r: any) => ({
-                                id: String(r.id),
-                                name: r.name,
-                                fullName:
-                                    r.fullName ||
-                                    r.full_name ||
-                                    `${r.organizationName || ''}/${r.name}`,
-                                url: r.http_url || '',
-                            })),
-                        })
-                        .catch((error) => {
-                            this.logger.error({
-                                message: `Error during automatic PR backfill: ${error?.message || String(error)}`,
-                                context: CreateRepositoriesUseCase.name,
-                            });
-                        });
-                });
+                // Single-flight: registerRepo fires on every onboarding
+                // save (and can be retried client-side); without this a
+                // double-save kicks off two concurrent backfills that each
+                // fan out over the same repos and double the provider
+                // load — the burst that 429s Bitbucket.
+                if (!backfillInFlight.has(backfillKey)) {
+                    backfillInFlight.add(backfillKey);
+                    setImmediate(() => {
+                        this.backfillHistoricalPRsUseCase
+                            .execute({
+                                organizationAndTeamData: {
+                                    organizationId,
+                                    teamId,
+                                },
+                                repositories: repositories.map((r: any) => ({
+                                    id: String(r.id),
+                                    name: r.name,
+                                    fullName:
+                                        r.fullName ||
+                                        r.full_name ||
+                                        `${r.organizationName || ''}/${r.name}`,
+                                    url: r.http_url || '',
+                                })),
+                            })
+                            .catch((error) => {
+                                this.logger.error({
+                                    message: `Error during automatic PR backfill: ${error?.message || String(error)}`,
+                                    context: CreateRepositoriesUseCase.name,
+                                });
+                            })
+                            .finally(() =>
+                                backfillInFlight.delete(backfillKey),
+                            );
+                    });
+                } else {
+                    this.logger.log({
+                        message:
+                            'Skipping PR backfill — one is already in flight for this org/team',
+                        context: CreateRepositoriesUseCase.name,
+                        metadata: { organizationId, teamId },
+                    });
+                }
 
                 setImmediate(() => {
                     this.enqueueAstGraphBuilds(repositories, {

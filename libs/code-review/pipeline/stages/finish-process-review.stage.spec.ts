@@ -152,4 +152,41 @@ describe('RequestChangesOrApproveStage — review.auto_approved emit', () => {
 
         await expect(stage.execute(makeContext())).resolves.toBeDefined();
     });
+
+    it('does not approve when the review has a critical failure', async () => {
+        // critical errors[] entries mean the main agent / a structural
+        // stage failed — 0 line comments here is not a clean PR, it's
+        // an unanalyzed one. The stage must refuse to approve.
+        const ctx = makeContext();
+        ctx.errors = [
+            {
+                stage: 'AgentReviewStage',
+                error: new Error('byok auth failed'),
+                severity: 'critical',
+            } as any,
+        ];
+
+        await stage.execute(ctx);
+
+        expect(codeManagement.approvePullRequest).not.toHaveBeenCalled();
+        expect(notificationService.emit).not.toHaveBeenCalled();
+    });
+
+    it('does not approve on any partial failure (regardless of which stage)', async () => {
+        // Any partial-severity entry means some part of the review didn't
+        // run cleanly; auto-approve must wait for the user to decide.
+        const ctx = makeContext();
+        ctx.errors = [
+            {
+                stage: 'ValidateSuggestionsStage',
+                error: new Error('validator timed out'),
+                severity: 'partial',
+            } as any,
+        ];
+
+        await stage.execute(ctx);
+
+        expect(codeManagement.approvePullRequest).not.toHaveBeenCalled();
+        expect(notificationService.emit).not.toHaveBeenCalled();
+    });
 });

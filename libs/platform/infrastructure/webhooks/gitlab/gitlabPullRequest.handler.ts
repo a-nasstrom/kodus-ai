@@ -14,6 +14,7 @@ import { EnqueueAstGraphUpdateOnMergedUseCase } from '@libs/code-review/applicat
 import { EnqueueImplementationCheckUseCase } from '@libs/code-review/application/use-cases/enqueue-implementation-check.use-case';
 import {
     hasReviewMarker,
+    isForceReviewCommand,
     isKodyMentionNonReview,
     isReviewCommand,
 } from '@libs/common/utils/codeManagement/codeCommentMarkers';
@@ -457,8 +458,15 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
         );
 
         try {
-            // Verify if the action is create
-            if (payload?.object_attributes?.action === 'create') {
+            // Note Hook fires only on new comments. GitLab 13.x omits
+            // the action field, so treat missing action as 'create'.
+            // Gate on noteable_type to ignore issue/snippet/commit notes.
+            if (
+                payload?.object_attributes?.noteable_type ===
+                    'MergeRequest' &&
+                (!payload?.object_attributes?.action ||
+                    payload?.object_attributes?.action === 'create')
+            ) {
                 const comment = mappedPlatform.mapComment({ payload });
                 if (!comment || !comment.body) {
                     this.logger.debug({
@@ -471,6 +479,7 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                 }
 
                 const isStartCommand = isReviewCommand(comment.body);
+                const isForceCommand = isForceReviewCommand(comment.body);
                 const hasMarker = hasReviewMarker(comment.body);
 
                 if (isStartCommand && !hasMarker) {
@@ -487,7 +496,7 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                         payload: {
                             ...payload,
                             action: 'synchronize',
-                            origin: 'command',
+                            origin: isForceCommand ? 'command-force' : 'command',
                             triggerCommentId: comment?.id,
                         },
                     };

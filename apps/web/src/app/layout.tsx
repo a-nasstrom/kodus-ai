@@ -7,6 +7,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import QueryProvider from "src/core/providers/query.provider";
 import { getApiPublicUrl } from "src/core/utils/api-public-url";
 import { cn } from "src/core/utils/components";
+import { createUrl } from "src/core/utils/helpers";
 
 import { ConfigProvider } from "@providers/ConfigProvider";
 import type { PublicConfig } from "@config/publicConfig";
@@ -62,10 +63,18 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
         tokenDocsGitlab: process.env.WEB_TOKEN_DOCS_GITLAB ?? "",
         tokenDocsBitbucket: process.env.WEB_TOKEN_DOCS_BITBUCKET ?? "",
         tokenDocsAzureRepos: process.env.WEB_TOKEN_DOCS_AZUREREPOS ?? "",
+        tokenDocsForgejo: process.env.WEB_TOKEN_DOCS_FORGEJO ?? "",
         ruleFilesDocs: process.env.WEB_RULE_FILES_DOCS ?? "",
         releaseVersion: process.env.RELEASE_VERSION ?? "",
         nodeEnv: process.env.WEB_NODE_ENV ?? "",
         apiPublicUrl: getApiPublicUrl(),
+        helpdeskUrl: process.env.WEB_HOSTNAME_HELPDESK
+            ? createUrl(
+                  process.env.WEB_HOSTNAME_HELPDESK,
+                  process.env.WEB_PORT_HELPDESK,
+                  "/auth/cloud",
+              )
+            : "",
     };
 
     // Expose publicConfig as window.__KODUS_PUBLIC_CONFIG__ so module-scope

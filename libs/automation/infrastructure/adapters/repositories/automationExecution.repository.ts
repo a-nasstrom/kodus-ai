@@ -249,7 +249,18 @@ export class AutomationExecutionRepository implements IAutomationExecutionReposi
                     'automation_execution.origin',
                     'automation_execution.pullRequestNumber',
                     'automation_execution.repositoryId',
-                    '"automation_execution"."dataExecution"',
+                    // TypeORM property-path syntax (not raw SQL) so the
+                    // jsonb value hydrates onto the entity's
+                    // `dataExecution` field. The previous quoted form
+                    // (`"automation_execution"."dataExecution"`) was raw
+                    // SQL — TypeORM included the column in the query
+                    // result but didn't map it back to the entity, so
+                    // `execution.dataExecution` came through as
+                    // undefined even though the row had it. The bug
+                    // hid until something tried to read a nested field
+                    // (review fidelity warnings in the admin
+                    // dashboard) and got `null` for every row.
+                    'automation_execution.dataExecution',
                     'teamAutomation.uuid',
                     'team.name',
                 ])

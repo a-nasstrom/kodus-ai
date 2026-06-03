@@ -43,11 +43,15 @@ export const KodyRuleItem = ({
     onAnyChange,
     showSuggestionsButton = false,
     selection,
+    syncEnabledForRepo,
 }: {
     rule: KodyRuleWithInheritanceDetails;
     tab: "review-rules" | "memories";
     onAnyChange: () => void;
     showSuggestionsButton?: boolean;
+    /** Repo's `ideRulesSyncEnabled`; forwarded to OriginBadge so it can
+     *  show the @kody-sync / Orphan maintenance badge only when off. */
+    syncEnabledForRepo?: boolean;
     /** Optional bulk-selection wiring. When omitted the row renders
      *  without a checkbox (legacy / read-only views). When the rule
      *  isn't eligible (inherited / no uuid), pass `eligible: false`. */
@@ -108,9 +112,13 @@ export const KodyRuleItem = ({
 
     return (
         <Card>
-            <CardHeader className="flex-row items-start justify-between gap-10">
-                <div className="-mb-2 flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
+            <CardHeader className="flex-row items-start justify-between gap-4">
+                <div className="-mb-2 flex min-w-0 flex-1 flex-col gap-2">
+                    <Heading variant="h3" className="text-base">
+                        {rule.title}
+                    </Heading>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
                         {selection?.eligible && (
                             <input
                                 type="checkbox"
@@ -132,7 +140,10 @@ export const KodyRuleItem = ({
                             />
                         )}
 
-                        <OriginBadge rule={rule} />
+                        <OriginBadge
+                            rule={rule}
+                            syncEnabledForRepo={syncEnabledForRepo}
+                        />
 
                         {isPaused && (
                             <Tooltip delayDuration={500}>
@@ -226,10 +237,6 @@ export const KodyRuleItem = ({
                             </Tooltip>
                         )}
                     </div>
-
-                    <Heading variant="h3" className="text-base">
-                        {rule.title}
-                    </Heading>
                 </div>
 
                 <div className="flex items-center gap-2">

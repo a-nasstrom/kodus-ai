@@ -24,6 +24,7 @@ import {
     PullRequestsOpenedVsClosedRow,
     SuggestionCategoryCount,
 } from '../../domain/types';
+import { ICockpitDeveloperProductivityService } from '../../domain/contracts/cockpit-developer-productivity.service.contract';
 import { CockpitCodeHealthService } from './cockpit-code-health.service';
 
 /**
@@ -34,7 +35,9 @@ import { CockpitCodeHealthService } from './cockpit-code-health.service';
  * ingestion, so no extra view is needed.
  */
 @Injectable()
-export class CockpitDeveloperProductivityService {
+export class CockpitDeveloperProductivityService
+    implements ICockpitDeveloperProductivityService
+{
     constructor(
         @InjectDataSource(ANALYTICS_DATA_SOURCE)
         private readonly ds: DataSource,
