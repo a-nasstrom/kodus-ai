@@ -60,6 +60,7 @@ import {
 import { GitCloneParams } from '@libs/platform/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { Organization } from '@libs/platform/domain/platformIntegrations/types/codeManagement/organization.type';
 import {
+    OneSentenceSummaryItem,
     PullRequest,
     PullRequestAuthor,
     PullRequestCodeReviewTime,
@@ -2245,9 +2246,9 @@ export class ForgejoService implements Omit<
 
             const listOfCriticalIssues = this.getListOfCriticalIssues({
                 criticalComments: params.criticalComments,
-                owner: repoInfo.owner,
                 repository: params.repository,
                 prNumber: params.prNumber,
+                forgejoHost: authDetail.host,
             });
 
             const requestChangeBodyTitle =
@@ -2289,21 +2290,42 @@ export class ForgejoService implements Omit<
 
     private getListOfCriticalIssues(params: {
         criticalComments: CommentResult[];
-        owner: string;
         repository: Partial<Repository>;
         prNumber: number;
+        forgejoHost?: string;
     }): string {
-        const { criticalComments, owner, prNumber, repository } = params;
+        const { criticalComments, prNumber, repository, forgejoHost } = params;
 
-        const criticalIssuesSummaryArray = criticalComments.map(
-            (comment) => comment.comment?.suggestion?.oneSentenceSummary,
-        );
+        const repositoryFullName = repository.fullName || repository.name;
+        const forgejoBaseUrl = forgejoHost?.replace(/\/+$/, '');
+        const criticalIssuesSummaryArray =
+            this.getCriticalIssuesSummaryArray(criticalComments);
 
-        const criticalIssuesSummary = criticalIssuesSummaryArray
-            .map((issue, index) => `${index + 1}. ${issue}`)
+        return criticalIssuesSummaryArray
+            .map((criticalIssue) => {
+                const commentId = criticalIssue.id;
+                const summary = criticalIssue.oneSentenceSummary;
+                const link =
+                    !forgejoBaseUrl ||
+                    !repositoryFullName ||
+                    !prNumber ||
+                    !commentId
+                        ? ''
+                        : `${forgejoBaseUrl}/${repositoryFullName}/pulls/${prNumber}#issuecomment-${commentId}`;
+
+                return commentId ? `- [${summary}](${link})` : `- ${summary}`;
+            })
             .join('\n');
+    }
 
-        return criticalIssuesSummary;
+    private getCriticalIssuesSummaryArray(
+        criticalComments: CommentResult[],
+    ): OneSentenceSummaryItem[] {
+        return criticalComments.map((comment) => ({
+            id: comment.codeReviewFeedbackData?.commentId,
+            oneSentenceSummary:
+                comment.comment?.suggestion?.oneSentenceSummary ?? '',
+        }));
     }
 
     async getOrganizations(params: {
