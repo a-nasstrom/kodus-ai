@@ -2778,19 +2778,23 @@ export class ForgejoService implements Omit<
                 },
             });
             const review = result.data;
+            const createdComment = review?.comments?.[0];
 
             this.logger.log({
                 message: `Created review comment for PR#${params.prNumber}`,
                 context: ForgejoService.name,
-                metadata: { reviewId: review?.id },
+                metadata: {
+                    reviewId: review?.id,
+                    commentId: createdComment?.id,
+                },
             });
 
             return {
-                id: review?.id,
+                id: createdComment?.id ?? review?.id,
                 pullRequestReviewId: review?.id?.toString(),
-                body: bodyFormatted,
-                createdAt: review?.submitted_at,
-                updatedAt: review?.submitted_at,
+                body: createdComment?.body ?? bodyFormatted,
+                createdAt: createdComment?.created_at ?? review?.submitted_at,
+                updatedAt: createdComment?.updated_at ?? review?.submitted_at,
             };
         } catch (error: any) {
             const isLineMismatch =
