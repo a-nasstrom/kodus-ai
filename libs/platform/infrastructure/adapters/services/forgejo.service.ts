@@ -102,7 +102,7 @@ import {
     repoCreatePullReview,
     repoDeleteHook,
     repoDownloadPullDiffOrPatch,
-    repoEditPullRequest,
+    repoEditHook,
     repoGet,
     repoGetAllCommits,
     repoGetContents,
@@ -656,8 +656,7 @@ export class ForgejoService implements Omit<
         };
         const repositoryFullName =
             pr.base?.repo?.full_name ?? repoWithDefaults.name;
-        const baseRepositoryName =
-            pr.base?.repo?.name ?? repoWithDefaults.name;
+        const baseRepositoryName = pr.base?.repo?.name ?? repoWithDefaults.name;
 
         return {
             id: pr.id?.toString() ?? '',
@@ -1895,7 +1894,6 @@ export class ForgejoService implements Omit<
         return this.getFilesByPullRequestId(params);
     }
 
-
     async isDraftPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
@@ -2916,8 +2914,7 @@ export class ForgejoService implements Omit<
 
             if (lineComment?.body?.improvedCode) {
                 copyPrompt +=
-                    '\n\nSuggested Code:\n\n' +
-                    lineComment.body.improvedCode;
+                    '\n\nSuggested Code:\n\n' + lineComment.body.improvedCode;
             }
 
             copyPrompt = `\n\n<details>\n\n<summary>Prompt for LLM</summary>\n\n\`\`\`\n\n${copyPrompt}\n\n\`\`\`\n\n</details>\n\n`;
@@ -3737,11 +3734,18 @@ export class ForgejoService implements Omit<
                         path: { owner: repoInfo.owner, repo: repoInfo.repo },
                     });
                     const existingHooks = existingResult.data ?? [];
-                    const hookExists = existingHooks.some(
+                    const existingHook = existingHooks.find(
                         (hook) => hook.config?.url === webhookUrl,
                     );
+                    const desiredEvents = [
+                        'push',
+                        'pull_request',
+                        'issue_comment',
+                        'pull_request_review',
+                        'pull_request_review_comment',
+                    ];
 
-                    if (!hookExists) {
+                    if (!existingHook) {
                         await repoCreateHook({
                             client,
                             path: {
@@ -3754,12 +3758,7 @@ export class ForgejoService implements Omit<
                                     url: webhookUrl,
                                     content_type: 'json',
                                 },
-                                events: [
-                                    'pull_request',
-                                    'issue_comment',
-                                    'pull_request_review',
-                                    'pull_request_review_comment',
-                                ],
+                                events: desiredEvents,
                                 active: true,
                             },
                         });
@@ -3768,7 +3767,40 @@ export class ForgejoService implements Omit<
                             message: `Webhook created for repository ${repo.name}`,
                             context: ForgejoService.name,
                         });
+                        continue;
                     }
+
+                    const existingEvents = new Set(existingHook.events ?? []);
+                    const missingEvents = desiredEvents.filter(
+                        (eventName) => !existingEvents.has(eventName),
+                    );
+
+                    if (missingEvents.length === 0) {
+                        continue;
+                    }
+
+                    await repoEditHook({
+                        client,
+                        path: {
+                            owner: repoInfo.owner,
+                            repo: repoInfo.repo,
+                            id: existingHook.id!,
+                        },
+                        body: {
+                            config: {
+                                url: webhookUrl,
+                                content_type: 'json',
+                            },
+                            events: desiredEvents,
+                            active: existingHook.active ?? true,
+                        },
+                    });
+
+                    this.logger.log({
+                        message: `Webhook updated for repository ${repo.name}`,
+                        context: ForgejoService.name,
+                        metadata: { missingEvents },
+                    });
                 } catch (error) {
                     this.logger.error({
                         message: `Error creating webhook for repository ${repo.name}`,
@@ -4044,9 +4076,7 @@ export class ForgejoService implements Omit<
         return null;
     }
 
-    async getUsersByUsername(
-        _params: any,
-    ): Promise<Map<string, any> | null> {
+    async getUsersByUsername(_params: any): Promise<Map<string, any> | null> {
         // Not implemented for Forgejo — callers fall back to per-user
         // `getUserByUsername`.
         return null;
