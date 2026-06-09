@@ -148,7 +148,7 @@ export class ForgejoService implements Omit<
         private readonly configService: ConfigService,
     ) {}
 
-    private createForgejoClient(authDetail: ForgejoAuthDetail): Client {
+    public createForgejoClient(authDetail: ForgejoAuthDetail): Client {
         const token = decrypt(authDetail.accessToken);
         return createClient({
             baseURL: `${authDetail.host}/api/v1`,
@@ -210,7 +210,7 @@ export class ForgejoService implements Omit<
         };
     }
 
-    private async getAuthDetails(
+    public async getAuthDetails(
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ForgejoAuthDetail | null> {
         try {
