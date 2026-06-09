@@ -654,6 +654,10 @@ export class ForgejoService implements Omit<
                 ('default_branch' in repo ? repo.default_branch : undefined) ??
                 '',
         };
+        const repositoryFullName =
+            pr.base?.repo?.full_name ?? repoWithDefaults.name;
+        const baseRepositoryName =
+            pr.base?.repo?.name ?? repoWithDefaults.name;
 
         return {
             id: pr.id?.toString() ?? '',
@@ -664,11 +668,11 @@ export class ForgejoService implements Omit<
             body: pr.body ?? '',
             state,
             prURL: pr.html_url ?? '',
-            repository: repoWithDefaults.name,
+            repository: repositoryFullName,
             repositoryId: repoWithDefaults.id,
             repositoryData: {
                 id: repoWithDefaults.id,
-                name: repoWithDefaults.name,
+                name: repositoryFullName,
             },
             message: pr.title ?? '',
             created_at: pr.created_at ?? '',
@@ -695,9 +699,9 @@ export class ForgejoService implements Omit<
                 sha: pr.base?.sha,
                 repo: {
                     id: repoWithDefaults.id,
-                    name: repoWithDefaults.name,
+                    name: baseRepositoryName,
                     defaultBranch: repoWithDefaults.default_branch,
-                    fullName: repoWithDefaults.name,
+                    fullName: repositoryFullName,
                 },
             },
             user: {
@@ -1675,7 +1679,7 @@ export class ForgejoService implements Omit<
                             repositoryData: {
                                 platform: 'forgejo',
                                 id: repo.id || '',
-                                name: repoInfo.repo,
+                                name: repo.name,
                                 fullName: repo.name,
                                 language: repo.language || '',
                                 defaultBranch: repo.default_branch || 'main',
