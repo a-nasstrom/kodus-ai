@@ -86,7 +86,12 @@ export class ForgejoChecksService implements IChecksAdapter {
                     context: COMMIT_STATUS_CONTEXT,
                     description:
                         output?.title || output?.summary || 'Starting...',
-                    target_url: output?.text,
+                    target_url: this.buildTargetUrl(
+                        authDetail.host,
+                        repository.owner,
+                        repository.name,
+                        headSha,
+                    ),
                 },
             });
 
@@ -167,7 +172,12 @@ export class ForgejoChecksService implements IChecksAdapter {
                     state,
                     context: COMMIT_STATUS_CONTEXT,
                     description,
-                    target_url: output?.text,
+                    target_url: this.buildTargetUrl(
+                        authDetail.host,
+                        repository.owner,
+                        repository.name,
+                        headSha,
+                    ),
                 },
             });
 
@@ -254,5 +264,20 @@ export class ForgejoChecksService implements IChecksAdapter {
             return checkRunId.slice(4);
         }
         return null;
+    }
+
+    /**
+     * Build the "Details" link URL for the Forgejo commit status.
+     * Points to the commit page on the Forgejo instance, which is always
+     * available and shows the status + any associated PRs.
+     */
+    private buildTargetUrl(
+        host: string,
+        owner: string,
+        repo: string,
+        sha: string,
+    ): string {
+        const baseUrl = host.replace(/\/$/, '');
+        return `${baseUrl}/${owner}/${repo}/commit/${sha}`;
     }
 }

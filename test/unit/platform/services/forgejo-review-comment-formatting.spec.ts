@@ -180,8 +180,9 @@ describe('ForgejoService review comment formatting', () => {
         );
         expect(result).toEqual(
             expect.objectContaining({
+                id: 7001,
                 pullRequestReviewId: '9001',
-                body: request.body.comments[0].body,
+                body: 'comment body',
                 createdAt: '2024-01-16T10:00:00Z',
                 updatedAt: '2024-01-16T10:00:00Z',
             }),

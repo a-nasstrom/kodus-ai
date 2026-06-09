@@ -85,6 +85,7 @@ describe('ForgejoChecksService', () => {
                         state: 'pending',
                         context: 'Kodus Code Review',
                         description: 'Code Review In Progress',
+                        target_url: 'https://git.example.com/myorg/myrepo/commit/abc123def456',
                     }),
                 }),
             );
@@ -162,6 +163,7 @@ describe('ForgejoChecksService', () => {
                         state: 'success',
                         context: 'Kodus Code Review',
                         description: 'Code Review Complete',
+                        target_url: 'https://git.example.com/myorg/myrepo/commit/abc123def456',
                     }),
                 }),
             );
@@ -182,6 +184,7 @@ describe('ForgejoChecksService', () => {
                     body: expect.objectContaining({
                         state: 'failure',
                         description: 'Code Review Failed',
+                        target_url: 'https://git.example.com/myorg/myrepo/commit/abc123',
                     }),
                 }),
             );
