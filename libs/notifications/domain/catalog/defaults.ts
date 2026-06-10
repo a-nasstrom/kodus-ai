@@ -53,7 +53,7 @@ export interface EventDefaults {
      * user/email, or whose audience can be any role (e.g. a PR author) — the
      * UI shows all roles for those.
      */
-    readonly audienceRoles?: readonly Role[];
+    readonly defaultRoles?: readonly Role[];
 }
 
 export const EVENT_DEFAULTS: Readonly<
@@ -131,7 +131,7 @@ export const EVENT_DEFAULTS: Readonly<
         icon: 'zap',
         // Pure role-fanout: the audience is the org owners, derived from
         // config rather than hardcoded at the call site.
-        audienceRoles: [Role.OWNER],
+        defaultRoles: [Role.OWNER],
     },
 
     // ── IDE rule sync ──────────────────────────────────────────
@@ -203,7 +203,7 @@ export const EVENT_DEFAULTS: Readonly<
         icon: 'credit-card',
         pageSeverity: true,
         actionLabel: 'Update payment',
-        audienceRoles: [Role.OWNER, Role.BILLING_MANAGER],
+        defaultRoles: [Role.OWNER, Role.BILLING_MANAGER],
     },
     [NotificationEvent.BILLING_TRIAL_EXPIRING]: {
         criticality: Criticality.TRANSACTIONAL,
@@ -215,7 +215,7 @@ export const EVENT_DEFAULTS: Readonly<
         ]),
         icon: 'credit-card',
         actionLabel: 'Upgrade plan',
-        audienceRoles: [Role.OWNER, Role.BILLING_MANAGER],
+        defaultRoles: [Role.OWNER, Role.BILLING_MANAGER],
     },
 
     // ── BYOK ───────────────────────────────────────────────────
@@ -230,7 +230,7 @@ export const EVENT_DEFAULTS: Readonly<
         ]),
         icon: 'shield-alert',
         pageSeverity: true,
-        audienceRoles: [Role.OWNER],
+        defaultRoles: [Role.OWNER],
     },
 
     // ── Spend limit ────────────────────────────────────────────
@@ -244,7 +244,7 @@ export const EVENT_DEFAULTS: Readonly<
             NotificationChannel.IN_APP,
         ]),
         icon: 'credit-card',
-        audienceRoles: [Role.OWNER],
+        defaultRoles: [Role.OWNER],
     },
 
     [NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL]: {
@@ -257,7 +257,7 @@ export const EVENT_DEFAULTS: Readonly<
         ]),
         icon: 'credit-card',
         pageSeverity: true,
-        audienceRoles: [Role.OWNER],
+        defaultRoles: [Role.OWNER],
     },
 
     // ── Kody Rules (file reference validation) ────────────────

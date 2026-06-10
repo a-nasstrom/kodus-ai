@@ -141,7 +141,7 @@ export class UpdateAnotherUserUseCase implements IUseCase {
                 );
 
                 // Notify that a member's role changed. The audience (org
-                // owners) is declared as `audienceRoles` in the catalog and
+                // owners) is declared as `defaultRoles` in the catalog and
                 // resolved config-driven by the dispatcher — no recipients
                 // here. Best-effort: emit failures don't break the flow.
                 try {

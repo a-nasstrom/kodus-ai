@@ -36,7 +36,7 @@ export interface NotificationConfigEvent {
      * the settings UI should offer per-role routing for these roles only.
      * Absent = directed at a specific user/email or any role — show all.
      */
-    audienceRoles?: string[];
+    defaultRoles?: string[];
 }
 
 export interface NotificationConfig {
@@ -109,8 +109,8 @@ export class RoutingRuleService {
                         ? defaults.pageSeverity
                         : undefined,
                 actionLabel: defaults.actionLabel,
-                audienceRoles: defaults.audienceRoles
-                    ? [...defaults.audienceRoles]
+                defaultRoles: defaults.defaultRoles
+                    ? [...defaults.defaultRoles]
                     : undefined,
             };
         });
@@ -173,13 +173,13 @@ export class RoutingRuleService {
             // Critical events: the default-audience roles (and the All Roles
             // row that seeds their defaults) must keep every active channel —
             // they can't be muted. Roles an admin opts in *outside*
-            // audienceRoles are freely configurable, since they're additive.
+            // defaultRoles are freely configurable, since they're additive.
             const locksAllChannels =
                 eventDefaults.criticality === Criticality.CRITICAL &&
                 (rule.role === ROLE_WILDCARD ||
-                    !eventDefaults.audienceRoles ||
+                    !eventDefaults.defaultRoles ||
                     (
-                        eventDefaults.audienceRoles as readonly string[]
+                        eventDefaults.defaultRoles as readonly string[]
                     ).includes(rule.role));
 
             if (locksAllChannels) {

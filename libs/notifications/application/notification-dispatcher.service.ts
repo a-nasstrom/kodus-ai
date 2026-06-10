@@ -112,12 +112,12 @@ export class NotificationDispatcherService {
         const rules =
             await this.routingRuleRepo.findByOrganization(organizationId);
 
-        // Role-fanout events (those declaring `audienceRoles`) derive their
+        // Role-fanout events (those declaring `defaultRoles`) derive their
         // audience from configuration: the default roles are on, and an admin
         // can opt other roles in. So we fan out to every org member and let
         // per-role channel resolution gate who actually receives. Everything
         // else uses the explicit recipients the emitter chose.
-        const recipients = defaults.audienceRoles
+        const recipients = defaults.defaultRoles
             ? await this.resolveAllOrgMembers(organizationId)
             : await this.resolveRecipients(message, organizationId);
 
@@ -715,7 +715,7 @@ export class NotificationDispatcherService {
      *       · non-audience   → off (empty) unless an admin added a specific
      *                          row opting it in.
      *
-     * Events without `audienceRoles` treat every role as an audience role, so
+     * Events without `defaultRoles` treat every role as an audience role, so
      * their behaviour is unchanged (specific → '*' → defaults; CRITICAL ⇒ all).
      * Everything is intersected with ACTIVE_CHANNELS.
      */
@@ -732,8 +732,8 @@ export class NotificationDispatcherService {
         }
 
         const isAudienceRole =
-            !defaults.audienceRoles ||
-            (defaults.audienceRoles as readonly string[]).includes(role);
+            !defaults.defaultRoles ||
+            (defaults.defaultRoles as readonly string[]).includes(role);
 
         if (defaults.criticality === Criticality.CRITICAL && isAudienceRole) {
             return [...ACTIVE_CHANNELS];

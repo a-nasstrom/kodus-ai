@@ -239,11 +239,11 @@ describe('NotificationDispatcherService', () => {
         });
     });
 
-    describe('audience-driven events (audienceRoles)', () => {
-        // SPEND_LIMIT_THRESHOLD_REACHED → audienceRoles [OWNER], informational.
+    describe('audience-driven events (defaultRoles)', () => {
+        // SPEND_LIMIT_THRESHOLD_REACHED → defaultRoles [OWNER], informational.
         const SPEND_THRESHOLD =
             NotificationEvent.SPEND_LIMIT_THRESHOLD_REACHED;
-        // SPEND_LIMIT_EXCEEDED_FINAL → audienceRoles [OWNER], critical.
+        // SPEND_LIMIT_EXCEEDED_FINAL → defaultRoles [OWNER], critical.
         const SPEND_EXCEEDED = NotificationEvent.SPEND_LIMIT_EXCEEDED_FINAL;
 
         const thresholdPayload = {

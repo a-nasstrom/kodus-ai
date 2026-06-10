@@ -86,7 +86,7 @@ describe('UpdateAnotherUserUseCase — org.role_changed emit', () => {
                 event: NotificationEvent.ORG_ROLE_CHANGED,
                 organizationId: 'org-1',
                 // Audience (org owners) is config-driven via the catalog's
-                // `audienceRoles`, so the emit passes no recipients.
+                // `defaultRoles`, so the emit passes no recipients.
                 payload: {
                     affectedUserEmail: 'target@acme.com',
                     previousRole: Role.CONTRIBUTOR,

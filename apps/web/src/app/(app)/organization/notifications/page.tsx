@@ -75,13 +75,13 @@ const fromFormKey = (key: string) => key.replaceAll("__", ".");
 /**
  * A role is part of an event's default audience when the event doesn't
  * restrict its audience (any role can receive it), the role is one of the
- * declared `audienceRoles`, or it's the wildcard "All Roles" row (which seeds
+ * declared `defaultRoles`, or it's the wildcard "All Roles" row (which seeds
  * the audience defaults). Non-audience roles start off and are opt-in.
  */
 const isAudienceRole = (ev: EventDef, roleValue: string) =>
     roleValue === "*" ||
-    !ev.audienceRoles ||
-    ev.audienceRoles.includes(roleValue);
+    !ev.defaultRoles ||
+    ev.defaultRoles.includes(roleValue);
 
 const buildDefaults = (
     rules: RoutingRule[],
