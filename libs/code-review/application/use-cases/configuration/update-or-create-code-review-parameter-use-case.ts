@@ -534,8 +534,14 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             );
         }
 
+        // During sync the centralized config file is the source of truth, so
+        // we ignore the previous database state and rebuild the resolved config
+        // from the file content plus the parent defaults. This ensures that
+        // properties removed from the file are also removed from the database.
         const newResolvedConfig = this.stripCustomMessagesFromConfig(
-            deepMerge(parentConfig, oldConfig, sanitizedIncomingConfig),
+            actor?.source === 'sync'
+                ? deepMerge(parentConfig, sanitizedIncomingConfig)
+                : deepMerge(parentConfig, oldConfig, sanitizedIncomingConfig),
         );
 
         const newDelta = this.stripCustomMessagesFromConfig(

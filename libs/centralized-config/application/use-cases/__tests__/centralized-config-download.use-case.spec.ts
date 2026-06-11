@@ -495,7 +495,7 @@ describe('CentralizedConfigDownloadUseCase', () => {
             }),
             'org-1',
             {
-                userId: 'user-1',
+                userId: 'kody',
                 userEmail: 'kody@kodus.io',
             },
             true,

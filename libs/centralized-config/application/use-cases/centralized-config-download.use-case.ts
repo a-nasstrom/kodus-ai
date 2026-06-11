@@ -397,11 +397,11 @@ export class CentralizedConfigDownloadUseCase {
         const ruleForYaml = {
             title: rule.title,
             rule: rule.rule,
-            severity: rule.severity,
-            scope: rule.scope,
-            path: rule.path,
-            examples: rule.examples,
-            inheritance: rule.inheritance,
+            ...(rule.severity ? { severity: rule.severity } : {}),
+            ...(rule.scope ? { scope: rule.scope } : {}),
+            ...(rule.path ? { path: rule.path } : {}),
+            ...(rule.examples ? { examples: rule.examples } : {}),
+            ...(rule.inheritance ? { inheritance: rule.inheritance } : {}),
         };
 
         return yaml.dump(ruleForYaml);
@@ -438,8 +438,11 @@ export class CentralizedConfigDownloadUseCase {
             } as any,
             organizationId,
             {
-                userId: user.uuid || 'kody-system',
-                userEmail: user.email || 'kody@kodus.io',
+                // Use the internal sync actor so the centralized PR flow is
+                // bypassed. The init PR already contains all Kody Rule files,
+                // so we must not create separate PRs for each rule here.
+                userId: 'kody',
+                userEmail: 'kody@kodus.io',
             },
             skipAuthorization,
         );
