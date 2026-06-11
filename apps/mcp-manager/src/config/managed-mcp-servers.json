@@ -125,5 +125,65 @@
                 ]
             }
         ]
+    },
+    {
+        "id": "notion-default",
+        "name": "Notion",
+        "baseUrl": "https://mcp.notion.com/mcp",
+        "protocol": "http",
+        "logoUrl": "https://www.notion.so/images/favicon.ico",
+        "headers": {},
+        "authMethods": [
+            {
+                "id": "oauth",
+                "label": "OAuth",
+                "type": "oauth2",
+                "dynamicRegistration": true,
+                "default": true
+            }
+        ]
+    },
+    {
+        "id": "clickup-default",
+        "name": "ClickUp",
+        "baseUrl": "https://mcp.clickup.com/mcp",
+        "protocol": "http",
+        "logoUrl": "https://clickup.com/favicon.ico",
+        "headers": {},
+        "authMethods": [
+            {
+                "id": "oauth",
+                "label": "OAuth",
+                "type": "oauth2",
+                "dynamicRegistration": false,
+                "clientIdEnv": "API_MCP_MANAGER_CLICKUP_CLIENT_ID",
+                "clientSecretEnv": "API_MCP_MANAGER_CLICKUP_CLIENT_SECRET",
+                "default": true
+            }
+        ]
+    },
+    {
+        "id": "fireflies-default",
+        "name": "Fireflies",
+        "baseUrl": "https://api.fireflies.ai/mcp",
+        "protocol": "http",
+        "logoUrl": "https://fireflies.ai/favicon.ico",
+        "headers": {},
+        "authMethods": [
+            {
+                "id": "token",
+                "label": "API key",
+                "type": "bearer_token",
+                "default": true,
+                "userFields": [
+                    {
+                        "name": "apiKey",
+                        "label": "Fireflies API key",
+                        "required": true,
+                        "secret": true
+                    }
+                ]
+            }
+        ]
     }
 ]

@@ -43,6 +43,11 @@ function buildService() {
             protocol: 'http',
             logoUrl: '',
         }),
+        getIntegrationTools: jest.fn().mockResolvedValue([
+            { slug: 'getJiraIssue', readOnly: true },
+            { slug: 'searchJiraIssues', readOnly: true },
+            { slug: 'createJiraIssue', readOnly: false },
+        ]),
     };
     const providerFactory = {
         getProvider: jest.fn().mockReturnValue(kodusProvider),
@@ -98,6 +103,11 @@ describe('McpService.connectManagedToken', () => {
             appName: 'Atlassian Rovo',
             metadata: { authMethod: 'token' },
         });
+        // Defaults to the read-only tools, not the write one.
+        expect(result.allowedTools).toEqual([
+            'getJiraIssue',
+            'searchJiraIssues',
+        ]);
     });
 
     it('rejects an invalid submission without storing anything', async () => {

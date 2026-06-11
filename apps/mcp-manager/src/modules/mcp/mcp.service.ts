@@ -16,6 +16,7 @@ import { ProviderFactory } from '../providers/provider.factory';
 import { KodusMCPProvider } from '../providers/kodusMCP/kodus-mcp.provider';
 import { getAuthMethod } from '../providers/kodusMCP/auth-methods';
 import { validateTokenSubmission } from '../providers/kodusMCP/token-submission';
+import { defaultReadOnlyToolSlugs } from '../providers/read-only-tools';
 import { ConnectTokenDto } from './dto/connect-token.dto';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { FinishOAuthDto } from './dto/finish-oauth.dto';
@@ -496,6 +497,18 @@ export class McpService {
 
         const config = provider.getManagedConfig(integrationId);
 
+        // Default to read-only tools (verification use case) when the caller
+        // didn't pick a subset. Tools are now listable with the just-saved
+        // credential.
+        let allowedTools = dto.allowedTools;
+        if (!allowedTools?.length) {
+            const tools = await provider.getIntegrationTools(
+                integrationId,
+                organizationId,
+            );
+            allowedTools = defaultReadOnlyToolSlugs(tools);
+        }
+
         const existingConnection = await this.connectionRepository.findOne({
             where: { integrationId, organizationId },
         });
@@ -507,7 +520,7 @@ export class McpService {
             status: MCPConnectionStatus.ACTIVE,
             appName: config.name,
             mcpUrl: config.baseUrl,
-            allowedTools: dto.allowedTools ?? [],
+            allowedTools,
             metadata: {
                 ...(existingConnection?.metadata ?? {}),
                 authMethod: method.id,

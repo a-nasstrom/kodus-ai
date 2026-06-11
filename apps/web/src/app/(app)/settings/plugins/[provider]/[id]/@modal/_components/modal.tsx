@@ -106,9 +106,12 @@ export const PluginModal = ({
         ["custom", "kodusmcp"].includes(plugin.provider) &&
         !plugin.active;
 
-    // Integrations that expose more than one auth method (e.g. Jira/Linear:
-    // OAuth or API token) let the user pick before connecting.
-    const hasSelectableAuth = (plugin.authMethods?.length ?? 0) > 1;
+    // Managed integrations that require auth (OAuth and/or a token) show the
+    // auth-method picker + token form before connecting — covers single-method
+    // (e.g. Fireflies: API key only) and multi-method (e.g. Jira: OAuth or token).
+    const needsAuthSetup =
+        !isConnected &&
+        (plugin.authMethods?.some((method) => method.type !== "none") ?? false);
 
     const [requiredParamsValues, setRequiredParamsValues] = useState<
         Record<string, string>
@@ -406,9 +409,7 @@ export const PluginModal = ({
                                 </Card>
                             )}
 
-                            {hasSelectableAuth &&
-                            !isConnected &&
-                            plugin.authMethods ? (
+                            {needsAuthSetup && plugin.authMethods ? (
                                 <AuthMethodConnect
                                     integrationId={plugin.id}
                                     appName={plugin.appName}

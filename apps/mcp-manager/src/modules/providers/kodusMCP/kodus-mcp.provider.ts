@@ -6,6 +6,7 @@ import {
     getAuthMethod,
     ManagedAuthMethod,
     normalizeAuthMethods,
+    resolveAuthMethodEnv,
     toPublicAuthMethods,
 } from './auth-methods';
 import { CustomClient } from '../../../clients/custom';
@@ -28,6 +29,7 @@ import {
     MCPTool,
 } from '../interfaces/provider.interface';
 import { IntegrationDescriptionService } from '../services/integration-description.service';
+import { defaultReadOnlyToolSlugs } from '../read-only-tools';
 
 interface ManagedIntegrationConfig {
     id: string;
@@ -97,7 +99,9 @@ export class KodusMCPProvider extends BaseProvider {
                 managedMcpServers as RawManagedIntegrationConfig[];
 
             for (const raw of rawConfigs) {
-                const authMethods = normalizeAuthMethods(raw);
+                const authMethods = normalizeAuthMethods(raw).map((method) =>
+                    resolveAuthMethodEnv(method, process.env),
+                );
                 const config: ManagedIntegrationConfig = {
                     ...raw,
                     baseUrl: this.resolveManagedBaseUrl(raw.baseUrl),
@@ -337,12 +341,13 @@ export class KodusMCPProvider extends BaseProvider {
                     config.integrationId,
                 );
                 const tools = await this.safeGetTools(client);
-                const allToolSlugs = tools.map((tool) => tool.slug);
 
+                // Default to read-only tools (verification use case); admins can
+                // widen the selection afterwards via the tools UI.
                 const allowedTools =
                     config.allowedTools && config.allowedTools.length > 0
                         ? config.allowedTools
-                        : allToolSlugs;
+                        : defaultReadOnlyToolSlugs(tools);
 
                 return {
                     id: managed.config.id,

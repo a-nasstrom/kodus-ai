@@ -31,6 +31,10 @@ export interface ManagedAuthMethod {
     dynamicRegistration?: boolean;
     clientId?: string;
     clientSecret?: string;
+    // For non-DCR providers (e.g. ClickUp): name the env vars that hold the
+    // OAuth app's client id/secret, so secrets never live in committed config.
+    clientIdEnv?: string;
+    clientSecretEnv?: string;
 
     // Static-token methods (bearer_token / basic / api_key): the fields the
     // user supplies at onboarding. The actual secret is stored per-org, never
@@ -107,6 +111,30 @@ export function getAuthMethod(
     }
 
     return methods.find((m) => m.default) ?? methods[0];
+}
+
+/**
+ * Resolve a method's OAuth client credentials from the environment when it names
+ * `clientIdEnv` / `clientSecretEnv` (non-DCR providers). Keeps real secrets out
+ * of committed config. Methods without env refs pass through unchanged.
+ */
+export function resolveAuthMethodEnv(
+    method: ManagedAuthMethod,
+    env: NodeJS.ProcessEnv,
+): ManagedAuthMethod {
+    if (!method.clientIdEnv && !method.clientSecretEnv) {
+        return method;
+    }
+
+    return {
+        ...method,
+        ...(method.clientIdEnv
+            ? { clientId: env[method.clientIdEnv] ?? method.clientId }
+            : {}),
+        ...(method.clientSecretEnv
+            ? { clientSecret: env[method.clientSecretEnv] ?? method.clientSecret }
+            : {}),
+    };
 }
 
 /**

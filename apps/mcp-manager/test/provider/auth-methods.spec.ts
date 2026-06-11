@@ -3,6 +3,7 @@ import {
     getAuthMethod,
     ManagedAuthMethod,
     normalizeAuthMethods,
+    resolveAuthMethodEnv,
 } from '../../src/modules/providers/kodusMCP/auth-methods';
 import { MCPIntegrationAuthType } from '../../src/modules/integrations/enums/integration.enum';
 
@@ -152,5 +153,48 @@ describe('defaultAuthBlock', () => {
             type: MCPIntegrationAuthType.OAUTH2,
             dynamicRegistration: true,
         });
+    });
+});
+
+describe('resolveAuthMethodEnv', () => {
+    it('fills client id/secret from the named env vars', () => {
+        const method: ManagedAuthMethod = {
+            id: 'oauth',
+            type: MCPIntegrationAuthType.OAUTH2,
+            dynamicRegistration: false,
+            clientIdEnv: 'CLICKUP_CLIENT_ID',
+            clientSecretEnv: 'CLICKUP_CLIENT_SECRET',
+        };
+
+        const resolved = resolveAuthMethodEnv(method, {
+            CLICKUP_CLIENT_ID: 'cid-123',
+            CLICKUP_CLIENT_SECRET: 'secret-xyz',
+        });
+
+        expect(resolved.clientId).toBe('cid-123');
+        expect(resolved.clientSecret).toBe('secret-xyz');
+    });
+
+    it('leaves client creds undefined when env vars are unset (pre-approval scaffold)', () => {
+        const method: ManagedAuthMethod = {
+            id: 'oauth',
+            type: MCPIntegrationAuthType.OAUTH2,
+            dynamicRegistration: false,
+            clientIdEnv: 'CLICKUP_CLIENT_ID',
+        };
+
+        const resolved = resolveAuthMethodEnv(method, {});
+
+        expect(resolved.clientId).toBeUndefined();
+    });
+
+    it('passes through methods that name no env vars', () => {
+        const method: ManagedAuthMethod = {
+            id: 'oauth',
+            type: MCPIntegrationAuthType.OAUTH2,
+            dynamicRegistration: true,
+        };
+
+        expect(resolveAuthMethodEnv(method, {})).toBe(method);
     });
 });

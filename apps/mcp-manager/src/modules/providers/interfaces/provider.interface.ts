@@ -97,6 +97,8 @@ export interface MCPTool {
     description: string;
     provider: MCPProviderType;
     warning: boolean;
+    /** True when the tool's MCP `readOnlyHint` annotation marks it read-only. */
+    readOnly?: boolean;
 }
 
 export interface MCPInstallIntegration {
