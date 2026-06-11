@@ -104,11 +104,11 @@ describe('byokToVercelModel — Google Vertex protocol routing', () => {
         expect(createVertexAnthropicMock).not.toHaveBeenCalled();
         expect(result.sdk).toBe('vertex-gemini');
         expect(result.modelId).toBe('gemini-2.5-pro');
-        // No vertexLocation → defaults to us-central1.
+        // No vertexLocation → defaults to the global endpoint.
         expect(createVertexMock).toHaveBeenCalledWith(
             expect.objectContaining({
                 project: 'my-proj',
-                location: 'us-central1',
+                location: 'global',
             }),
         );
     });
