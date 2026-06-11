@@ -121,11 +121,6 @@
                         "label": "API token",
                         "required": true,
                         "secret": true
-                    },
-                    {
-                        "name": "cloudId",
-                        "label": "Cloud ID",
-                        "required": true
                     }
                 ]
             }

@@ -13,10 +13,14 @@ import { ManagedTokenCredential } from './managed-credential.types';
  * For api_key, the header name comes from `fields.apiKeyHeader` (default
  * `X-Api-Key`).
  *
- * NOTE: provider-specific *non-auth* requirements (e.g. Atlassian's `cloudId`,
- * which tokens are not bound to) are intentionally NOT handled here — they are
- * carried separately on the credential's `fields` and injected by the caller
- * once the exact mechanism is confirmed in sandbox.
+ * NOTE: this only covers the connection-level `Authorization` header. Some
+ * providers also need per-request context that is NOT an auth header — e.g.
+ * Atlassian's `cloudId`, which (confirmed against the live MCP) is a *tool-call
+ * argument* the agent supplies after discovering it via
+ * `getAccessibleAtlassianResources`, exactly as it does under OAuth. So there is
+ * nothing cloudId-related to inject here; any non-secret `fields` on the
+ * credential are available for future agent-side use (e.g. multi-site
+ * disambiguation) but are not part of the auth header.
  */
 export function renderTokenAuthHeaders(
     credential: ManagedTokenCredential,
