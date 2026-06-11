@@ -1,5 +1,5 @@
 import { ChatAnthropic } from '@langchain/anthropic';
-import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
+import Anthropic from '@anthropic-ai/sdk';
 import { GoogleAuth } from 'google-auth-library';
 import { resolveModelOptions } from './resolver';
 import {
@@ -17,33 +17,81 @@ interface VertexCredentials {
 const VERTEX_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
 
 /**
- * Claude (Anthropic) models on Google Vertex AI.
- *
- * The Gemini-only `ChatVertexAI` (langchain `@langchain/google-vertexai`)
- * cannot talk to Anthropic publisher models — it builds
- * `publishers/google/...` URLs and 404s for `claude-*`. So for Vertex Claude
- * we use `ChatAnthropic` (which speaks the Anthropic Messages protocol) with
- * its client swapped for `AnthropicVertex` from `@anthropic-ai/vertex-sdk`,
- * which targets `publishers/anthropic/...:rawPredict` and authenticates with
- * the BYOK service-account via `google-auth-library`.
- *
- * Reasoning/thinking config mirrors AnthropicAdapter so Claude behaves the
- * same whether it's reached via the direct Anthropic API or via Vertex.
+ * Translate Anthropic Messages requests to the Vertex AI publisher-model
+ * endpoint. We do NOT use `@anthropic-ai/vertex-sdk`: its path-rewrite hook
+ * only fires when the base `@anthropic-ai/sdk` posts to exactly `/v1/messages`,
+ * and the version pinned in this repo (0.98) changed that internal shape, so
+ * the SDK silently falls through to `…/v1/v1/messages` (a 404). Instead we
+ * give a stock `Anthropic` client a custom `fetch` that rewrites the URL to
+ * `…/publishers/anthropic/models/{model}:rawPredict`, swaps the API-key auth
+ * for a GCP bearer token, and moves `model` into the path with the required
+ * `anthropic_version`. ChatAnthropic keeps doing everything else (message
+ * shaping, tool-calls, token usage, structured output, streaming).
+ */
+function makeVertexAnthropicFetch(
+    credentials: VertexCredentials,
+    region: string,
+): typeof fetch {
+    const host =
+        region === 'global'
+            ? 'aiplatform.googleapis.com'
+            : `${region}-aiplatform.googleapis.com`;
+    const auth = new GoogleAuth({
+        credentials: credentials as any,
+        scopes: VERTEX_SCOPES,
+    });
+
+    return (async (input: any, init?: any) => {
+        const url = new URL(String(input));
+        if (init?.method === 'POST' && url.pathname.endsWith('/messages')) {
+            const body = JSON.parse(init.body as string);
+            const model = body.model;
+            delete body.model;
+            body.anthropic_version = 'vertex-2023-10-16';
+            const verb = body.stream ? 'streamRawPredict' : 'rawPredict';
+            const token = await auth.getAccessToken();
+            const target = `https://${host}/v1/projects/${credentials.project_id}/locations/${region}/publishers/anthropic/models/${model}:${verb}`;
+            const headers: Record<string, string> = { ...(init.headers ?? {}) };
+            delete headers['x-api-key'];
+            delete headers['anthropic-version'];
+            headers['Authorization'] = `Bearer ${token}`;
+            headers['Content-Type'] = 'application/json';
+            return fetch(target, {
+                ...init,
+                body: JSON.stringify(body),
+                headers,
+            });
+        }
+        return fetch(input, init);
+    }) as typeof fetch;
+}
+
+/**
+ * Claude (Anthropic) models on Google Vertex AI for the v2 (langchain)
+ * engine. Returns a ChatAnthropic whose underlying client is pointed at the
+ * Vertex publishers/anthropic endpoint via the fetch shim above, so the BYOK
+ * service account works on cloud AND self-hosted. Reasoning/thinking config
+ * mirrors AnthropicAdapter so Claude behaves the same via the direct API or
+ * Vertex.
  */
 export class VertexAnthropicAdapter implements ProviderAdapter {
     build(params: AdapterBuildParams): ChatAnthropic {
         const { model, apiKey, vertexLocation, options } = params;
 
         // BYOK service-account key: raw JSON (pasted file) or base64 of it.
-        const raw = (apiKey || '').trim();
-        const decoded = raw.startsWith('{')
-            ? raw
-            : Buffer.from(raw, 'base64').toString('utf-8');
+        const rawKey = (apiKey || '').trim();
+        const decoded = rawKey.startsWith('{')
+            ? rawKey
+            : Buffer.from(rawKey, 'base64').toString('utf-8');
         const credentials = JSON.parse(decoded) as VertexCredentials;
         const region =
             vertexLocation?.trim() ||
             process.env.API_VERTEX_AI_LOCATION ||
             'global';
+        const host =
+            region === 'global'
+                ? 'aiplatform.googleapis.com'
+                : `${region}-aiplatform.googleapis.com`;
 
         const resolved = resolveModelOptions(model, {
             temperature: options?.temperature,
@@ -74,16 +122,14 @@ export class VertexAnthropicAdapter implements ProviderAdapter {
                 ? (resolved.resolvedReasoningLevel ?? 'low')
                 : undefined;
 
-        const googleAuth = new GoogleAuth({
-            credentials: credentials as any,
-            scopes: VERTEX_SCOPES,
-        });
+        const vertexFetch = makeVertexAnthropicFetch(credentials, region);
 
         const payload: ConstructorParameters<typeof ChatAnthropic>[0] = {
             model,
-            // ChatAnthropic validates a non-empty apiKey even though the
-            // overridden client (AnthropicVertex) does the real GCP auth.
+            // The real auth is the GCP bearer the fetch shim injects;
+            // ChatAnthropic still wants a non-empty key to construct a client.
             apiKey: 'vertex-byok',
+            anthropicApiUrl: `https://${host}/v1`,
             ...(resolved.temperature !== undefined && !thinkingConfig
                 ? { temperature: resolved.temperature }
                 : {}),
@@ -92,16 +138,12 @@ export class VertexAnthropicAdapter implements ProviderAdapter {
             callbacks: options?.callbacks,
             maxRetries: LLM_MAX_RETRIES,
             clientOptions: { timeout: LLM_TIMEOUT_MS },
-            // Swap the underlying client for the Vertex-Anthropic one. It
-            // exposes the same `messages` surface ChatAnthropic drives.
-            createClient: (() =>
-                new AnthropicVertex({
-                    projectId: credentials.project_id,
-                    region,
-                    // Cast: google-auth-library's GoogleAuth<AuthClient> vs the
-                    // GoogleAuth<JSONClient> the vertex-sdk types expect is a
-                    // structural-generics mismatch only; same object at runtime.
-                    googleAuth: googleAuth as any,
+            // Override the client so requests hit the Vertex rawPredict URL.
+            createClient: ((opts: any) =>
+                new Anthropic({
+                    ...opts,
+                    baseURL: `https://${host}/v1`,
+                    fetch: vertexFetch,
                 })) as any,
         };
 
