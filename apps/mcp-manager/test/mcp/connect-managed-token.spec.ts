@@ -48,6 +48,12 @@ function buildService() {
             { slug: 'searchJiraIssues', readOnly: true },
             { slug: 'createJiraIssue', readOnly: false },
         ]),
+        // Verification lists tools with the just-saved credential.
+        verifyManagedConnection: jest.fn().mockResolvedValue([
+            { slug: 'getJiraIssue', readOnly: true },
+            { slug: 'searchJiraIssues', readOnly: true },
+            { slug: 'createJiraIssue', readOnly: false },
+        ]),
     };
     const providerFactory = {
         getProvider: jest.fn().mockReturnValue(kodusProvider),
@@ -58,6 +64,7 @@ function buildService() {
     };
     const integrationOAuthService = {
         saveTokenCredential: jest.fn().mockResolvedValue(undefined),
+        deleteOAuthState: jest.fn().mockResolvedValue(undefined),
     };
 
     const service = new McpService(
@@ -68,7 +75,12 @@ function buildService() {
         integrationOAuthService as any,
     );
 
-    return { service, connectionRepository, integrationOAuthService };
+    return {
+        service,
+        connectionRepository,
+        integrationOAuthService,
+        kodusProvider,
+    };
 }
 
 describe('McpService.connectManagedToken', () => {
@@ -108,6 +120,57 @@ describe('McpService.connectManagedToken', () => {
             'getJiraIssue',
             'searchJiraIssues',
         ]);
+    });
+
+    it('rejects when the token verifies to zero tools and rolls back the credential', async () => {
+        const {
+            service,
+            connectionRepository,
+            integrationOAuthService,
+            kodusProvider,
+        } = buildService();
+        kodusProvider.verifyManagedConnection.mockResolvedValue([]);
+
+        await expect(
+            service.connectManagedToken(ORG, INT, {
+                authMethod: 'token',
+                secret: 'bad',
+                fields: { email: 'dev@kodus.io', cloudId: 'cid-1' },
+            }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        expect(integrationOAuthService.saveTokenCredential).toHaveBeenCalled();
+        expect(integrationOAuthService.deleteOAuthState).toHaveBeenCalledWith(
+            ORG,
+            INT,
+        );
+        expect(connectionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects when verification throws (e.g. 401) and rolls back the credential', async () => {
+        const {
+            service,
+            connectionRepository,
+            integrationOAuthService,
+            kodusProvider,
+        } = buildService();
+        kodusProvider.verifyManagedConnection.mockRejectedValue(
+            new Error('401 Unauthorized'),
+        );
+
+        await expect(
+            service.connectManagedToken(ORG, INT, {
+                authMethod: 'token',
+                secret: 'bad',
+                fields: { email: 'dev@kodus.io', cloudId: 'cid-1' },
+            }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        expect(integrationOAuthService.deleteOAuthState).toHaveBeenCalledWith(
+            ORG,
+            INT,
+        );
+        expect(connectionRepository.save).not.toHaveBeenCalled();
     });
 
     it('rejects an invalid submission without storing anything', async () => {

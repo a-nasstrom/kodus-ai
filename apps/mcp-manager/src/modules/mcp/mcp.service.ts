@@ -11,7 +11,10 @@ import { IntegrationOAuthService } from '../integrations/integration-oauth.servi
 import { MCPIntegrationAuthType } from '../integrations/enums/integration.enum';
 import { MCPIntegrationInterface } from '../integrations/interfaces/mcp-integration.interface';
 import { IntegrationsService } from '../integrations/integrations.service';
-import { MCPProviderType } from '../providers/interfaces/provider.interface';
+import {
+    MCPProviderType,
+    MCPTool,
+} from '../providers/interfaces/provider.interface';
 import { ProviderFactory } from '../providers/provider.factory';
 import { KodusMCPProvider } from '../providers/kodusMCP/kodus-mcp.provider';
 import { getAuthMethod } from '../providers/kodusMCP/auth-methods';
@@ -495,11 +498,41 @@ export class McpService {
             credential,
         );
 
+        // Verify the credential actually works before marking connected. A
+        // valid integration exposes tools; bad credentials throw or list none.
+        let tools: MCPTool[] = [];
+        try {
+            tools = await provider.verifyManagedConnection(
+                integrationId,
+                organizationId,
+            );
+        } catch (error) {
+            this.logger.warn(
+                `Token verification failed for ${integrationId}`,
+                error instanceof Error ? error.stack : String(error),
+            );
+        }
+
+        if (tools.length === 0) {
+            // Roll back the just-saved (bad) credential so the user can retry.
+            await this.integrationOAuthService.deleteOAuthState(
+                organizationId,
+                integrationId,
+            );
+            throw new BadRequestException(
+                `Could not connect with the provided credentials. Please check them and try again.`,
+            );
+        }
+
+        const allowedTools = dto.allowedTools?.length
+            ? dto.allowedTools
+            : defaultReadOnlyToolSlugs(tools);
+
         return this.upsertManagedConnection(
             organizationId,
             integrationId,
             method.id,
-            dto.allowedTools,
+            allowedTools,
         );
     }
 

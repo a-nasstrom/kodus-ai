@@ -303,6 +303,24 @@ export class KodusMCPProvider extends BaseProvider {
         }
     }
 
+    /**
+     * List a managed integration's tools using the org's stored credential
+     * WITHOUT swallowing errors (unlike {@link getIntegrationTools}, which uses
+     * `safeGetTools`). Used to verify a just-submitted token actually works
+     * before the connection is marked active — bad credentials throw here.
+     */
+    async verifyManagedConnection(
+        integrationId: string,
+        organizationId: string,
+    ): Promise<MCPTool[]> {
+        const client = await this.buildManagedClient(
+            organizationId,
+            integrationId,
+        );
+
+        return client.getTools();
+    }
+
     async updateSelectedTools(
         integrationId: string,
         organizationId: string,
