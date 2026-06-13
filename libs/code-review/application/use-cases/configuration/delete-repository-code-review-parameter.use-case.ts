@@ -491,12 +491,6 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             const repo = draft.repositories[repositoryIndex];
             repo.directories.splice(directoryIndex, 1);
 
-            if (
-                repo.directories.length === 0 &&
-                (!repo.configs || Object.keys(repo.configs).length === 0)
-            ) {
-                repo.isSelected = false;
-            }
         });
 
         const updated = await this.createOrUpdateParametersUseCase.execute(
