@@ -69,7 +69,7 @@ import {
 import { ActiveFiltersChips } from "./active-filters-chips";
 import { BulkActionToolbar } from "./bulk-action-toolbar";
 import { BulkDeleteConfirmationModal } from "./bulk-delete-confirmation-modal";
-import { GeneratedMemoriesApprovalSetting } from "./generated-memories-approval";
+import { KodyKnowledgeApprovalSetting } from "./knowledge-approval";
 import { KodyRulesNoMatches } from "./no-matches";
 import { SeverityHeatmap } from "./severity-heatmap";
 import { KodyRulesList } from "./list";
@@ -1100,7 +1100,7 @@ const KodyRulesPageContent = () => {
 
                     <TabsContent value="configuration" className="mt-4">
                         <div className="flex flex-col gap-4">
-                            <GeneratedMemoriesApprovalSetting />
+                            <KodyKnowledgeApprovalSetting />
 
                             {isRepoView && (
                                 <Suspense

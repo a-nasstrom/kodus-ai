@@ -86,6 +86,7 @@ import {
 import { KodyRulesValidationService } from './kody-rules-validation.service';
 import { buildKodyRuleAppLink } from '../utils/build-rule-link';
 import { isGeneratedKodyRuleOrigin } from '@libs/common/utils/kody-rules/resolve-origin';
+import { requiresKnowledgeApproval } from '@libs/common/utils/kody-rules/knowledge-approval';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -1503,7 +1504,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
         memory: IKodyRuleMemory,
     ): Promise<boolean> {
         if (
-            !isGeneratedKodyRuleOrigin(memory.origin) ||
+            !memory.origin ||
             !organizationAndTeamData?.organizationId ||
             !organizationAndTeamData?.teamId
         ) {
@@ -1520,11 +1521,14 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     },
                 );
 
-            return mergedConfig.llmGeneratedMemoriesRequireApproval === true;
+            return requiresKnowledgeApproval(
+                mergedConfig.kodyKnowledgeApproval,
+                memory.origin,
+            );
         } catch (error) {
             this.logger.error({
                 message:
-                    'Error resolving llmGeneratedMemoriesRequireApproval, defaulting to active memories',
+                    'Error resolving kodyKnowledgeApproval, defaulting to active memories',
                 error,
                 context: KodyRulesService.name,
                 metadata: {
