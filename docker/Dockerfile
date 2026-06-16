@@ -158,12 +158,14 @@ ENV NODE_ENV=production
 # Redeclare ARGs to make them available in this stage
 ARG API_CLOUD_MODE=false
 ARG RELEASE_VERSION=local
+ARG KODUS_GRAPH_VERSION=0.2.19
 
 # Set ENVs for runtime
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 ENV API_DEVELOPMENT_MODE=false
 ENV RELEASE_VERSION=${RELEASE_VERSION}
 ENV SENTRY_RELEASE=${RELEASE_VERSION}
+ENV PATH="/home/node/.bun/bin:${PATH}"
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -172,9 +174,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   && apt-get install -y --no-install-recommends \
     ca-certificates procps git ripgrep
 
-# Copy the bun binary from the official image and install kodus-graph with it.
+# Copy the bun binary from the official image.
 COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
-RUN bun install -g @kodus/kodus-graph
 
 COPY --chown=1000:1000 --from=prod-deps /usr/src/app/node_modules ./node_modules
 COPY --chown=1000:1000 --from=build /usr/src/app/dist ./dist
@@ -196,6 +197,10 @@ COPY --chmod=0755 docker/prod-entrypoint-mcp-manager.sh /usr/local/bin/prod-entr
 RUN chown 1000:1000 /usr/src/app
 
 USER 1000
+
+# Install kodus-graph for the runtime user so self-hosted worker images can
+# find it through $HOME/.bun/bin after dropping root privileges.
+RUN bun install -g @kodus/kodus-graph@${KODUS_GRAPH_VERSION}
 
 ENTRYPOINT ["/usr/local/bin/prod-entrypoint"]
 
