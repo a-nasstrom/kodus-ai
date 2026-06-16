@@ -122,4 +122,13 @@ export interface MCPProvider {
         code: string;
         state: string;
     }): Promise<void>;
+    getManagedConnectionConfig?(
+        organizationId: string,
+        integrationId: string,
+    ): Promise<{
+        authType: string;
+        protocol: string;
+        headers: Record<string, string>;
+        accessToken?: string;
+    } | null>;
 }

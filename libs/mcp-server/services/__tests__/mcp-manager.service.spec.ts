@@ -83,4 +83,79 @@ describe('MCPManagerService', () => {
             }),
         ]);
     });
+
+    it('injects OAuth bearer auth when formatting managed Kodus MCP connections', async () => {
+        const permissionValidationService = {
+            shouldLimitResources: jest.fn().mockResolvedValue(false),
+        };
+        const jwtService = {
+            sign: jest.fn().mockReturnValue('signed-token'),
+        };
+        const service = new MCPManagerService(
+            jwtService as unknown as JwtService,
+            permissionValidationService as any,
+        );
+
+        const axiosGet = jest
+            .fn()
+            .mockResolvedValueOnce({
+                items: [
+                    {
+                        id: 'connection-2',
+                        organizationId: 'org-123',
+                        integrationId: 'atlassian-rovo-default',
+                        provider: 'kodusmcp',
+                        status: 'ACTIVE',
+                        appName: 'Atlassian Rovo',
+                        mcpUrl: 'https://mcp.atlassian.com/v1/mcp',
+                        allowedTools: ['getJiraIssue'],
+                        metadata: {
+                            connection: {
+                                id: 'connection-2',
+                                mcpUrl: 'https://mcp.atlassian.com/v1/mcp',
+                                status: 'ACTIVE',
+                                appName: 'Atlassian Rovo',
+                                authUrl: '',
+                                allowedTools: ['getJiraIssue'],
+                            },
+                        },
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        deletedAt: null,
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                authType: 'oauth2',
+                protocol: 'http',
+                headers: {},
+                accessToken: 'atlassian-access-token',
+            });
+
+        (service as any).axiosMCPManagerService = {
+            get: axiosGet,
+        };
+
+        const connections = await service.getConnections(
+            { organizationId: 'org-123' },
+            true,
+        );
+
+        expect(axiosGet).toHaveBeenCalledWith(
+            'mcp/integration/kodusmcp/atlassian-rovo-default/connection-config',
+            expect.objectContaining({
+                headers: expect.objectContaining({
+                    Authorization: 'Bearer signed-token',
+                }),
+            }),
+        );
+        expect(connections).toEqual([
+            expect.objectContaining({
+                url: 'https://mcp.atlassian.com/v1/mcp',
+                headers: {
+                    Authorization: 'Bearer atlassian-access-token',
+                },
+            }),
+        ]);
+    });
 });

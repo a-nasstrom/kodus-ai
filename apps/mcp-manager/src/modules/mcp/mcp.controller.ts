@@ -441,6 +441,30 @@ export class McpController {
         );
     }
 
+    @Get('integration/kodusmcp/:integrationId/connection-config')
+    @ApiOperation({
+        summary: 'Get managed Kodus MCP integration connection config',
+        description:
+            'Returns connection config for a managed Kodus MCP integration, including OAuth credentials when applicable. Internal use only.',
+    })
+    @ApiParam({
+        name: 'integrationId',
+        type: String,
+        example: 'atlassian-rovo-default',
+    })
+    @ApiUnauthorizedResponse({ type: ErrorResponseDto })
+    @ApiForbiddenResponse({ type: ErrorResponseDto })
+    @ApiInternalServerErrorResponse({ type: ErrorResponseDto })
+    getManagedKodusMcpConnectionConfig(
+        @Param('integrationId') integrationId: string,
+        @Req() request: FastifyRequest,
+    ) {
+        return this.mcpService.getManagedKodusMcpConnectionConfig(
+            request.organizationId,
+            integrationId,
+        );
+    }
+
     @Post('integration/:provider')
     @ApiOperation({
         summary: 'Create integration',

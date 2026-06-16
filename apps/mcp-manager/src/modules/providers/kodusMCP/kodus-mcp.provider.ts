@@ -475,6 +475,72 @@ export class KodusMCPProvider extends BaseProvider {
         return new CustomClient(baseIntegration);
     }
 
+    async getManagedConnectionConfig(
+        organizationId: string,
+        integrationId: string,
+    ): Promise<{
+        authType: MCPIntegrationAuthType;
+        protocol: MCPIntegrationProtocol;
+        headers: Record<string, string>;
+        accessToken?: string;
+    } | null> {
+        const entry = this.managedIntegrations.get(integrationId);
+
+        if (!entry) {
+            return null;
+        }
+
+        const protocol =
+            entry.config.protocol ?? MCPIntegrationProtocol.HTTP;
+        const headers = { ...(entry.config.headers ?? {}) };
+
+        if (entry.config.auth.type !== MCPIntegrationAuthType.OAUTH2) {
+            return {
+                authType: entry.config.auth.type,
+                protocol,
+                headers,
+            };
+        }
+
+        let oauthState = await this.integrationOAuthService.getOAuthState(
+            organizationId,
+            integrationId,
+        );
+
+        if (!oauthState?.tokens?.accessToken) {
+            return {
+                authType: MCPIntegrationAuthType.OAUTH2,
+                protocol,
+                headers,
+            };
+        }
+
+        try {
+            oauthState =
+                await this.integrationOAuthService.refreshOAuthStateIfNeeded({
+                    organizationId,
+                    integrationId,
+                    oauthState,
+                });
+        } catch (error) {
+            this.logger.warn(
+                'Failed to refresh managed Kodus MCP OAuth tokens',
+                {
+                    organizationId,
+                    integrationId,
+                    error,
+                },
+            );
+        }
+
+        return {
+            authType: MCPIntegrationAuthType.OAUTH2,
+            protocol,
+            headers,
+            accessToken: oauthState?.tokens?.accessToken,
+        };
+    }
+
     async initiateManagedOAuth(
         organizationId: string,
         integrationId: string,

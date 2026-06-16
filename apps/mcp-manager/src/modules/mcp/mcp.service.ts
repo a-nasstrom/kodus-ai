@@ -432,6 +432,24 @@ export class McpService {
         }
     }
 
+    async getManagedKodusMcpConnectionConfig(
+        organizationId: string,
+        integrationId: string,
+    ) {
+        const provider = this.providerFactory.getProvider(
+            MCPProviderType.KODUSMCP,
+        );
+
+        if (!provider.getManagedConnectionConfig) {
+            return null;
+        }
+
+        return provider.getManagedConnectionConfig(
+            organizationId,
+            integrationId,
+        );
+    }
+
     async createIntegration(
         organizationId: string,
         providerType: string,

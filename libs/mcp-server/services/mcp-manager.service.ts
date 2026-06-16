@@ -353,7 +353,21 @@ export class MCPManagerService {
     ): Promise<MCPServerConfig> {
         let headers: Record<string, string> = {};
         let type: string = 'http';
-        if (connection.provider === 'custom') {
+        if (connection.provider === 'kodusmcp') {
+            const managedConfig =
+                await this.fetchManagedKodusMcpConnectionConfig(connection);
+
+            if (managedConfig) {
+                headers = { ...(managedConfig.headers ?? {}) };
+
+                if (managedConfig.accessToken) {
+                    headers['Authorization'] =
+                        `Bearer ${managedConfig.accessToken}`;
+                }
+
+                type = managedConfig.protocol ?? type;
+            }
+        } else if (connection.provider === 'custom') {
             const integration =
                 await this.fetchCustomIntegrationConfig(connection);
 
@@ -427,5 +441,39 @@ export class MCPManagerService {
             `mcp/integration/custom/${connection.integrationId}/connection-config`,
             headers,
         )) as MCPIntegrationInterface | undefined;
+    }
+
+    private async fetchManagedKodusMcpConnectionConfig(
+        connection: MCPItem,
+    ): Promise<
+        | {
+              authType: string;
+              protocol: string;
+              headers?: Record<string, string>;
+              accessToken?: string;
+          }
+        | undefined
+    > {
+        if (connection.integrationId === KODUS_MCP_INTEGRATION_ID) {
+            return undefined;
+        }
+
+        const headers = {
+            headers: this.getAuthHeaders({
+                organizationId: connection.organizationId,
+            }),
+        };
+
+        return (await this.axiosMCPManagerService.get(
+            `mcp/integration/kodusmcp/${connection.integrationId}/connection-config`,
+            headers,
+        )) as
+            | {
+                  authType: string;
+                  protocol: string;
+                  headers?: Record<string, string>;
+                  accessToken?: string;
+              }
+            | undefined;
     }
 }
