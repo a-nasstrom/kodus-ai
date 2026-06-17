@@ -473,6 +473,204 @@ describe('AgentReviewStage', () => {
 
     });
 
+    describe('writeAgentTrace - race condition (Bug 2)', () => {
+        let mockAutomationService: any;
+
+        beforeEach(() => {
+            mockAutomationService = (stage as any).automationExecutionService;
+            mockAutomationService.updateCodeReview.mockReset();
+            mockAutomationService.findLatestStageLog.mockReset();
+            mockAutomationService.updateStageLog.mockReset();
+        });
+
+        const makeEvent = (status: string, overrides: any = {}) => ({
+            agentName: 'generalist-review-agent',
+            agentCategory: 'generalist',
+            status,
+            ...overrides,
+        });
+
+        it('started event should call updateCodeReview (create)', async () => {
+            mockAutomationService.updateCodeReview.mockResolvedValue({
+                execution: { uuid: 'exec-1' },
+                stageLog: { uuid: 'log-1' },
+            });
+
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('started'),
+                'Agent — investigating...',
+                new Map(),
+            );
+
+            expect(
+                mockAutomationService.updateCodeReview,
+            ).toHaveBeenCalledTimes(1);
+            expect(
+                mockAutomationService.findLatestStageLog,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('non-started event with existing record should update via updateStageLog', async () => {
+            mockAutomationService.findLatestStageLog.mockResolvedValue({
+                uuid: 'existing-log-1',
+                metadata: {},
+            });
+
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('batch_started', {
+                    batchIndex: 1,
+                    batchTotal: 2,
+                    batchFiles: 3,
+                }),
+                'Agent batch 1/2 — starting (3 files)',
+                new Map(),
+            );
+
+            expect(
+                mockAutomationService.findLatestStageLog,
+            ).toHaveBeenCalledWith('exec-1', 'AgentReview::generalist');
+            expect(
+                mockAutomationService.updateStageLog,
+            ).toHaveBeenCalledWith(
+                'existing-log-1',
+                expect.objectContaining({ status: 'in_progress' }),
+            );
+            expect(
+                mockAutomationService.updateCodeReview,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('non-started event with NO existing record should skip fallback (fix)', async () => {
+            mockAutomationService.findLatestStageLog.mockResolvedValue(null);
+
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('batch_started', {
+                    batchIndex: 1,
+                    batchTotal: 2,
+                    batchFiles: 3,
+                }),
+                'Agent batch 1/2 — starting (3 files)',
+                new Map(),
+            );
+
+            // After fix: no fallback creation — prevents orphaned records
+            expect(
+                mockAutomationService.updateCodeReview,
+            ).not.toHaveBeenCalled();
+            expect(
+                mockAutomationService.updateStageLog,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('race condition: batch_started then started creates only one record', async () => {
+            mockAutomationService.findLatestStageLog.mockResolvedValue(null);
+            mockAutomationService.updateCodeReview.mockResolvedValue({
+                execution: { uuid: 'exec-1' },
+                stageLog: { uuid: 'log-1' },
+            });
+
+            const toolCalls = new Map();
+
+            // batch_started fires first — findLatestStageLog returns null,
+            // but after fix it skips fallback (no orphaned record)
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('batch_started', {
+                    batchIndex: 1,
+                    batchTotal: 2,
+                    batchFiles: 3,
+                }),
+                'Agent batch 1/2 — starting (3 files)',
+                toolCalls,
+            );
+
+            // started fires second — creates the record via updateCodeReview
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('started'),
+                'Agent — investigating...',
+                toolCalls,
+            );
+
+            // After fix: only 1 record created (by started), no orphan
+            expect(
+                mockAutomationService.updateCodeReview,
+            ).toHaveBeenCalledTimes(1);
+            expect(
+                mockAutomationService.updateCodeReview.mock.calls[0][1].status,
+            ).toBe('in_progress');
+        });
+
+        it('terminal event (completed) with NO existing record should still create via fallback', async () => {
+            mockAutomationService.findLatestStageLog.mockResolvedValue(null);
+            mockAutomationService.updateCodeReview.mockResolvedValue({
+                execution: { uuid: 'exec-1' },
+                stageLog: { uuid: 'log-1' },
+            });
+
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('completed', { findings: 5, durationMs: 3000 }),
+                'Agent — 5 findings 3.0s',
+                new Map(),
+            );
+
+            // Terminal events must create a record even when no existing log found
+            expect(
+                mockAutomationService.updateCodeReview,
+            ).toHaveBeenCalledTimes(1);
+            expect(
+                mockAutomationService.updateCodeReview.mock.calls[0][1].status,
+            ).toBe('success');
+        });
+
+        it('terminal event (error) with NO existing record should still create via fallback', async () => {
+            mockAutomationService.findLatestStageLog.mockResolvedValue(null);
+            mockAutomationService.updateCodeReview.mockResolvedValue({
+                execution: { uuid: 'exec-1' },
+                stageLog: { uuid: 'log-1' },
+            });
+
+            await (stage as any).writeAgentTrace(
+                'exec-1',
+                42,
+                'repo-1',
+                'AgentReview::generalist',
+                makeEvent('error', {
+                    errorMessage: 'timeout',
+                    finishReason: 'timeout',
+                }),
+                'Agent — failed 5.0s (timeout)',
+                new Map(),
+            );
+
+            expect(
+                mockAutomationService.updateCodeReview,
+            ).toHaveBeenCalledTimes(1);
+            expect(
+                mockAutomationService.updateCodeReview.mock.calls[0][1].status,
+            ).toBe('error');
     describe('deduplicateSuggestions - NaN index handling (three-layer protection)', () => {
         const makeSuggestions = (count: number) =>
             Array.from({ length: count }, (_, i) => ({
