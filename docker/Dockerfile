@@ -201,6 +201,10 @@ USER 1000
 # Install kodus-graph for the runtime user so self-hosted worker images can
 # find it through $HOME/.bun/bin after dropping root privileges.
 RUN bun install -g @kodus/kodus-graph@${KODUS_GRAPH_VERSION}
+USER root
+RUN printf '%s\n' '#!/bin/sh' 'exec /home/node/.bun/bin/kodus-graph "$@"' > /usr/local/bin/kodus-graph \
+  && chmod 0755 /usr/local/bin/kodus-graph
+USER 1000
 
 ENTRYPOINT ["/usr/local/bin/prod-entrypoint"]
 
