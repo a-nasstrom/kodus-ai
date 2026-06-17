@@ -11,6 +11,7 @@ import { createUrl } from "src/core/utils/helpers";
 
 import { ConfigProvider } from "@providers/ConfigProvider";
 import type { PublicConfig } from "@config/publicConfig";
+import { isRegistrationEnabled } from "src/core/utils/registration-enabled";
 
 import "./globals.css";
 
@@ -67,6 +68,7 @@ export default function RootLayout({ children }: React.PropsWithChildren) {
         ruleFilesDocs: process.env.WEB_RULE_FILES_DOCS ?? "",
         releaseVersion: process.env.RELEASE_VERSION ?? "",
         nodeEnv: process.env.WEB_NODE_ENV ?? "",
+        registrationEnabled: isRegistrationEnabled(),
         apiPublicUrl: getApiPublicUrl(),
         helpdeskUrl: process.env.WEB_HOSTNAME_HELPDESK
             ? createUrl(

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Heading } from "@components/ui/heading";
 import { SvgKodus } from "@components/ui/icons/SvgKodus";
 import { Link } from "@components/ui/link";
@@ -7,12 +8,17 @@ import { Page } from "@components/ui/page";
 import { ScrollArea } from "@components/ui/scroll-area";
 
 import { RegisterPageContent } from "../components/register-page-content";
+import { isRegistrationEnabled } from "src/core/utils/registration-enabled";
 
 export const metadata: Metadata = {
     title: "Sign Up",
 };
 
 export default function RegisterPage() {
+    if (!isRegistrationEnabled()) {
+        redirect("/sign-in");
+    }
+
     return (
         <Page.Root className="mx-auto flex max-h-screen flex-row overflow-hidden p-6">
             <div className="bg-card-lv1 flex flex-10 flex-col justify-center gap-10 rounded-3xl p-12">

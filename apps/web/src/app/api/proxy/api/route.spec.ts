@@ -125,3 +125,61 @@ describe("/api/proxy/api/[...path]", () => {
         expect(methods).toEqual(["PUT", "PATCH", "DELETE"]);
     });
 });
+
+describe("/api/proxy/api/[...path] registration denylist", () => {
+    const originalFetch = global.fetch;
+    const ORIG_ENV = process.env.WEB_REGISTRATION_ENABLED;
+    let fetchMock: jest.Mock;
+
+    beforeEach(() => {
+        fetchMock = jest.fn().mockResolvedValue(
+            new Response("upstream body", { status: 200 }),
+        );
+        global.fetch = fetchMock as any;
+        authMock.mockResolvedValue(null);
+    });
+
+    afterEach(() => {
+        global.fetch = originalFetch;
+        if (ORIG_ENV === undefined) {
+            delete process.env.WEB_REGISTRATION_ENABLED;
+        } else {
+            process.env.WEB_REGISTRATION_ENABLED = ORIG_ENV;
+        }
+        jest.resetModules();
+    });
+
+    async function loadPostHandler() {
+        let POST: typeof import("./[...path]/route").POST;
+        jest.isolateModules(() => {
+            ({ POST } = require("./[...path]/route"));
+        });
+        return POST!;
+    }
+
+    it("blocks POST /auth/signup when WEB_REGISTRATION_ENABLED=false", async () => {
+        process.env.WEB_REGISTRATION_ENABLED = "false";
+        const POST = await loadPostHandler();
+
+        const res = await POST(
+            mockReq("POST", "/auth/signup"),
+            ctx(["auth", "signup"]),
+        );
+
+        expect(res.status).toBe(404);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("forwards POST /auth/signup when WEB_REGISTRATION_ENABLED=true", async () => {
+        process.env.WEB_REGISTRATION_ENABLED = "true";
+        const POST = await loadPostHandler();
+
+        const res = await POST(
+            mockReq("POST", "/auth/signup"),
+            ctx(["auth", "signup"]),
+        );
+
+        expect(res.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});

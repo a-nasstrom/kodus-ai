@@ -57,7 +57,7 @@ export type ProxyHandlerOptions = {
      * starting with "/" — e.g. ["/admin", "/metrics/raw"].
      * Returns 404 (not 403) so attackers can't probe for existence.
      */
-    denyPathPrefixes?: string[];
+    denyPathPrefixes?: string[] | (() => string[]);
 };
 
 /**
@@ -94,6 +94,15 @@ function isRateLimited(key: string): boolean {
     bucket.count += 1;
     if (bucket.count > RATE_LIMIT.maxPerWindow) return true;
     return false;
+}
+
+function resolveDenyPathPrefixes(
+    denyPathPrefixes?: string[] | (() => string[]),
+): string[] {
+    if (!denyPathPrefixes) return [];
+    return typeof denyPathPrefixes === "function"
+        ? denyPathPrefixes()
+        : denyPathPrefixes;
 }
 
 function pathIsDenied(
@@ -180,7 +189,12 @@ async function forward(
         return new NextResponse(null, { status: 404 });
     }
 
-    if (pathIsDenied(upstreamPath, options.denyPathPrefixes)) {
+    if (
+        pathIsDenied(
+            upstreamPath,
+            resolveDenyPathPrefixes(options.denyPathPrefixes),
+        )
+    ) {
         // 404 instead of 403 — makes path probing indistinguishable
         // from a typo.
         return new NextResponse(null, { status: 404 });
@@ -312,6 +326,7 @@ export function createProxyHandler(options: ProxyHandlerOptions): {
 // behaviour stays in one place. Tests import via the public factory.
 export const __testing = {
     normalizeUpstreamPath,
+    resolveDenyPathPrefixes,
     pathIsDenied,
     rewriteLocation,
 };

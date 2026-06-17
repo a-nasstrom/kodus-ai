@@ -1,9 +1,25 @@
 import "server-only";
 
 import { auth } from "src/core/config/auth";
+import { API_ROUTES } from "src/core/config/constants";
 import { pathToApiUrl } from "src/core/utils/helpers";
+import { isRegistrationEnabled } from "src/core/utils/registration-enabled";
 
 import { createProxyHandler } from "../../_lib/create-proxy-handler";
+
+function buildDenyPathPrefixes(): string[] {
+    const prefixes = [
+        "/admin",
+        "/internal",
+        "/metrics",
+        "/debug",
+        "/health/raw",
+    ];
+    if (!isRegistrationEnabled()) {
+        prefixes.push(API_ROUTES.register);
+    }
+    return prefixes;
+}
 
 /**
  * Proxy route that forwards browser fetches to the internal backend API.
@@ -32,11 +48,5 @@ export const { GET, POST, PUT, PATCH, DELETE } = createProxyHandler({
         const session = await auth();
         return session?.user?.accessToken ?? null;
     },
-    denyPathPrefixes: [
-        "/admin",
-        "/internal",
-        "/metrics",
-        "/debug",
-        "/health/raw",
-    ],
+    denyPathPrefixes: buildDenyPathPrefixes,
 });

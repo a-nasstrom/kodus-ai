@@ -7,6 +7,7 @@ import { Page } from "@components/ui/page";
 
 import { OAuthButtons } from "../components/oauth";
 import { UserAuthForm } from "../components/user-auth-form";
+import { isRegistrationEnabled } from "src/core/utils/registration-enabled";
 
 export const metadata: Metadata = {
     title: "Login",
@@ -48,10 +49,12 @@ export default function LoginPage() {
                         <UserAuthForm />
                     </Suspense>
 
-                    <div className="mt-4 text-center text-sm">
-                        Don't have an account yet?{" "}
-                        <Link href="/sign-up">Sign up for free</Link>
-                    </div>
+                    {isRegistrationEnabled() && (
+                        <div className="mt-4 text-center text-sm">
+                            Don't have an account yet?{" "}
+                            <Link href="/sign-up">Sign up for free</Link>
+                        </div>
+                    )}
                     <Link
                         className="mx-auto mt-4 text-center text-sm underline"
                         href="/forgot-password">

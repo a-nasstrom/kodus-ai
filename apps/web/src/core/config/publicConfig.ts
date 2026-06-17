@@ -30,6 +30,8 @@ export type PublicConfig = {
     // shared-cookie domain without reading process.env in the browser.
     nodeEnv: string;
 
+    registrationEnabled: boolean;
+
     apiPublicUrl: string;
 
     helpdeskUrl: string;

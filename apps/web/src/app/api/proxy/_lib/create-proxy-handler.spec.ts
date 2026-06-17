@@ -122,6 +122,33 @@ describe("createProxyHandler", () => {
             expect(fetchMock).toHaveBeenCalledTimes(1);
         });
 
+        it("resolves denyPathPrefixes from a function on each request", async () => {
+            let denySignup = false;
+            const handler = createProxyHandler({
+                resolveUpstream: (p) => `http://upstream${p}`,
+                proxyMountPath: "/api/proxy/test",
+                denyPathPrefixes: () =>
+                    denySignup ? ["/auth/signup"] : ["/admin"],
+            });
+
+            const allowed = await handler.POST(
+                mockReq("POST"),
+                ctx(["auth", "signup"]),
+            );
+            expect(allowed.status).toBe(200);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+
+            denySignup = true;
+            fetchMock.mockClear();
+
+            const denied = await handler.POST(
+                mockReq("POST"),
+                ctx(["auth", "signup"]),
+            );
+            expect(denied.status).toBe(404);
+            expect(fetchMock).not.toHaveBeenCalled();
+        });
+
         it("denies BEFORE rate-limit check (so probers don't consume the budget)", async () => {
             const handler = createProxyHandler({
                 resolveUpstream: (p) => `http://upstream${p}`,

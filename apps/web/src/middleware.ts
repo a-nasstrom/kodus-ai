@@ -4,6 +4,7 @@ import { UserStatus } from "@enums";
 import { auth } from "./core/config/auth";
 import { CURRENT_PATH_HEADER } from "./core/utils/headers";
 import { handleAuthenticated } from "./core/utils/permissions";
+import { isRegistrationEnabled } from "./core/utils/registration-enabled";
 
 // Public routes that don't need authentication
 const publicPaths = [
@@ -43,7 +44,19 @@ export default auth(async (req) => {
     const pathname = req.nextUrl.pathname;
 
     if (pathname === "/register") {
-        return NextResponse.redirect(new URL("/sign-up", req.url));
+        return NextResponse.redirect(
+            new URL(
+                isRegistrationEnabled() ? "/sign-up" : "/sign-in",
+                req.url,
+            ),
+        );
+    }
+
+    if (
+        !isRegistrationEnabled() &&
+        (pathname === "/sign-up" || pathname.startsWith("/sign-up/"))
+    ) {
+        return NextResponse.redirect(new URL("/sign-in", req.url));
     }
 
     if (pathname === "/login") {
