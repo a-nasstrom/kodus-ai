@@ -267,7 +267,7 @@ export function createBusinessRulesBlueprint(
                         ctx,
                         manifest,
                     );
-                    mcpNormalizedList = fetched.values;
+                    mcpNormalizedList = fetched.value;
                     traces = fetched.traces;
                 }
 

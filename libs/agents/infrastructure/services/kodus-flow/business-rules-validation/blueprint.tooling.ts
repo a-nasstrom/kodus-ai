@@ -289,7 +289,7 @@ export function createBusinessRulesBlueprintTooling(
             manifest: TaskContextManifest,
         ) => {
             if (!manifest.references.length) {
-                return { values: [], traces: [] };
+                return { value: [], traces: [] };
             }
 
             const scope = resolveExecutionScope(ctx);
@@ -328,7 +328,7 @@ export function createBusinessRulesBlueprintTooling(
 
                 if (isUsableTaskContextNormalized(agentResult.normalized)) {
                     return {
-                        values: [agentResult.normalized],
+                        value: [agentResult.normalized],
                         traces,
                     };
                 }
@@ -350,7 +350,7 @@ export function createBusinessRulesBlueprintTooling(
             traces.push(...perReferenceResults.traces);
 
             return {
-                values: perReferenceResults.normalized,
+                value: perReferenceResults.normalized,
                 traces,
             };
         },
