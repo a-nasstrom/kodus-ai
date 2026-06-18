@@ -2,6 +2,7 @@ import { createLogger, createThreadId } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
+import { buildBusinessSignalsFromSources, buildTaskContextManifest } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { ConversationAgentUseCase } from '@libs/agents/application/use-cases/conversation-agent.use-case';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -474,6 +475,22 @@ export class ChatWithKodyFromGitUseCase {
             }
         }
 
+        const pullRequestTitle = this.getPullRequestTitle(params);
+
+        const businessSignals = buildBusinessSignalsFromSources({
+            title: pullRequestTitle,
+            branch: headRef,
+            body: pullRequestDescription,
+            bodyForKeywords: pullRequestDescription ?? commentBody,
+        });
+        const taskContextManifest = buildTaskContextManifest({
+            title: pullRequestTitle,
+            branch: headRef,
+            body: pullRequestDescription,
+            businessSignals,
+            taskReference: commentBody,
+        });
+
         const prepareContext = {
             userQuestion: commentBody,
             pullRequest: {
@@ -483,8 +500,12 @@ export class ChatWithKodyFromGitUseCase {
             },
             repository,
             pullRequestDescription,
+            pullRequestTitle,
             platformType: params.platformType,
             customInstructions: this.extractCustomInstructions(params),
+            taskReference: commentBody,
+            businessSignals,
+            taskContextManifest,
         };
 
         const response = await this.businessRulesValidationAgentUseCase.execute(
@@ -1359,6 +1380,29 @@ export class ChatWithKodyFromGitUseCase {
         });
 
         return description;
+    }
+
+    private getPullRequestTitle(params: WebhookParams): string {
+        switch (params.platformType) {
+            case PlatformType.GITHUB:
+                if (params.event === 'issue_comment') {
+                    return params.payload?.issue?.title || '';
+                }
+                return params.payload?.pull_request?.title || '';
+            case PlatformType.GITLAB:
+                return params.payload?.merge_request?.title || '';
+            case PlatformType.BITBUCKET:
+                return params.payload?.pullrequest?.title || '';
+            case PlatformType.AZURE_REPOS:
+                return params.payload?.resource?.pullRequest?.title || '';
+            default:
+                this.logger.warn({
+                    message: `Unsupported platform type: ${params.platformType} for PR title`,
+                    context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
+                });
+                return '';
+        }
     }
 
     private getReviewThreadByCommentId(

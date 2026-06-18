@@ -3,6 +3,10 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
+import {
+    buildBusinessSignalsFromSources,
+    buildTaskContextManifest,
+} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesPrepareContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
 import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
@@ -47,6 +51,7 @@ interface BusinessValidationRepositoryContext {
 }
 
 interface BaseBusinessValidationExecutionContext {
+    pullRequestTitle?: string;
     pullRequestDescription: string;
     repository?: BusinessValidationRepositoryContext;
     prDiff?: string;
@@ -72,14 +77,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         TriggerBusinessValidationUseCase.name,
     );
     private static readonly MAX_SIGNAL_SOURCE_LENGTH = 20_000;
-    private static readonly REQUIREMENT_KEYWORDS = [
-        'requirement',
-        'acceptance criteria',
-        'user story',
-        'given',
-        'when',
-        'then',
-    ];
 
     constructor(
         private readonly codeManagementService: CodeManagementService,
@@ -317,6 +314,7 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
                 defaultBranch: pr.base?.repo?.defaultBranch || pr.base?.ref,
             },
             pullRequestDescription: pr.body || pr.message || '',
+            pullRequestTitle: pr.title?.trim() || undefined,
             headRef: pr.head?.ref,
             baseRef: pr.base?.ref,
         };
@@ -544,20 +542,41 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             platformType,
             executionContext,
         } = params;
+        const businessSignals = buildBusinessSignalsFromSources({
+            title: executionContext.pullRequestTitle,
+            branch: executionContext.headRef,
+            body: executionContext.pullRequestDescription,
+            bodyForKeywords: [
+                executionContext.pullRequestDescription,
+                executionContext.prDiff?.slice(
+                    0,
+                    TriggerBusinessValidationUseCase.MAX_SIGNAL_SOURCE_LENGTH,
+                ),
+            ]
+                .filter(Boolean)
+                .join('\n'),
+            taskId: taskId?.trim(),
+            taskUrl: taskUrl?.trim(),
+        });
+        const taskContextManifest = buildTaskContextManifest({
+            title: executionContext.pullRequestTitle,
+            branch: executionContext.headRef,
+            body: executionContext.pullRequestDescription,
+            businessSignals,
+            taskId: taskId?.trim(),
+            taskUrl: taskUrl?.trim(),
+            taskReference: taskReference || undefined,
+        });
         const prepareContext: BusinessRulesPrepareContext = {
             userQuestion: command,
             taskReference: taskReference || undefined,
             taskId: taskId?.trim() || undefined,
             taskUrl: taskUrl?.trim() || undefined,
             pullRequestDescription: executionContext.pullRequestDescription,
+            pullRequestTitle: executionContext.pullRequestTitle,
             platformType: platformType || undefined,
-            businessSignals: this.detectSignals(
-                executionContext.pullRequestDescription,
-                taskReference,
-                executionContext.prDiff,
-                taskId,
-                taskUrl,
-            ),
+            businessSignals,
+            taskContextManifest,
         };
 
         if (executionContext.repository) {
@@ -588,68 +607,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         }
 
         return prepareContext;
-    }
-
-    private detectSignals(
-        pullRequestDescription: string,
-        taskReference?: string,
-        prDiff?: string,
-        taskId?: string,
-        taskUrl?: string,
-    ): Record<string, string[]> {
-        const normalizedTaskId = taskId?.trim();
-        const normalizedTaskUrl = taskUrl?.trim();
-        const prDiffSignal =
-            typeof prDiff === 'string' && prDiff.length > 0
-                ? prDiff.slice(
-                      0,
-                      TriggerBusinessValidationUseCase.MAX_SIGNAL_SOURCE_LENGTH,
-                  )
-                : undefined;
-        const referenceSource = [taskReference, pullRequestDescription]
-            .filter(Boolean)
-            .join('\n');
-        const ticketSource = [referenceSource, prDiffSignal, normalizedTaskId]
-            .filter(Boolean)
-            .join('\n');
-        const taskLinkSource = [normalizedTaskUrl, referenceSource]
-            .filter(Boolean)
-            .join('\n');
-        const keywordSource = [referenceSource, prDiffSignal]
-            .filter(Boolean)
-            .join('\n');
-
-        const ticketKeys = [
-            ...(normalizedTaskId ? [normalizedTaskId] : []),
-            ...this.detectTicketKeys(ticketSource),
-        ];
-        const taskLinks = [
-            ...(normalizedTaskUrl ? [normalizedTaskUrl] : []),
-            ...this.detectTaskLinks(taskLinkSource),
-        ];
-
-        return {
-            ticketKeys: [...new Set(ticketKeys)],
-            taskLinks: [...new Set(taskLinks)],
-            requirementKeywords: this.detectRequirementKeywords(keywordSource),
-        };
-    }
-
-    private detectTicketKeys(content: string): string[] {
-        const matches = content.match(/[A-Z]{2,}-\d+/g);
-        return [...new Set(matches ?? [])];
-    }
-
-    private detectTaskLinks(content: string): string[] {
-        const matches = content.match(/https?:\/\/[^\s)>\]"']+/g);
-        return [...new Set(matches ?? [])];
-    }
-
-    private detectRequirementKeywords(content: string): string[] {
-        const lower = content.toLowerCase();
-        return TriggerBusinessValidationUseCase.REQUIREMENT_KEYWORDS.filter(
-            (keyword) => lower.includes(keyword),
-        );
     }
 
     private createThread(params: {

@@ -67,7 +67,7 @@ describe('ProcessFilesPrLevelReviewStage', () => {
         expect(shouldRun).toBe(true);
     });
 
-    it('should not run business logic validation when only requirement keywords exist without task id or link', async () => {
+    it('runs business logic validation when only requirement keywords exist (no ticket id)', async () => {
         (posthog.isFeatureEnabled as jest.Mock).mockResolvedValue(true);
 
         const context = {
@@ -91,7 +91,7 @@ describe('ProcessFilesPrLevelReviewStage', () => {
             context,
         );
 
-        expect(shouldRun).toBe(false);
+        expect(shouldRun).toBe(true);
     });
 
     it('builds business-logic prepareContext using the nested pullRequest contract expected by the provider', async () => {
@@ -308,6 +308,37 @@ Encontrei contexto suficiente da task, mas nao consegui carregar o diff da pull 
             ).toHaveBeenCalledWith(
                 expect.objectContaining({
                     prepareContext: expect.objectContaining({
+                        businessSignals: expect.objectContaining({
+                            ticketKeys: ['DL-2773'],
+                        }),
+                    }),
+                }),
+            );
+        });
+
+        it('passes pullRequestTitle and businessSignals to the agent', async () => {
+            businessRulesValidationAgentProvider.execute.mockResolvedValue(
+                '## Business Rules Validation\n\nStatus: no gaps',
+            );
+
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: 'Implements DL-2773',
+                    title: '[DL-2773] Add print working mode',
+                    head: { ref: 'feature/print-mode' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            await (stage as any).runBusinessLogicValidation(context);
+
+            expect(
+                businessRulesValidationAgentProvider.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    prepareContext: expect.objectContaining({
+                        pullRequestTitle: '[DL-2773] Add print working mode',
                         businessSignals: expect.objectContaining({
                             ticketKeys: ['DL-2773'],
                         }),

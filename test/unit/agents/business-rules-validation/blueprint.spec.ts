@@ -1,8 +1,8 @@
 import { createBusinessRulesBlueprint } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint';
 import { classifyTaskQualityFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint.tooling';
+import { buildPrTextContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
 import { SkillCapabilityRuntimeConfig } from '@libs/agents/skills/generic-skill-runner.service';
-import { CapabilityStrategyScope } from '@libs/agents/skills/runtime/skill-runtime.types';
 import { runBlueprint } from '@libs/shared/blueprint/blueprint.runner';
 
 const defaultRuntimeConfig: SkillCapabilityRuntimeConfig = {
@@ -404,6 +404,12 @@ describe('business-rules blueprint', () => {
             prepareContext: {
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 77 },
+                businessSignals: {
+                    ticketKeys: ['KC-1457'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/jira/software/c/projects/KC/boards/2?selectedIssue=KC-1457',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -625,6 +631,12 @@ describe('business-rules blueprint', () => {
                     pullRequestNumber: 22,
                     headRef: 'feature/PROJ-123',
                 },
+                businessSignals: {
+                    ticketKeys: ['PROJ-123'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-123.',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -660,7 +672,7 @@ describe('business-rules blueprint', () => {
         ).toBe(true);
     });
 
-    it('uses agentic fallback for task context when no deterministic task tool is registered', async () => {
+    it('uses PR text when no task MCP is connected and agentic fallback is enabled', async () => {
         const fetcher = {
             callTool: jest.fn().mockResolvedValue({
                 result: { result: { success: true, data: 'diff content' } },
@@ -707,14 +719,9 @@ describe('business-rules blueprint', () => {
             next = await step.fn(next);
         }
 
-        expect(fetcher.callAgent).toHaveBeenCalledTimes(1);
-        expect(next.taskContext).toContain('Checkout business validation');
-        expect(
-            next.capabilityExecutionTrace?.some(
-                (trace) =>
-                    trace.mode === 'agentic' && trace.toolName === 'search',
-            ),
-        ).toBe(true);
+        expect(fetcher.callAgent).not.toHaveBeenCalled();
+        expect(next.taskContext).toContain('## From PR');
+        expect(next.taskContext).toContain('PROJ-999');
     });
 
     it('enforces seeded task-context boundary before applying cache ordering', async () => {
@@ -811,6 +818,12 @@ describe('business-rules blueprint', () => {
                     'Related to https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-700',
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 24 },
+                businessSignals: {
+                    ticketKeys: ['PROJ-700'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-700',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -831,7 +844,7 @@ describe('business-rules blueprint', () => {
         expect(next.taskContext).toContain('Known seeded strategy task');
     });
 
-    it('supports agent-first mode and saves learned tools to cache hook', async () => {
+    it('uses PR text when agent-first mode is configured but no task MCP is connected', async () => {
         const fetcher = {
             callTool: jest.fn().mockResolvedValue({
                 result: { result: { success: true, data: 'diff content' } },
@@ -845,20 +858,8 @@ describe('business-rules blueprint', () => {
             }),
             getRegisteredTools: jest
                 .fn()
-                .mockReturnValue([
-                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
-                    { name: 'search' },
-                ]),
-            getToolsForLLM: jest.fn().mockReturnValue([
-                {
-                    name: 'search',
-                    parameters: {
-                        type: 'object',
-                        properties: { query: { type: 'string' } },
-                        required: ['query'],
-                    },
-                },
-            ]),
+                .mockReturnValue([{ name: 'KODUS_GET_PULL_REQUEST_DIFF' }]),
+            getToolsForLLM: jest.fn().mockReturnValue([]),
         } as any;
 
         const saveCachedTaskContextTools = jest
@@ -902,14 +903,10 @@ describe('business-rules blueprint', () => {
             next = await step.fn(next);
         }
 
-        expect(fetcher.callAgent).toHaveBeenCalledTimes(1);
-        expect(saveCachedTaskContextTools).toHaveBeenCalledWith(
-            expect.objectContaining<CapabilityStrategyScope>({
-                capability: 'task.context.read',
-            }),
-            expect.arrayContaining(['search']),
-        );
-        expect(next.taskContext).toContain('Agent discovered task context');
+        expect(fetcher.callAgent).not.toHaveBeenCalled();
+        expect(saveCachedTaskContextTools).not.toHaveBeenCalled();
+        expect(next.taskContext).toContain('## From PR');
+        expect(next.taskContext).toContain('PROJ-701');
     });
 
     it('blocks write tools in deterministic task.context.read via explicit allowlist', async () => {
@@ -1007,6 +1004,12 @@ describe('business-rules blueprint', () => {
                     'Related to https://kodustech.atlassian.net/browse/PROJ-321',
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 26 },
+                businessSignals: {
+                    ticketKeys: ['PROJ-321'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-321',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -1235,5 +1238,689 @@ describe('business-rules blueprint', () => {
                 prDiffStatus: 'usable',
             }),
         );
+    });
+
+    it('proceeds with PR text context when no task MCP is connected', async () => {
+        const fetcher = {
+            callTool: jest.fn().mockResolvedValue({
+                result: { result: { success: true, data: 'diff content' } },
+            }),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([{ name: 'KODUS_GET_PULL_REQUEST_DIFF' }]),
+        } as any;
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+        );
+        const resolveStep = steps.find(
+            (step) =>
+                step.type === 'deterministic' &&
+                step.name === 'resolveTaskContext',
+        );
+
+        if (!resolveStep || resolveStep.type !== 'deterministic') {
+            throw new Error('resolveTaskContext step not found');
+        }
+
+        const next = await resolveStep.fn({
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prBody: 'Refactor logging internals',
+            prepareContext: {
+                pullRequestTitle: 'Refactor logging',
+                pullRequestDescription: 'Refactor logging internals',
+                pullRequest: { pullRequestNumber: 50, headRef: 'chore/logging' },
+                repository: { id: 'repo-1', name: 'my-repo' },
+                taskContext: '',
+            },
+        } as BusinessRulesContext);
+
+        expect(next.taskContext).toContain('## From PR');
+        expect(next.taskContext).toContain('Title: Refactor logging');
+        expect(next.taskContext).toContain('Branch: chore/logging');
+        expect(fetcher.callTool).not.toHaveBeenCalledWith(
+            'getJiraIssue',
+            expect.anything(),
+        );
+    });
+
+    it('resolves multiple references through agent-first task context fetch', async () => {
+        const fetcher = {
+            callTool: jest
+                .fn()
+                .mockImplementation((toolName: string, args?: unknown) => {
+                    if (toolName === 'KODUS_GET_PULL_REQUEST_DIFF') {
+                        return Promise.resolve({
+                            result: {
+                                result: { success: true, data: 'diff content' },
+                            },
+                        });
+                    }
+
+                    return Promise.resolve({ result: {} });
+                }),
+            callAgent: jest.fn().mockResolvedValue({
+                result: JSON.stringify({
+                    id: 'PROJ-100',
+                    title: 'Epic checkout | Sub-task validation',
+                    taskContext: [
+                        '## From ticket PROJ-100',
+                        'Parent epic scope',
+                        '## From ticket PROJ-101',
+                        'Reject invalid card',
+                    ].join('\n'),
+                    toolsUsed: ['getJiraIssue'],
+                }),
+            }),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([
+                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
+                    { name: 'getJiraIssue' },
+                ]),
+            getToolsForLLM: jest.fn().mockReturnValue([
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                        required: ['cloudId', 'issueIdOrKey'],
+                    },
+                },
+            ]),
+        } as any;
+
+        const hooks = {
+            getCachedTaskContextTools: jest.fn().mockResolvedValue([]),
+            getSeedTaskContextTools: jest
+                .fn()
+                .mockResolvedValue(['getJiraIssue']),
+            resolveTaskContextMode: jest.fn().mockReturnValue('agent_first'),
+            saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
+            resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
+            recordExecution: jest.fn().mockResolvedValue(undefined),
+        };
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+            hooks,
+        );
+        const deterministicSteps = steps.filter(
+            (step) => step.type === 'deterministic',
+        );
+
+        let next = {
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prepareContext: {
+                pullRequestTitle: 'PROJ-100 and PROJ-101 checkout',
+                pullRequestDescription:
+                    'Implements PROJ-100 epic and PROJ-101 sub-task. https://kodustech.atlassian.net/browse/PROJ-100',
+                repository: { id: 'repo-1', name: 'my-repo' },
+                pullRequest: {
+                    pullRequestNumber: 51,
+                    headRef: 'feat/proj-100-101',
+                },
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                    ],
+                },
+                taskContext: '',
+            },
+        } as BusinessRulesContext;
+
+        for (const step of deterministicSteps) {
+            next = await step.fn(next);
+        }
+
+        expect(fetcher.callAgent).toHaveBeenCalled();
+        expect(next.taskContext).toContain('## From ticket PROJ-100');
+        expect(next.taskContext).toContain('## From ticket PROJ-101');
+        expect(next.taskContext).toContain('Epic checkout');
+        expect(next.taskContext).toContain('Reject invalid card');
+    });
+
+    it('supplements agent-first primary ticket with deterministic fetches for uncovered manifest keys', async () => {
+        const fetcher = {
+            callTool: jest
+                .fn()
+                .mockImplementation((toolName: string, args?: unknown) => {
+                    if (toolName === 'KODUS_GET_PULL_REQUEST_DIFF') {
+                        return Promise.resolve({
+                            result: {
+                                result: { success: true, data: 'diff content' },
+                            },
+                        });
+                    }
+
+                    if (toolName === 'getJiraIssue') {
+                        const issueKey = String(
+                            (args as { issueIdOrKey?: string })?.issueIdOrKey ??
+                                '',
+                        );
+                        return Promise.resolve({
+                            result: {
+                                data: {
+                                    key: issueKey,
+                                    fields: {
+                                        summary: `Summary for ${issueKey}`,
+                                        description: `Requirements for ${issueKey}`,
+                                    },
+                                },
+                            },
+                        });
+                    }
+
+                    return Promise.resolve({ result: {} });
+                }),
+            callAgent: jest.fn().mockResolvedValue({
+                result: JSON.stringify({
+                    id: 'PROJ-100',
+                    title: 'Epic checkout',
+                    taskContext: 'Parent epic scope for PROJ-100 only',
+                    toolsUsed: ['getJiraIssue'],
+                }),
+            }),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([
+                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
+                    { name: 'getJiraIssue' },
+                ]),
+            getToolsForLLM: jest.fn().mockReturnValue([
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                        required: ['cloudId', 'issueIdOrKey'],
+                    },
+                },
+            ]),
+        } as any;
+
+        const hooks = {
+            getCachedTaskContextTools: jest.fn().mockResolvedValue([]),
+            getSeedTaskContextTools: jest
+                .fn()
+                .mockResolvedValue(['getJiraIssue']),
+            resolveTaskContextMode: jest.fn().mockReturnValue('agent_first'),
+            saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
+            resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
+            recordExecution: jest.fn().mockResolvedValue(undefined),
+        };
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+            hooks,
+        );
+        const deterministicSteps = steps.filter(
+            (step) => step.type === 'deterministic',
+        );
+
+        let next = {
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prepareContext: {
+                pullRequestTitle: 'PROJ-100 and PROJ-101 checkout',
+                pullRequestDescription: [
+                    'Implements PROJ-100 epic and PROJ-101 sub-task.',
+                    'https://kodustech.atlassian.net/browse/PROJ-100',
+                    'https://kodustech.atlassian.net/browse/PROJ-101',
+                ].join('\n'),
+                repository: { id: 'repo-1', name: 'my-repo' },
+                pullRequest: {
+                    pullRequestNumber: 53,
+                    headRef: 'feat/proj-100-101',
+                },
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+                taskContext: '',
+            },
+        } as BusinessRulesContext;
+
+        for (const step of deterministicSteps) {
+            next = await step.fn(next);
+        }
+
+        expect(fetcher.callAgent).toHaveBeenCalled();
+        expect(
+            fetcher.callTool.mock.calls.filter(
+                (call: unknown[]) => call[0] === 'getJiraIssue',
+            ),
+        ).toHaveLength(1);
+        expect(
+            (fetcher.callTool.mock.calls.find(
+                (call: unknown[]) => call[0] === 'getJiraIssue',
+            ) as unknown[] | undefined)?.[1],
+        ).toEqual(
+            expect.objectContaining({
+                issueIdOrKey: 'PROJ-101',
+            }),
+        );
+        expect(next.taskContext).toContain('Parent epic scope for PROJ-100 only');
+        expect(next.taskContext).toContain('## From ticket PROJ-101');
+        expect(next.taskContext).toContain('Requirements for PROJ-101');
+    });
+
+    it('does not re-fetch the primary manifest key after agent-first success when the agent JSON omits id', async () => {
+        const fetcher = {
+            callTool: jest
+                .fn()
+                .mockImplementation((toolName: string, args?: unknown) => {
+                    if (toolName === 'KODUS_GET_PULL_REQUEST_DIFF') {
+                        return Promise.resolve({
+                            result: {
+                                result: { success: true, data: 'diff content' },
+                            },
+                        });
+                    }
+
+                    if (toolName === 'getJiraIssue') {
+                        const issueKey = String(
+                            (args as { issueIdOrKey?: string })?.issueIdOrKey ??
+                                '',
+                        );
+                        return Promise.resolve({
+                            result: {
+                                data: {
+                                    key: issueKey,
+                                    fields: {
+                                        summary: `Summary for ${issueKey}`,
+                                        description: `Requirements for ${issueKey}`,
+                                    },
+                                },
+                            },
+                        });
+                    }
+
+                    return Promise.resolve({ result: {} });
+                }),
+            callAgent: jest.fn().mockResolvedValue({
+                result: JSON.stringify({
+                    title: 'Epic checkout',
+                    taskContext:
+                        'Parent epic scope without embedding the ticket key in prose',
+                    toolsUsed: ['getJiraIssue'],
+                }),
+            }),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([
+                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
+                    { name: 'getJiraIssue' },
+                ]),
+            getToolsForLLM: jest.fn().mockReturnValue([
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                        required: ['cloudId', 'issueIdOrKey'],
+                    },
+                },
+            ]),
+        } as any;
+
+        const hooks = {
+            getCachedTaskContextTools: jest.fn().mockResolvedValue([]),
+            getSeedTaskContextTools: jest
+                .fn()
+                .mockResolvedValue(['getJiraIssue']),
+            resolveTaskContextMode: jest.fn().mockReturnValue('agent_first'),
+            saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
+            resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
+            recordExecution: jest.fn().mockResolvedValue(undefined),
+        };
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+            hooks,
+        );
+        const deterministicSteps = steps.filter(
+            (step) => step.type === 'deterministic',
+        );
+
+        let next = {
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prepareContext: {
+                pullRequestTitle: 'PROJ-100 and PROJ-101 checkout',
+                pullRequestDescription: [
+                    'Implements PROJ-100 epic and PROJ-101 sub-task.',
+                    'https://kodustech.atlassian.net/browse/PROJ-100',
+                    'https://kodustech.atlassian.net/browse/PROJ-101',
+                ].join('\n'),
+                repository: { id: 'repo-1', name: 'my-repo' },
+                pullRequest: {
+                    pullRequestNumber: 55,
+                    headRef: 'feat/proj-100-101',
+                },
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+                taskContext: '',
+            },
+        } as BusinessRulesContext;
+
+        for (const step of deterministicSteps) {
+            next = await step.fn(next);
+        }
+
+        const jiraCalls = fetcher.callTool.mock.calls.filter(
+            (call: unknown[]) => call[0] === 'getJiraIssue',
+        );
+        expect(jiraCalls).toHaveLength(1);
+        expect(jiraCalls[0]?.[1]).toEqual(
+            expect.objectContaining({
+                issueIdOrKey: 'PROJ-101',
+            }),
+        );
+        expect(next.taskContext).toContain(
+            'Parent epic scope without embedding the ticket key in prose',
+        );
+        expect(next.taskContext).toContain('## From ticket PROJ-101');
+        expect(next.taskContext).not.toContain('## From ticket PROJ-100');
+        expect(next.taskContext).not.toContain('Requirements for PROJ-100');
+    });
+
+    it('does not treat PROJ-10 as covered when the agent payload only mentions PROJ-100', async () => {
+        const fetcher = {
+            callTool: jest
+                .fn()
+                .mockImplementation((toolName: string, args?: unknown) => {
+                    if (toolName === 'KODUS_GET_PULL_REQUEST_DIFF') {
+                        return Promise.resolve({
+                            result: {
+                                result: { success: true, data: 'diff content' },
+                            },
+                        });
+                    }
+
+                    if (toolName === 'getJiraIssue') {
+                        const issueKey = String(
+                            (args as { issueIdOrKey?: string })?.issueIdOrKey ??
+                                '',
+                        );
+                        return Promise.resolve({
+                            result: {
+                                data: {
+                                    key: issueKey,
+                                    fields: {
+                                        summary: `Summary for ${issueKey}`,
+                                        description: `Requirements for ${issueKey}`,
+                                    },
+                                },
+                            },
+                        });
+                    }
+
+                    return Promise.resolve({ result: {} });
+                }),
+            callAgent: jest.fn().mockResolvedValue({
+                result: JSON.stringify({
+                    id: 'PROJ-100',
+                    title: 'Epic checkout',
+                    taskContext: 'Parent epic scope for PROJ-100 only',
+                    toolsUsed: ['getJiraIssue'],
+                }),
+            }),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([
+                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
+                    { name: 'getJiraIssue' },
+                ]),
+            getToolsForLLM: jest.fn().mockReturnValue([
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                        required: ['cloudId', 'issueIdOrKey'],
+                    },
+                },
+            ]),
+        } as any;
+
+        const hooks = {
+            getCachedTaskContextTools: jest.fn().mockResolvedValue([]),
+            getSeedTaskContextTools: jest
+                .fn()
+                .mockResolvedValue(['getJiraIssue']),
+            resolveTaskContextMode: jest.fn().mockReturnValue('agent_first'),
+            saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
+            resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
+            recordExecution: jest.fn().mockResolvedValue(undefined),
+        };
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+            hooks,
+        );
+        const deterministicSteps = steps.filter(
+            (step) => step.type === 'deterministic',
+        );
+
+        let next = {
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prepareContext: {
+                pullRequestTitle: 'PROJ-100 and PROJ-10 follow-up',
+                pullRequestDescription: [
+                    'Implements PROJ-100 epic and PROJ-10 hotfix.',
+                    'https://kodustech.atlassian.net/browse/PROJ-100',
+                    'https://kodustech.atlassian.net/browse/PROJ-10',
+                ].join('\n'),
+                repository: { id: 'repo-1', name: 'my-repo' },
+                pullRequest: {
+                    pullRequestNumber: 54,
+                    headRef: 'feat/proj-100-10',
+                },
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-10'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-10',
+                    ],
+                },
+                taskContext: '',
+            },
+        } as BusinessRulesContext;
+
+        for (const step of deterministicSteps) {
+            next = await step.fn(next);
+        }
+
+        expect(
+            fetcher.callTool.mock.calls.filter(
+                (call: unknown[]) => call[0] === 'getJiraIssue',
+            ),
+        ).toHaveLength(1);
+        expect(
+            (fetcher.callTool.mock.calls.find(
+                (call: unknown[]) => call[0] === 'getJiraIssue',
+            ) as unknown[] | undefined)?.[1],
+        ).toEqual(
+            expect.objectContaining({
+                issueIdOrKey: 'PROJ-10',
+            }),
+        );
+        expect(next.taskContext).toContain('Requirements for PROJ-10');
+    });
+
+    it('fetches each manifest reference via fetchAllTaskContexts when cache_first is configured', async () => {
+        const fetcher = {
+            callTool: jest
+                .fn()
+                .mockImplementation((toolName: string, args?: unknown) => {
+                    if (toolName === 'KODUS_GET_PULL_REQUEST_DIFF') {
+                        return Promise.resolve({
+                            result: {
+                                result: { success: true, data: 'diff content' },
+                            },
+                        });
+                    }
+
+                    if (toolName === 'getJiraIssue') {
+                        const issueKey = String(
+                            (args as { issueIdOrKey?: string })?.issueIdOrKey ??
+                                '',
+                        );
+                        return Promise.resolve({
+                            result: {
+                                data: {
+                                    key: issueKey,
+                                    fields: {
+                                        summary: `Summary for ${issueKey}`,
+                                        description: `Requirements for ${issueKey}`,
+                                    },
+                                },
+                            },
+                        });
+                    }
+
+                    return Promise.resolve({ result: {} });
+                }),
+            callAgent: jest.fn(),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([
+                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
+                    { name: 'getJiraIssue' },
+                ]),
+            getToolsForLLM: jest.fn().mockReturnValue([
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                        required: ['cloudId', 'issueIdOrKey'],
+                    },
+                },
+            ]),
+        } as any;
+
+        const hooks = {
+            getCachedTaskContextTools: jest.fn().mockResolvedValue([]),
+            getSeedTaskContextTools: jest
+                .fn()
+                .mockResolvedValue(['getJiraIssue']),
+            resolveTaskContextMode: jest.fn().mockReturnValue('cache_first'),
+            saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
+            resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
+            recordExecution: jest.fn().mockResolvedValue(undefined),
+        };
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+            hooks,
+        );
+        const deterministicSteps = steps.filter(
+            (step) => step.type === 'deterministic',
+        );
+
+        let next = {
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prepareContext: {
+                pullRequestTitle: 'PROJ-100 and PROJ-101 checkout',
+                pullRequestDescription: [
+                    'Implements PROJ-100 epic and PROJ-101 sub-task.',
+                    'https://kodustech.atlassian.net/browse/PROJ-100',
+                    'https://kodustech.atlassian.net/browse/PROJ-101',
+                ].join('\n'),
+                repository: { id: 'repo-1', name: 'my-repo' },
+                pullRequest: {
+                    pullRequestNumber: 52,
+                    headRef: 'feat/proj-100-101',
+                },
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+                taskContext: '',
+            },
+        } as BusinessRulesContext;
+
+        for (const step of deterministicSteps) {
+            next = await step.fn(next);
+        }
+
+        expect(fetcher.callAgent).not.toHaveBeenCalled();
+        expect(
+            fetcher.callTool.mock.calls.filter(
+                (call: unknown[]) => call[0] === 'getJiraIssue',
+            ),
+        ).toHaveLength(2);
+        expect(next.taskContext).toContain('## From ticket PROJ-100');
+        expect(next.taskContext).toContain('## From ticket PROJ-101');
+        expect(next.taskContext).toContain('Requirements for PROJ-100');
+        expect(next.taskContext).toContain('Requirements for PROJ-101');
+    });
+
+    it('classifies ## From PR only context as PARTIAL or better', () => {
+        expect(
+            classifyTaskQualityFromSources({
+                taskContext: buildPrTextContext({
+                    title: 'Fix export for admin users',
+                    body: 'Implements export feature with validation for admin-only access.',
+                }),
+            }),
+        ).not.toBe('EMPTY');
     });
 });

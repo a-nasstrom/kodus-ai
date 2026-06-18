@@ -1,4 +1,8 @@
 import { createLogger, createThreadId } from '@kodus/flow';
+import {
+    buildBusinessSignalsFromSources,
+    buildTaskContextManifest,
+} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
@@ -334,23 +338,37 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         }
 
         const prBody = context.pullRequest.body ?? '';
-        const signalSources = this.buildSignalSources(context);
+        const prTitle = context.pullRequest?.title ?? '';
+        const prBranch = context.pullRequest?.head?.ref ?? '';
         const prBodyHash = this.computePrBodyHash(prBody);
-        const signals = this.detectSignals(signalSources, prBody);
+        const signals = buildBusinessSignalsFromSources({
+            title: prTitle,
+            branch: prBranch,
+            body: prBody,
+            bodyForKeywords: prBody,
+        });
+        const taskContextManifest = buildTaskContextManifest({
+            title: prTitle,
+            branch: prBranch,
+            body: prBody,
+            businessSignals: signals,
+        });
 
         try {
             const prepareContext = {
                 userQuestion: '@kody -v business-logic',
                 pullRequest: {
                     pullRequestNumber: context.pullRequest.number,
-                    headRef: context.pullRequest?.head?.ref,
+                    headRef: prBranch,
                     baseRef: context.pullRequest?.base?.ref,
                 },
                 repository: context.repository,
                 pullRequestDescription: prBody,
+                pullRequestTitle: prTitle,
                 platformType: context.platformType,
                 defaultBranch: context.pullRequest?.base?.ref,
                 businessSignals: signals,
+                taskContextManifest,
             };
             const thread = this.createBusinessLogicThread(context);
 
@@ -427,24 +445,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
     private async shouldRunBusinessLogicValidation(
         context: CodeReviewPipelineContext,
     ): Promise<boolean> {
-        if (!context.codeReviewConfig?.reviewOptions?.business_logic) {
-            return false;
-        }
-
-        const prBody = context.pullRequest?.body ?? '';
-        const signalSources = this.buildSignalSources(context);
-        if (!this.hasBusinessSignals(signalSources)) {
-            return false;
-        }
-
-        const currentHash = this.computePrBodyHash(prBody);
-        const lastHash = (context.pipelineMetadata?.lastExecution as any)
-            ?.businessLogicHash;
-        if (lastHash && lastHash === currentHash) {
-            return false;
-        }
-
-        return true;
+        return Boolean(context.codeReviewConfig?.reviewOptions?.business_logic);
     }
 
     /**

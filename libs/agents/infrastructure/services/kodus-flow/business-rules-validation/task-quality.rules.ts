@@ -149,7 +149,8 @@ export const TASK_QUALITY_ANALYZER_POLICY = `- EMPTY => needsMoreInfo = true
 - MINIMAL => needsMoreInfo = true
 - PARTIAL => proceed with full gap analysis
 - COMPLETE => proceed with full gap analysis
-- Never proceed using only PR description as task context.`;
+- FULL_TASK_CONTEXT may combine multiple "## From ticket" sections with "## From PR" (title, branch, description).
+- Treat each ticket section as an independent requirement source; a gap is valid if any section is violated.`;
 
 function buildEmptyContextMessage(): string {
     return `## 🤔 Need Task Information

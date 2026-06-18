@@ -1,4 +1,7 @@
-import { fetchTaskContext } from '@libs/agents/skills/capabilities/task-context-read';
+import {
+    fetchAllTaskContexts,
+    fetchTaskContext,
+} from '@libs/agents/skills/capabilities/task-context-read';
 import {
     SkillCapabilityRuntimeConfig,
     ToolCaller,
@@ -124,7 +127,15 @@ describe('fetchTaskContext capability', () => {
             callTool: jest.fn(),
             callAgent,
             getRegisteredTools: () => [{ name: 'searchTasks' }],
-            getToolsForLLM: () => [],
+            getToolsForLLM: () => [
+                {
+                    name: 'searchTasks',
+                    parameters: {
+                        required: ['query'],
+                        properties: { query: { type: 'string' } },
+                    },
+                },
+            ],
         };
 
         const hooks = {
@@ -843,7 +854,20 @@ describe('fetchTaskContext capability', () => {
             callTool: jest.fn(),
             callAgent,
             getRegisteredTools: () => [{ name: 'KODUS_GET_GITHUB_ISSUE' }],
-            getToolsForLLM: () => [],
+            getToolsForLLM: () => [
+                {
+                    name: 'KODUS_GET_GITHUB_ISSUE',
+                    description: 'Fetch a GitHub issue from the connected repository',
+                    parameters: {
+                        required: ['issueNumber'],
+                        properties: {
+                            issueNumber: { type: 'number' },
+                            repositoryOwner: { type: 'string' },
+                            repositoryName: { type: 'string' },
+                        },
+                    },
+                },
+            ],
         };
 
         const hooks = {
@@ -1122,6 +1146,108 @@ describe('fetchTaskContext capability', () => {
                 'Reject unsupported hosts with a clear message',
             ],
             sourceProvider: 'jira',
+        });
+    });
+
+    it('uses agent-first resolution with primary reference in the prompt', async () => {
+        const callAgent: CallAgentMock = jest.fn().mockResolvedValue({
+            result: JSON.stringify({
+                id: 'LKDB-301',
+                title: 'Unread messages folder in Messenger',
+                taskContext:
+                    'Add a pinned Unread folder row at the top of the messaging inbox.',
+                toolsUsed: ['getJiraIssue'],
+            }),
+        });
+
+        const callTool: CallToolMock = jest.fn().mockResolvedValue({ result: {} });
+        const toolCaller: ToolCaller = {
+            callTool,
+            callAgent,
+            getRegisteredTools: () => [
+                { name: 'getJiraIssue' },
+                { name: 'search' },
+            ],
+            getToolsForLLM: () => [
+                {
+                    name: 'getJiraIssue',
+                    description: 'Fetch a Jira issue by key or id',
+                    parameters: {
+                        required: ['cloudId', 'issueIdOrKey'],
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                    },
+                },
+                {
+                    name: 'search',
+                    description: 'Unified Atlassian search',
+                    parameters: {
+                        required: ['query'],
+                        properties: { query: { type: 'string' } },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => [
+                'getJiraIssue',
+                'search',
+            ]),
+            getCachedTaskContextTools: jest.fn(async () => ['search']),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        const result = await fetchTaskContext(
+            toolCaller,
+            createCapabilityRuntime('jira'),
+            {
+                ...createBaseParams(),
+                taskContextResolutionMode: 'agent_first',
+                enableAgenticFallback: true,
+                pullRequestTitle:
+                    'LKDB-301: Unread messages folder in Messenger',
+                pullRequestDescription:
+                    'Adds a pinned Unread folder row at the top of the messaging inbox.',
+                primaryReference: {
+                    kind: 'key',
+                    value: 'LKDB-301',
+                    label: 'LKDB-301',
+                    source: 'title',
+                },
+                taskReferences: [
+                    {
+                        kind: 'key',
+                        value: 'LKDB-301',
+                        label: 'LKDB-301',
+                        source: 'title',
+                    },
+                ],
+                businessSignals: {
+                    ticketKeys: ['LKDB-301'],
+                },
+            },
+            hooks,
+        );
+
+        expect(callAgent).toHaveBeenCalled();
+        expect(callAgent.mock.calls[0]?.[1]).toContain('PRIMARY_REFERENCE');
+        expect(callAgent.mock.calls[0]?.[1]).toContain('LKDB-301');
+        expect(callAgent.mock.calls[0]?.[1]).toContain('getJiraIssue');
+        expect(callAgent.mock.calls[0]?.[1]).toContain(
+            'Fetch a Jira issue by key or id',
+        );
+        expect(callAgent.mock.calls[0]?.[1]).toContain(
+            'required: cloudId, issueIdOrKey',
+        );
+        expect(callAgent.mock.calls[0]?.[1]).toContain('source: title');
+        expect(result.normalized).toMatchObject({
+            id: 'LKDB-301',
+            title: 'Unread messages folder in Messenger',
         });
     });
 
@@ -1609,5 +1735,175 @@ describe('fetchTaskContext capability', () => {
             description: 'Fallback context',
             sourceProvider: 'jira',
         });
+    });
+
+    it('fetchAllTaskContexts scopes each reference to its own issue key and link', async () => {
+        const callTool: CallToolMock = jest
+            .fn()
+            .mockImplementation((toolName: string, args: Record<string, unknown>) => {
+                if (toolName !== 'getJiraIssue') {
+                    return Promise.resolve({ result: {} });
+                }
+
+                return Promise.resolve({
+                    result: {
+                        data: {
+                            key: String(args.issueIdOrKey),
+                            fields: {
+                                summary: `Summary for ${String(args.issueIdOrKey)}`,
+                                description: `Requirements for ${String(args.issueIdOrKey)}`,
+                            },
+                        },
+                    },
+                });
+            });
+
+        const toolCaller: ToolCaller = {
+            callTool,
+            getRegisteredTools: () => [{ name: 'getJiraIssue' }],
+            getToolsForLLM: () => [
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        required: ['cloudId', 'issueIdOrKey'],
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => ['getJiraIssue']),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        const result = await fetchAllTaskContexts(
+            toolCaller,
+            createCapabilityRuntime('jira'),
+            {
+                ...createBaseParams(),
+                pullRequestDescription: [
+                    'Implements PROJ-100 epic and PROJ-101 sub-task.',
+                    'https://kodustech.atlassian.net/browse/PROJ-100',
+                    'https://kodustech.atlassian.net/browse/PROJ-101',
+                ].join('\n'),
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+            },
+            [
+                { kind: 'key', value: 'PROJ-100' },
+                { kind: 'key', value: 'PROJ-101' },
+            ],
+            hooks,
+        );
+
+        const jiraCalls = callTool.mock.calls.filter(
+            (call) => call[0] === 'getJiraIssue',
+        );
+        expect(jiraCalls).toHaveLength(2);
+        expect(jiraCalls[0]?.[1]).toEqual(
+            expect.objectContaining({ issueIdOrKey: 'PROJ-100' }),
+        );
+        expect(jiraCalls[1]?.[1]).toEqual(
+            expect.objectContaining({ issueIdOrKey: 'PROJ-101' }),
+        );
+        expect(result.normalized).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'PROJ-100' }),
+                expect.objectContaining({ id: 'PROJ-101' }),
+            ]),
+        );
+    });
+
+    it('returns unresolved references when a scoped fetch does not produce usable context', async () => {
+        const callTool: CallToolMock = jest
+            .fn()
+            .mockImplementation((toolName: string, args: Record<string, unknown>) => {
+                if (toolName !== 'getJiraIssue') {
+                    return Promise.resolve({ result: {} });
+                }
+
+                const issueKey = String(args.issueIdOrKey ?? '');
+                if (issueKey === 'PROJ-101') {
+                    return Promise.resolve({ result: {} });
+                }
+
+                return Promise.resolve({
+                    result: {
+                        data: {
+                            key: issueKey,
+                            fields: {
+                                summary: `Summary for ${issueKey}`,
+                                description: `Requirements for ${issueKey}`,
+                            },
+                        },
+                    },
+                });
+            });
+
+        const toolCaller: ToolCaller = {
+            callTool,
+            getRegisteredTools: () => [{ name: 'getJiraIssue' }],
+            getToolsForLLM: () => [
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        required: ['cloudId', 'issueIdOrKey'],
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => ['getJiraIssue']),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        const result = await fetchAllTaskContexts(
+            toolCaller,
+            createCapabilityRuntime('jira'),
+            {
+                ...createBaseParams(),
+                pullRequestDescription:
+                    'https://kodustech.atlassian.net/browse/PROJ-100\nhttps://kodustech.atlassian.net/browse/PROJ-101',
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+            },
+            [
+                { kind: 'key', value: 'PROJ-100' },
+                { kind: 'key', value: 'PROJ-101' },
+            ],
+            hooks,
+        );
+
+        expect(result.normalized).toEqual([
+            expect.objectContaining({ id: 'PROJ-100' }),
+        ]);
+        expect(result.unresolvedReferences).toEqual([
+            { kind: 'key', value: 'PROJ-101' },
+        ]);
     });
 });

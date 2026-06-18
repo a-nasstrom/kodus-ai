@@ -29,6 +29,19 @@ interface TaskContextSignalHints {
     requirementKeywords?: string[];
 }
 
+export type TaskContextReferenceSource =
+    | 'title'
+    | 'branch'
+    | 'body'
+    | 'explicit';
+
+export interface TaskContextReferenceHint {
+    kind: 'key' | 'url';
+    value: string;
+    label?: string;
+    source?: TaskContextReferenceSource;
+}
+
 export interface TaskContextReadParams {
     skillName: string;
     organizationId: string;
@@ -40,6 +53,7 @@ export interface TaskContextReadParams {
     headRef?: string;
     userQuestion?: string;
     pullRequestDescription?: string;
+    pullRequestTitle?: string;
     taskContext?: string;
     taskId?: string;
     taskUrl?: string;
@@ -50,6 +64,8 @@ export interface TaskContextReadParams {
     taskContextResolutionMode?: ResolutionMode;
     enableAgenticFallback?: boolean;
     businessSignals?: TaskContextSignalHints;
+    primaryReference?: TaskContextReferenceHint;
+    taskReferences?: TaskContextReferenceHint[];
 }
 
 export interface TaskContextReadResult {
@@ -114,6 +130,7 @@ interface AgentFallbackParams {
     params: TaskContextReadParams;
     providerType: string;
     candidateTools: string[];
+    taskContextToolSignatures: Map<string, TaskContextToolSignature>;
     hooks?: TaskContextReadHooks;
     logger: ReturnType<typeof createLogger>;
 }
@@ -153,9 +170,13 @@ export async function fetchTaskContext(
         hooks,
         logger,
     });
+    const taskMcpToolsAvailable =
+        discovery.candidateTools.length > 0 ||
+        discovery.registeredTools.some((toolName) =>
+            taskContextToolSignatures.has(toolName),
+        );
     const allowAgenticFallback =
-        params.enableAgenticFallback !== false &&
-        discovery.registeredTools.length > 0;
+        params.enableAgenticFallback !== false && taskMcpToolsAvailable;
 
     const traces: CapabilityExecutionTrace[] = [];
 
@@ -186,6 +207,7 @@ export async function fetchTaskContext(
             params,
             providerType,
             candidateTools: discovery.orderedTools,
+            taskContextToolSignatures,
             hooks,
             logger,
         });
@@ -252,6 +274,7 @@ export async function fetchTaskContext(
         params,
         providerType,
         candidateTools: discovery.orderedTools,
+        taskContextToolSignatures,
         hooks,
         logger,
     });
@@ -271,6 +294,166 @@ export async function fetchTaskContext(
         raw: agenticFallback.value?.description ?? '',
         traces,
     };
+}
+
+export interface TaskContextScopedReference {
+    kind: 'key' | 'url';
+    value: string;
+}
+
+export async function fetchAllTaskContexts(
+    toolCaller: ToolCaller,
+    capabilityRuntime: SkillCapabilityRuntimeConfig,
+    params: TaskContextReadParams,
+    references: TaskContextScopedReference[],
+    hooks?: TaskContextReadHooks,
+): Promise<{
+    normalized: TaskContextNormalized[];
+    traces: CapabilityExecutionTrace[];
+    unresolvedReferences: TaskContextScopedReference[];
+}> {
+    const logger = createLogger('TaskContextReadCapability');
+    const normalized: TaskContextNormalized[] = [];
+    const traces: CapabilityExecutionTrace[] = [];
+    const unresolvedReferences: TaskContextScopedReference[] = [];
+
+    for (const reference of references) {
+        const scopedParams = buildScopedTaskContextReadParams(params, reference);
+
+        const result = await fetchTaskContext(
+            toolCaller,
+            capabilityRuntime,
+            scopedParams,
+            hooks,
+        );
+        traces.push(...result.traces);
+
+        if (isUsableTaskContextNormalized(result.normalized)) {
+            normalized.push(result.normalized!);
+            continue;
+        }
+
+        unresolvedReferences.push(reference);
+    }
+
+    if (unresolvedReferences.length > 0) {
+        logger.warn({
+            message: 'Some task references could not be resolved from MCP',
+            context: 'TaskContextReadCapability',
+            metadata: {
+                requestedReferences: references.length,
+                resolvedReferences: normalized.length,
+                unresolvedReferences: unresolvedReferences.map(
+                    (reference) => reference.value,
+                ),
+            },
+        });
+    }
+
+    return { normalized, traces, unresolvedReferences };
+}
+
+function buildScopedTaskContextReadParams(
+    params: TaskContextReadParams,
+    reference: TaskContextScopedReference,
+): TaskContextReadParams {
+    const referenceHint: TaskContextReferenceHint = {
+        kind: reference.kind,
+        value: reference.value,
+        label: reference.value,
+    };
+    const matchingLinks = resolveReferenceTaskLinks(params, reference);
+    const scopedDescription =
+        reference.kind === 'url'
+            ? reference.value
+            : matchingLinks.length > 0
+              ? matchingLinks.join('\n')
+              : undefined;
+
+    const sharedScopedFields = {
+        taskReference: reference.value,
+        pullRequestDescription: scopedDescription,
+        prBody: undefined,
+        pullRequestTitle: undefined,
+        headRef: undefined,
+        userQuestion: reference.value,
+        taskContext: undefined,
+        primaryReference: referenceHint,
+        taskReferences: [referenceHint],
+        enableAgenticFallback: params.enableAgenticFallback !== false,
+    };
+
+    if (reference.kind === 'key') {
+        return {
+            ...params,
+            ...sharedScopedFields,
+            taskId: reference.value,
+            taskUrl: matchingLinks[0],
+            businessSignals: {
+                ticketKeys: [reference.value],
+                taskLinks: matchingLinks.length ? matchingLinks : undefined,
+            },
+        };
+    }
+
+    return {
+        ...params,
+        ...sharedScopedFields,
+        taskId: undefined,
+        taskUrl: reference.value,
+        businessSignals: {
+            taskLinks: [reference.value],
+        },
+    };
+}
+
+function resolveReferenceTaskLinks(
+    params: TaskContextReadParams,
+    reference: TaskContextScopedReference,
+): string[] {
+    const candidates = uniqueNonEmpty([
+        ...(params.businessSignals?.taskLinks ?? []),
+        ...(params.taskUrl ? [params.taskUrl] : []),
+        ...extractLinks(params.pullRequestDescription ?? ''),
+        ...extractLinks(params.prBody ?? ''),
+    ]);
+
+    if (reference.kind === 'url') {
+        const normalizedReference =
+            normalizeLikelyUrl(reference.value) ?? reference.value;
+        return candidates.some(
+            (link) => (normalizeLikelyUrl(link) ?? link) === normalizedReference,
+        )
+            ? [normalizedReference]
+            : [reference.value];
+    }
+
+    return candidates.filter((link) =>
+        textContainsIssueKey(link, reference.value),
+    );
+}
+
+function textContainsIssueKey(text: string, issueKey: string): boolean {
+    const normalizedKey = issueKey.trim().toUpperCase();
+    if (!normalizedKey) {
+        return false;
+    }
+
+    const pattern = new RegExp(
+        `(?<![A-Z0-9])${escapeRegExpForIssueKey(normalizedKey)}(?![A-Z0-9])`,
+        'i',
+    );
+    return pattern.test(text.toUpperCase());
+}
+
+function escapeRegExpForIssueKey(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function isUsableTaskContextNormalized(
+    value: TaskContextNormalized | undefined,
+): value is TaskContextNormalized {
+    return Boolean(value && isUsableTaskContext(value));
 }
 
 async function resolveTaskContextDiscovery(input: {
@@ -1289,27 +1472,14 @@ async function fetchTaskContextWithAgentFallback(
             ? input.params.userLanguage.trim()
             : 'en-US';
 
-    const prompt = `Resolve task context using available MCP tools.
-
-AVAILABLE_TOOLS: ${input.candidateTools.join(', ') || '(none)'}
-USER_QUESTION: ${input.params.userQuestion ?? ''}
-PULL_REQUEST_DESCRIPTION:
-${input.params.pullRequestDescription ?? ''}
-KNOWN_TOKENS: ${[...hints.issueKeys, ...hints.issueLinks].join(', ') || '(none)'}
-KNOWN_ISSUE_NUMBERS: ${hints.issueNumbers.join(', ') || '(none)'}
-KNOWN_REPOSITORY_OWNER: ${input.params.repositoryOwner ?? '(unknown)'}
-KNOWN_REPOSITORY_NAME: ${input.params.repositoryName ?? '(unknown)'}
-USER_LANGUAGE: ${userLanguage}
-
-When calling tools that require repository data, prioritize KNOWN_REPOSITORY_OWNER and KNOWN_REPOSITORY_NAME.
-
-Return ONLY JSON:
-{
-  "taskContext": "string",
-  "title": "optional",
-  "id": "optional",
-  "toolsUsed": ["toolName"]
-}`;
+    const prompt = buildAgenticTaskContextPrompt({
+        params: input.params,
+        candidateTools: input.candidateTools,
+        taskContextToolSignatures: input.taskContextToolSignatures,
+        toolsForLLM: input.toolCaller.getToolsForLLM?.() ?? [],
+        hints,
+        userLanguage,
+    });
 
     try {
         const agentOptions: AgentCallOptions = {
@@ -1746,6 +1916,154 @@ function scoreNormalizedContext(value: TaskContextNormalized): number {
         score += 1;
     }
     return score;
+}
+
+function buildAgenticTaskContextPrompt(input: {
+    params: TaskContextReadParams;
+    candidateTools: string[];
+    taskContextToolSignatures: Map<string, TaskContextToolSignature>;
+    toolsForLLM: Array<{
+        name?: string;
+        description?: string;
+        parameters?: unknown;
+    }>;
+    hints: TaskContextHints;
+    userLanguage: string;
+}): string {
+    const primaryReference = formatTaskReferenceHint(input.params.primaryReference);
+    const referenceLines =
+        input.params.taskReferences?.map(formatTaskReferenceHint).filter(Boolean) ??
+        [];
+    const fallbackReferences = [
+        ...input.hints.explicitIssueKeys,
+        ...input.hints.explicitIssueLinks,
+        ...input.hints.issueKeys,
+        ...input.hints.issueLinks,
+    ];
+    const referencesBlock =
+        referenceLines.length > 0
+            ? referenceLines.join('\n')
+            : fallbackReferences.join('\n') || '(none)';
+    const availableToolsBlock = formatAvailableToolsForPrompt({
+        candidateTools: input.candidateTools,
+        taskContextToolSignatures: input.taskContextToolSignatures,
+        toolsForLLM: input.toolsForLLM,
+    });
+
+    return `Resolve business task context for a pull request using the available MCP tools.
+
+You choose which tools to call (Jira, Linear, Confluence, Notion, etc.). Do not assume a specific provider.
+
+AVAILABLE_TOOLS:
+${availableToolsBlock}
+PRIMARY_REFERENCE (scope anchor for this PR): ${primaryReference || '(none)'}
+ALL_REFERENCES (issue keys, ticket URLs, doc links — use what fits each tool):
+${referencesBlock}
+PR_TITLE: ${input.params.pullRequestTitle?.trim() || '(unknown)'}
+PULL_REQUEST_DESCRIPTION:
+${input.params.pullRequestDescription ?? ''}
+USER_QUESTION: ${input.params.userQuestion ?? ''}
+KNOWN_ISSUE_NUMBERS: ${input.hints.issueNumbers.join(', ') || '(none)'}
+KNOWN_REPOSITORY_OWNER: ${input.params.repositoryOwner ?? '(unknown)'}
+KNOWN_REPOSITORY_NAME: ${input.params.repositoryName ?? '(unknown)'}
+USER_LANGUAGE: ${input.userLanguage}
+
+Policy:
+- PRIMARY_REFERENCE is the main scope for this PR when present.
+- Resolve requirements for that scope first using the best matching MCP tool(s).
+- Parent epics, SRS/Confluence docs, or cross-linked tickets are supporting context only unless PRIMARY_REFERENCE is itself a doc URL.
+- Prefer direct issue/page fetch tools over broad search when a reference key or URL matches the tool.
+- You may call multiple tools across iterations (e.g. Jira issue then linked Confluence page).
+- When calling tools that require repository data, prioritize KNOWN_REPOSITORY_OWNER and KNOWN_REPOSITORY_NAME.
+
+Return ONLY JSON:
+{
+  "taskContext": "string",
+  "title": "optional",
+  "id": "optional",
+  "toolsUsed": ["toolName"]
+}`;
+}
+
+function formatAvailableToolsForPrompt(input: {
+    candidateTools: string[];
+    taskContextToolSignatures: Map<string, TaskContextToolSignature>;
+    toolsForLLM: Array<{
+        name?: string;
+        description?: string;
+        parameters?: unknown;
+    }>;
+}): string {
+    const candidateSet = new Set(input.candidateTools);
+    const lines: string[] = [];
+    const covered = new Set<string>();
+
+    for (const tool of input.toolsForLLM) {
+        const name =
+            typeof tool.name === 'string' && tool.name.trim().length > 0
+                ? tool.name.trim()
+                : undefined;
+        if (!name || !candidateSet.has(name)) {
+            continue;
+        }
+
+        covered.add(name);
+        const description =
+            typeof tool.description === 'string' && tool.description.trim().length > 0
+                ? tool.description.trim()
+                : undefined;
+        const paramsSummary = formatToolParamsSummary(
+            input.taskContextToolSignatures.get(name),
+        );
+        const suffix = [description, paramsSummary].filter(Boolean).join(' — ');
+        lines.push(suffix ? `- ${name}: ${suffix}` : `- ${name}`);
+    }
+
+    for (const name of input.candidateTools) {
+        if (covered.has(name)) {
+            continue;
+        }
+        const paramsSummary = formatToolParamsSummary(
+            input.taskContextToolSignatures.get(name),
+        );
+        lines.push(paramsSummary ? `- ${name} (${paramsSummary})` : `- ${name}`);
+    }
+
+    return lines.length > 0 ? lines.join('\n') : '(none)';
+}
+
+function formatToolParamsSummary(
+    signature: TaskContextToolSignature | undefined,
+): string {
+    if (!signature) {
+        return '';
+    }
+
+    if (signature.requiredParams.length > 0) {
+        return `required: ${signature.requiredParams.join(', ')}`;
+    }
+
+    const paramNames = Object.keys(signature.properties);
+    if (paramNames.length > 0) {
+        return `params: ${paramNames.join(', ')}`;
+    }
+
+    return '';
+}
+
+function formatTaskReferenceHint(
+    reference: TaskContextReferenceHint | undefined,
+): string {
+    if (!reference?.value?.trim()) {
+        return '';
+    }
+
+    const label = reference.label?.trim() || reference.value.trim();
+    const source =
+        reference.source && reference.source !== 'body'
+            ? `, source: ${reference.source}`
+            : '';
+    return `- ${reference.kind}: ${label} (${reference.value.trim()}${source})`;
 }
 
 function isUsableTaskContext(value: TaskContextNormalized): boolean {

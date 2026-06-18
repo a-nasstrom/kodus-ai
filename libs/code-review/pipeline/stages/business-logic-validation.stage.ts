@@ -1,11 +1,14 @@
 import { createLogger, createThreadId } from '@kodus/flow';
+import {
+    buildBusinessSignalsFromSources,
+    buildTaskContextManifest,
+} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import { PipelineError } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-context.interface';
-import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { Injectable } from '@nestjs/common';
@@ -56,16 +59,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         'atlassianrovo',
     ] as const;
 
-    private static readonly TASK_MANAGEMENT_HINTS = [
-        'jira',
-        'linear',
-        'notion',
-        'clickup',
-        'googledocs',
-        'atlassianrovo',
-        'githubissues',
-    ];
-
     /** Maps task-management MCP names to URL domain patterns.
      *  If a URL in the PR description contains one of these domains,
      *  it's considered a valid signal for that MCP. */
@@ -81,7 +74,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
 
     constructor(
         private readonly businessRulesValidationAgentProvider: BusinessRulesValidationAgentProvider,
-        private readonly mcpManagerService: MCPManagerService,
     ) {
         super();
     }
@@ -120,24 +112,37 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         }
 
         const prBody = context.pullRequest?.body ?? '';
-        const signalSources = this.buildSignalSources(context);
-
+        const prTitle = context.pullRequest?.title ?? '';
+        const prBranch = context.pullRequest?.head?.ref ?? '';
         const prBodyHash = this.computePrBodyHash(prBody);
-        const signals = this.detectSignals(signalSources, prBody);
+        const signals = buildBusinessSignalsFromSources({
+            title: prTitle,
+            branch: prBranch,
+            body: prBody,
+            bodyForKeywords: prBody,
+        });
+        const taskContextManifest = buildTaskContextManifest({
+            title: prTitle,
+            branch: prBranch,
+            body: prBody,
+            businessSignals: signals,
+        });
 
         try {
             const prepareContext = {
                 userQuestion: '@kody -v business-logic',
                 pullRequest: {
                     pullRequestNumber: context.pullRequest.number,
-                    headRef: context.pullRequest?.head?.ref,
+                    headRef: prBranch,
                     baseRef: context.pullRequest?.base?.ref,
                 },
                 repository: context.repository,
                 pullRequestDescription: prBody,
+                pullRequestTitle: prTitle,
                 platformType: context.platformType,
                 defaultBranch: context.pullRequest?.base?.ref,
                 businessSignals: signals,
+                taskContextManifest,
             };
             const thread = this.createBusinessLogicThread(context);
 
@@ -158,33 +163,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 });
 
             const result = await Promise.race([agentPromise, timeoutPromise]);
-
-            // No task-management MCP connected — treat as if the category
-            // were disabled: skip silently, no PR comment.
-            if (
-                result ===
-                BusinessRulesValidationAgentProvider.NO_TASK_MCP_SENTINEL
-            ) {
-                this.logger.log({
-                    message:
-                        '[BUSINESS-LOGIC] Skipped — no task-management MCP connected.',
-                    context: this.stageName,
-                    metadata: {
-                        organizationId:
-                            context.organizationAndTeamData?.organizationId,
-                        prNumber: context.pullRequest?.number,
-                    },
-                });
-
-                return this.updateContext(context, (draft) => {
-                    draft.businessLogicResults = [];
-                    draft.businessLogicOutcome = {
-                        kind: 'skipped',
-                        reason: 'no_task_mcp',
-                        message: 'Skipped: no task-management MCP connected.',
-                    };
-                });
-            }
 
             const classification = this.classifyResult(result);
 
@@ -350,41 +328,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             };
         }
 
-        const connectedMcps =
-            await this.getConnectedTaskManagementMcps(context);
-
-        if (connectedMcps.length === 0) {
-            return {
-                reason: 'no_task_mcp',
-                message:
-                    'Skipped: no task-management MCP connected (Jira, Atlassian Rovo, Linear, Notion, ClickUp, etc.).',
-            };
-        }
-
-        const prBody = context.pullRequest?.body ?? '';
-        const signalSources = this.buildSignalSources(context);
-
-        if (
-            !this.hasRelevantBusinessSignals(signalSources, connectedMcps)
-        ) {
-            return {
-                reason: 'no_signals',
-                message:
-                    'Skipped: no ticket key or task link matching a connected MCP found in the PR description, title or branch name.',
-            };
-        }
-
-        const currentHash = this.computePrBodyHash(prBody);
-        const lastHash = (context.pipelineMetadata?.lastExecution as any)
-            ?.businessLogicHash;
-        if (lastHash && lastHash === currentHash) {
-            return {
-                reason: 'unchanged_body',
-                message:
-                    'Skipped: PR description has not changed since the last review.',
-            };
-        }
-
         return null;
     }
 
@@ -416,110 +359,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             taskLinks: this.detectTaskLinks(combined),
             requirementKeywords: this.detectRequirementKeywords(body),
         };
-    }
-
-    /**
-     * Returns the normalized names of connected task-management MCPs
-     * (e.g. ['jira', 'atlassianrovo']). Considers both installed connections
-     * (`mcp_connections`) and OAuth-authenticated managed plugins
-     * (`mcp_integration_oauth`, surfaced as `active` on integrations).
-     */
-    private async getConnectedTaskManagementMcps(
-        context: CodeReviewPipelineContext,
-    ): Promise<string[]> {
-        try {
-            const orgId = context.organizationAndTeamData?.organizationId;
-            const matched: string[] = [];
-
-            const allConnections = await this.mcpManagerService.getConnections(
-                context.organizationAndTeamData,
-                false,
-            );
-
-            for (const conn of (allConnections ?? []).filter(
-                (c) => c.organizationId === orgId,
-            )) {
-                this.appendTaskManagementHints(matched, [
-                    conn.appName,
-                    conn.provider,
-                    conn.integrationId,
-                ]);
-            }
-
-            const integrations = await this.mcpManagerService.getIntegrations(
-                context.organizationAndTeamData,
-            );
-
-            for (const integration of integrations ?? []) {
-                if (integration.isDefault) {
-                    continue;
-                }
-
-                const isUsable =
-                    integration.isConnected === true ||
-                    integration.active === true;
-                if (!isUsable) {
-                    continue;
-                }
-
-                this.appendTaskManagementHints(matched, [
-                    integration.id,
-                    integration.appName,
-                    integration.name,
-                    integration.provider,
-                ]);
-            }
-
-            return matched;
-        } catch (error) {
-            this.logger.warn({
-                message: `[BUSINESS-LOGIC] Failed to fetch MCP connections: ${error instanceof Error ? error.message : String(error)}`,
-                context: this.stageName,
-                error,
-            });
-            return [];
-        }
-    }
-
-    private appendTaskManagementHints(
-        matched: string[],
-        aliases: Array<string | undefined>,
-    ): void {
-        for (const hint of this.matchTaskManagementHints(aliases)) {
-            if (!matched.includes(hint)) {
-                matched.push(hint);
-            }
-        }
-    }
-
-    private normalizeMcpAlias(value: string | undefined): string {
-        if (typeof value !== 'string') {
-            return '';
-        }
-        return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
-    }
-
-    private matchTaskManagementHints(
-        aliases: Array<string | undefined>,
-    ): string[] {
-        const matched: string[] = [];
-
-        for (const raw of aliases) {
-            const alias = this.normalizeMcpAlias(raw);
-            if (!alias) {
-                continue;
-            }
-
-            const hint =
-                BusinessLogicValidationStage.TASK_MANAGEMENT_HINTS.find(
-                    (h) => alias.includes(h) || h.includes(alias),
-                );
-            if (hint && !matched.includes(hint)) {
-                matched.push(hint);
-            }
-        }
-
-        return matched;
     }
 
     /**

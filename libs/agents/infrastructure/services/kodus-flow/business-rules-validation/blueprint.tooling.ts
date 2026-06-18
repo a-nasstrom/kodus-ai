@@ -1,7 +1,9 @@
 import {
+    fetchAllTaskContexts,
     fetchPullRequestDiff,
     fetchPullRequestMetadata,
     fetchTaskContext as fetchTaskContextCapability,
+    isUsableTaskContextNormalized,
     PrDiffReadParams,
     PrMetadataReadParams,
 } from '@libs/agents/skills/capabilities';
@@ -18,6 +20,10 @@ import {
     TaskContextNormalized,
     TaskQuality,
 } from './types';
+import type {
+    TaskContextManifest,
+    TaskReference,
+} from './task-context-resolver';
 
 export const SKILL_NAME = 'business-rules-validation';
 export const PR_METADATA_CAPABILITY = 'pr.metadata.read';
@@ -26,6 +32,12 @@ export const PR_DIFF_CAPABILITY = 'pr.diff.read';
 interface ToolingResult<T> {
     value: T;
     traces: CapabilityExecutionTrace[];
+}
+
+export interface TaskContextManifestFetchResult {
+    value: TaskContextNormalized[];
+    traces: CapabilityExecutionTrace[];
+    unresolvedReferences: TaskReference[];
 }
 
 interface ExecutionScope {
@@ -50,6 +62,10 @@ export interface BusinessRulesBlueprintTooling {
     fetchTaskContext: (
         ctx: BusinessRulesContext,
     ) => Promise<ToolingResult<TaskContextNormalized | undefined>>;
+    resolveTaskContextFromManifest: (
+        ctx: BusinessRulesContext,
+        manifest: TaskContextManifest,
+    ) => Promise<TaskContextManifestFetchResult>;
 }
 
 export function resolvePullRequestDescription(
@@ -108,17 +124,45 @@ export function classifyTaskQualityFromSources(input: {
         return 'EMPTY';
     }
 
+    const ticketSectionCount = countSections(normalized, '## From ticket');
+    const hasFromPr = /(^|\n)\s*## From PR\b/im.test(normalized);
+    const prSection = hasFromPr
+        ? extractMarkdownSection(normalized, 'From PR')
+        : '';
+
     const hasAcceptanceCriteriaSection =
-        /(^|\n)\s*acceptance criteria\s*:/im.test(normalized);
-    const hasTitleSection = /(^|\n)\s*title\s*:/im.test(normalized);
-    const hasDescriptionSection = /(^|\n)\s*description\s*:/im.test(normalized);
-    const bulletLikeRequirements = countRequirementListItems(normalized);
+        /(^|\n)\s*acceptance criteria\s*:/im.test(normalized) ||
+        /(^|\n)\s*acceptance criteria\s*:/im.test(prSection);
+    const hasTitleSection =
+        /(^|\n)\s*title\s*:/im.test(normalized) ||
+        /(^|\n)\s*title\s*:/im.test(prSection);
+    const hasDescriptionSection =
+        /(^|\n)\s*description\s*:/im.test(normalized) ||
+        /(^|\n)\s*description\s*:/im.test(prSection);
+    const bulletLikeRequirements = countRequirementListItems(
+        prSection || normalized,
+    );
+
+    if (
+        ticketSectionCount >= 1 &&
+        (hasFromPr || hasAcceptanceCriteriaSection || bulletLikeRequirements >= 1)
+    ) {
+        return hasAcceptanceCriteriaSection || bulletLikeRequirements >= 2
+            ? 'COMPLETE'
+            : 'PARTIAL';
+    }
 
     if (
         (hasAcceptanceCriteriaSection || bulletLikeRequirements >= 2) &&
         (hasDescriptionSection || hasTitleSection || normalized.length >= 120)
     ) {
         return 'COMPLETE';
+    }
+
+    if (hasFromPr && (prSection.trim().length >= 20 || hasTitleSection)) {
+        return hasAcceptanceCriteriaSection || bulletLikeRequirements >= 2
+            ? 'COMPLETE'
+            : 'PARTIAL';
     }
 
     if (hasDescriptionSection || normalized.length >= 80) {
@@ -223,39 +267,13 @@ export function createBusinessRulesBlueprintTooling(
             const taskContext = await fetchTaskContextCapability(
                 fetcher,
                 capabilityRuntime,
-                {
-                    skillName: SKILL_NAME,
-                    organizationId: scope.organizationId,
-                    teamId: scope.teamId,
-                    repositoryOwner: resolveRepositoryOwner(ctx),
-                    repositoryName: resolveRepositoryName(ctx),
-                    pullRequestNumber: resolvePullRequestNumber(ctx),
-                    prBody: ctx.prBody,
-                    headRef: resolvePullRequestHeadRef(ctx),
-                    userQuestion: readPrepareContextString(ctx, 'userQuestion'),
-                    pullRequestDescription: readPrepareContextString(
-                        ctx,
-                        'pullRequestDescription',
-                    ),
-                    taskContext: readPrepareContextString(ctx, 'taskContext'),
-                    taskId: readPrepareContextString(ctx, 'taskId'),
-                    taskUrl: readPrepareContextString(ctx, 'taskUrl'),
-                    taskReference: readPrepareContextString(
-                        ctx,
-                        'taskReference',
-                    ),
-                    userLanguage: ctx.userLanguage,
-                    thread: ctx.thread,
-                    excludedTools: resolveExcludedTools(capabilityTools),
-                    businessSignals: asBusinessSignalHints(
-                        ctx.prepareContext?.businessSignals,
-                    ),
-                    taskContextResolutionMode:
-                        hooks?.resolveTaskContextMode?.(ctx, providerType) ??
-                        'cache_first',
-                    enableAgenticFallback:
-                        ctx.prepareContext?.enableAgenticFallback,
-                },
+                buildTaskContextReadParams(
+                    ctx,
+                    scope,
+                    capabilityTools,
+                    hooks,
+                    providerType,
+                ),
                 {
                     getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
                     getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
@@ -271,7 +289,194 @@ export function createBusinessRulesBlueprintTooling(
                 traces: taskContext.traces,
             };
         },
+
+        resolveTaskContextFromManifest: async (
+            ctx: BusinessRulesContext,
+            manifest: TaskContextManifest,
+        ) => {
+            if (!manifest.references.length) {
+                return { value: [], traces: [], unresolvedReferences: [] };
+            }
+
+            const scope = resolveExecutionScope(ctx);
+            const resolutionMode =
+                hooks?.resolveTaskContextMode?.(ctx, providerType) ??
+                'agent_first';
+            const capabilityHooks = {
+                getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
+                getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
+                saveCachedTaskContextTools:
+                    hooks?.saveCachedTaskContextTools,
+                resolvePreferredTool: hooks?.resolvePreferredTool,
+                recordExecution: hooks?.recordExecution,
+            };
+            const baseParams = buildTaskContextReadParams(
+                ctx,
+                scope,
+                capabilityTools,
+                hooks,
+                providerType,
+                {
+                    manifest,
+                    resolutionMode,
+                },
+            );
+            const traces: CapabilityExecutionTrace[] = [];
+            let unresolvedReferences: TaskReference[] = [];
+
+            if (resolutionMode === 'agent_first') {
+                const agentResult = await fetchTaskContextCapability(
+                    fetcher,
+                    capabilityRuntime,
+                    baseParams,
+                    capabilityHooks,
+                );
+                traces.push(...agentResult.traces);
+
+                if (isUsableTaskContextNormalized(agentResult.normalized)) {
+                    const normalizedTickets: TaskContextNormalized[] = [
+                        agentResult.normalized,
+                    ];
+                    const supplementalReferences =
+                        resolveSupplementalReferences(
+                            manifest,
+                            agentResult.normalized,
+                        );
+
+                    if (supplementalReferences.length > 0) {
+                        const supplementalResults = await fetchAllTaskContexts(
+                            fetcher,
+                            capabilityRuntime,
+                            {
+                                ...baseParams,
+                                taskContextResolutionMode: 'cache_first',
+                            },
+                            supplementalReferences.map((reference) => ({
+                                kind: reference.kind,
+                                value: reference.value,
+                            })),
+                            capabilityHooks,
+                        );
+                        traces.push(...supplementalResults.traces);
+                        normalizedTickets.push(
+                            ...supplementalResults.normalized,
+                        );
+                        unresolvedReferences = mapScopedReferencesToTaskReferences(
+                            supplementalResults.unresolvedReferences,
+                        );
+                    }
+
+                    return {
+                        value: normalizedTickets,
+                        traces,
+                        unresolvedReferences,
+                    };
+                }
+            }
+
+            const perReferenceResults = await fetchAllTaskContexts(
+                fetcher,
+                capabilityRuntime,
+                {
+                    ...baseParams,
+                    taskContextResolutionMode: 'cache_first',
+                },
+                manifest.references.map((reference) => ({
+                    kind: reference.kind,
+                    value: reference.value,
+                })),
+                capabilityHooks,
+            );
+            traces.push(...perReferenceResults.traces);
+            unresolvedReferences = mapScopedReferencesToTaskReferences(
+                perReferenceResults.unresolvedReferences,
+            );
+
+            return {
+                value: perReferenceResults.normalized,
+                traces,
+                unresolvedReferences,
+            };
+        },
     };
+}
+
+function buildTaskContextReadParams(
+    ctx: BusinessRulesContext,
+    scope: ExecutionScope,
+    capabilityTools: ReturnType<typeof createCapabilityToolRuntime>,
+    hooks: CapabilityExecutionHooks<BusinessRulesContext> | undefined,
+    providerType: string,
+    overrides?: {
+        manifest?: TaskContextManifest;
+        resolutionMode?: 'cache_first' | 'agent_first';
+    },
+) {
+    const manifest = overrides?.manifest;
+    const primaryReference = manifest?.primaryReference;
+    const taskReferences = manifest?.references ?? [];
+    const resolutionMode =
+        overrides?.resolutionMode ??
+        hooks?.resolveTaskContextMode?.(ctx, providerType) ??
+        'agent_first';
+
+    return {
+        skillName: SKILL_NAME,
+        organizationId: scope.organizationId,
+        teamId: scope.teamId,
+        repositoryOwner: resolveRepositoryOwner(ctx),
+        repositoryName: resolveRepositoryName(ctx),
+        pullRequestNumber: resolvePullRequestNumber(ctx),
+        prBody: ctx.prBody,
+        headRef: resolvePullRequestHeadRef(ctx),
+        userQuestion: readPrepareContextString(ctx, 'userQuestion'),
+        pullRequestDescription: readPrepareContextString(
+            ctx,
+            'pullRequestDescription',
+        ),
+        pullRequestTitle: readPrepareContextString(ctx, 'pullRequestTitle'),
+        taskContext: readPrepareContextString(ctx, 'taskContext'),
+        taskId:
+            primaryReference?.kind === 'key'
+                ? primaryReference.value
+                : readPrepareContextString(ctx, 'taskId'),
+        taskUrl:
+            primaryReference?.kind === 'url'
+                ? primaryReference.value
+                : readPrepareContextString(ctx, 'taskUrl'),
+        taskReference:
+            primaryReference?.label ??
+            readPrepareContextString(ctx, 'taskReference'),
+        userLanguage: ctx.userLanguage,
+        thread: ctx.thread,
+        excludedTools: resolveExcludedTools(capabilityTools),
+        businessSignals: asBusinessSignalHints(ctx.prepareContext?.businessSignals),
+        primaryReference,
+        taskReferences,
+        taskContextResolutionMode: resolutionMode,
+        enableAgenticFallback:
+            resolutionMode === 'agent_first'
+                ? true
+                : ctx.prepareContext?.enableAgenticFallback,
+    };
+}
+
+function countSections(value: string, header: string): number {
+    const pattern = new RegExp(`(^|\\n)\\s*${escapeRegExp(header)}\\b`, 'gim');
+    return [...value.matchAll(pattern)].length;
+}
+
+function extractMarkdownSection(value: string, header: string): string {
+    const pattern = new RegExp(
+        `(?:^|\\n)\\s*## ${escapeRegExp(header)}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`,
+        'im',
+    );
+    const match = value.match(pattern);
+    return match?.[1]?.trim() ?? '';
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function resolvePullRequestNumber(
@@ -440,6 +645,101 @@ function asBusinessSignalHints(
         taskLinks,
         requirementKeywords,
     };
+}
+
+function resolveSupplementalReferences(
+    manifest: TaskContextManifest,
+    agentTicket: TaskContextNormalized,
+): TaskReference[] {
+    const agentSurface = buildAgentTaskContextSurface(agentTicket);
+    const primaryKey =
+        manifest.primaryReference?.kind === 'key'
+            ? manifest.primaryReference.value.trim().toUpperCase()
+            : undefined;
+    const primaryUrl =
+        manifest.primaryReference?.kind === 'url'
+            ? normalizeTaskReferenceUrl(manifest.primaryReference.value)
+            : undefined;
+
+    return manifest.references.filter((reference) => {
+        if (
+            primaryKey &&
+            reference.kind === 'key' &&
+            reference.value.trim().toUpperCase() === primaryKey
+        ) {
+            return false;
+        }
+
+        if (
+            primaryUrl &&
+            reference.kind === 'url' &&
+            normalizeTaskReferenceUrl(reference.value) === primaryUrl
+        ) {
+            return false;
+        }
+
+        if (reference.kind === 'key') {
+            const normalizedKey = reference.value.trim().toUpperCase();
+            if (
+                !normalizedKey ||
+                agentSurfaceContainsIssueKey(agentSurface, normalizedKey)
+            ) {
+                return false;
+            }
+
+            return true;
+        }
+
+        const normalizedUrl = normalizeTaskReferenceUrl(reference.value);
+        if (!normalizedUrl) {
+            return false;
+        }
+
+        return !agentSurface.includes(normalizedUrl.toUpperCase());
+    });
+}
+
+function mapScopedReferencesToTaskReferences(
+    references: Array<{ kind: 'key' | 'url'; value: string }>,
+): TaskReference[] {
+    return references.map((reference) => ({
+        kind: reference.kind,
+        value:
+            reference.kind === 'key'
+                ? reference.value.trim().toUpperCase()
+                : reference.value.trim(),
+        label: reference.value.trim(),
+        source: 'body' as const,
+    }));
+}
+
+function normalizeTaskReferenceUrl(url: string): string {
+    return url.trim().replace(/[),.;]+$/g, '');
+}
+
+function buildAgentTaskContextSurface(
+    ticket: TaskContextNormalized,
+): string {
+    return [ticket.id, ticket.title, ticket.description]
+        .filter((part): part is string => typeof part === 'string')
+        .join('\n')
+        .toUpperCase();
+}
+
+function agentSurfaceContainsIssueKey(
+    agentSurface: string,
+    issueKey: string,
+): boolean {
+    const normalizedKey = issueKey.trim().toUpperCase();
+    if (!normalizedKey) {
+        return false;
+    }
+
+    const pattern = new RegExp(
+        `(?<![A-Z0-9])${escapeRegExp(normalizedKey)}(?![A-Z0-9])`,
+        'i',
+    );
+    return pattern.test(agentSurface);
 }
 
 function sanitizeStringArray(value: unknown): string[] | undefined {

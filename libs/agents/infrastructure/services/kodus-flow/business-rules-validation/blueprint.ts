@@ -11,7 +11,7 @@ import { BlueprintStep } from '@libs/shared/blueprint/blueprint.types';
 
 
 
-import { BusinessRulesContext } from './types';
+import { BusinessRulesContext, TaskContextNormalized, TaskReference } from './types';
 import {
     buildBusinessLogicEligibility,
     getPullRequestDiffMissingInfoMessage,
@@ -24,6 +24,12 @@ import {
     resolvePullRequestDescription,
     resolveTaskContext,
 } from './blueprint.tooling';
+import {
+    buildPrTextContext,
+    buildTaskContextManifest,
+    mergeTaskContextSources,
+    shouldAttemptMcpFetch,
+} from './task-context-resolver';
 
 const baseContextSchema = z.looseObject({
     organizationAndTeamData: z.looseObject({
@@ -185,34 +191,101 @@ export function createBusinessRulesBlueprint(
         },
         {
             type: 'deterministic',
-            name: 'fetchTaskContextFromMcp',
+            name: 'resolveTaskContext',
             contract: {
                 input: taskContextInputSchema,
                 output: hasTaskContextSchema,
             },
             fn: async (ctx): Promise<BusinessRulesContext> => {
-                const fallbackTaskContext = resolveTaskContext(ctx);
-                if (fallbackTaskContext.trim().length > 0) {
+                const overrideTaskContext = resolveTaskContext(ctx);
+                if (overrideTaskContext.trim().length > 0) {
                     return {
                         ...ctx,
-                        taskContext: fallbackTaskContext,
+                        taskContext: overrideTaskContext,
                     };
                 }
 
-                const fetched = await tooling.fetchTaskContext(ctx);
-                const taskContext =
-                    fetched.value &&
-                    (fetched.value.title || fetched.value.description)
-                        ? formatNormalizedTaskContext(fetched.value)
-                        : fallbackTaskContext;
+                const prepareContext = ctx.prepareContext;
+                const prTextContext = buildPrTextContext({
+                    title: readPrepareContextString(prepareContext, 'pullRequestTitle'),
+                    body:
+                        readPrepareContextString(
+                            prepareContext,
+                            'pullRequestDescription',
+                        ) ?? ctx.prBody,
+                    branch:
+                        prepareContext?.pullRequest?.headRef ??
+                        prepareContext?.headRef,
+                });
+
+                const explicitTaskId =
+                    typeof prepareContext?.taskId === 'string' &&
+                    prepareContext.taskId.trim().length > 0
+                        ? prepareContext.taskId.trim()
+                        : undefined;
+                const explicitTaskUrl =
+                    typeof prepareContext?.taskUrl === 'string' &&
+                    prepareContext.taskUrl.trim().length > 0
+                        ? prepareContext.taskUrl.trim()
+                        : undefined;
+                const explicitTaskReference =
+                    typeof prepareContext?.taskReference === 'string' &&
+                    prepareContext.taskReference.trim().length > 0
+                        ? prepareContext.taskReference.trim()
+                        : undefined;
+
+                const prTitle = readPrepareContextString(
+                    prepareContext,
+                    'pullRequestTitle',
+                );
+                const prBranch =
+                    prepareContext?.pullRequest?.headRef ??
+                    prepareContext?.headRef;
+                const prBodyForManifest =
+                    readPrepareContextString(
+                        prepareContext,
+                        'pullRequestDescription',
+                    ) ?? ctx.prBody;
+
+                const manifest =
+                    prepareContext?.taskContextManifest ??
+                    buildTaskContextManifest({
+                        title: prTitle,
+                        branch: prBranch,
+                        body: prBodyForManifest,
+                        businessSignals: prepareContext?.businessSignals,
+                        taskId: explicitTaskId,
+                        taskUrl: explicitTaskUrl,
+                        taskReference: explicitTaskReference,
+                    });
+
+                let mcpNormalizedList: TaskContextNormalized[] = [];
+                let traces: CapabilityExecutionTrace[] = [];
+                let unresolvedReferences: TaskReference[] = [];
+
+                if (shouldAttemptMcpFetch(manifest.references)) {
+                    const fetched = await tooling.resolveTaskContextFromManifest(
+                        ctx,
+                        manifest,
+                    );
+                    mcpNormalizedList = fetched.value;
+                    traces = fetched.traces;
+                    unresolvedReferences = fetched.unresolvedReferences;
+                }
+
+                const merged = mergeTaskContextSources({
+                    mcpNormalizedList,
+                    prTextContext,
+                    unresolvedReferences,
+                });
 
                 return {
                     ...ctx,
-                    taskContext,
-                    taskContextNormalized: fetched.value,
+                    taskContext: merged.taskContext,
+                    taskContextNormalized: merged.taskContextNormalized,
                     capabilityExecutionTrace: appendCapabilityTraces(
                         ctx,
-                        fetched.traces,
+                        traces,
                     ),
                 };
             },
@@ -459,32 +532,19 @@ function readPrepareContextPrDiff(ctx: BusinessRulesContext): string {
     return typeof preloadedDiff === 'string' ? preloadedDiff : '';
 }
 
-function formatNormalizedTaskContext(
-    payload: NonNullable<BusinessRulesContext['taskContextNormalized']>,
-): string {
-    const sections: string[] = [];
-
-    if (payload.id) {
-        sections.push(`Task ID: ${payload.id}`);
-    }
-    if (payload.title) {
-        sections.push(`Title: ${payload.title}`);
-    }
-    if (payload.description) {
-        sections.push(`Description:\n${payload.description}`);
-    }
-    if (payload.acceptanceCriteria?.length) {
-        sections.push(
-            `Acceptance Criteria:\n${payload.acceptanceCriteria
-                .map((item) => `- ${item}`)
-                .join('\n')}`,
-        );
-    }
-    if (payload.links?.length) {
-        sections.push(
-            `Links:\n${payload.links.map((item) => `- ${item}`).join('\n')}`,
-        );
-    }
-
-    return sections.join('\n\n');
+function readPrepareContextString(
+    prepareContext: BusinessRulesContext['prepareContext'],
+    key: keyof Pick<
+        NonNullable<BusinessRulesContext['prepareContext']>,
+        | 'pullRequestTitle'
+        | 'pullRequestDescription'
+        | 'taskId'
+        | 'taskUrl'
+        | 'taskReference'
+    >,
+): string | undefined {
+    const value = prepareContext?.[key];
+    return typeof value === 'string' && value.trim().length > 0
+        ? value
+        : undefined;
 }

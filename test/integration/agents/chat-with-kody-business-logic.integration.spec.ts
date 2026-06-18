@@ -245,6 +245,10 @@ describe('ChatWithKodyFromGitUseCase business-logic integration', () => {
             codeManagementService as any,
             { execute: jest.fn() } as any,
             businessRulesValidationUseCase,
+            {
+                acquire: jest.fn(),
+                release: jest.fn(),
+            } as any,
         );
     });
 
