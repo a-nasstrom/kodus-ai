@@ -1125,6 +1125,96 @@ describe('fetchTaskContext capability', () => {
         });
     });
 
+    it('uses agent-first resolution with primary reference in the prompt', async () => {
+        const callAgent: CallAgentMock = jest.fn().mockResolvedValue({
+            result: JSON.stringify({
+                id: 'LKDB-301',
+                title: 'Unread messages folder in Messenger',
+                taskContext:
+                    'Add a pinned Unread folder row at the top of the messaging inbox.',
+                toolsUsed: ['getJiraIssue'],
+            }),
+        });
+
+        const callTool: CallToolMock = jest.fn().mockResolvedValue({ result: {} });
+        const toolCaller: ToolCaller = {
+            callTool,
+            callAgent,
+            getRegisteredTools: () => [
+                { name: 'getJiraIssue' },
+                { name: 'search' },
+            ],
+            getToolsForLLM: () => [
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        required: ['cloudId', 'issueIdOrKey'],
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                    },
+                },
+                {
+                    name: 'search',
+                    parameters: {
+                        required: ['query'],
+                        properties: { query: { type: 'string' } },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => [
+                'getJiraIssue',
+                'search',
+            ]),
+            getCachedTaskContextTools: jest.fn(async () => ['search']),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        const result = await fetchTaskContext(
+            toolCaller,
+            createCapabilityRuntime('jira'),
+            {
+                ...createBaseParams(),
+                taskContextResolutionMode: 'agent_first',
+                enableAgenticFallback: true,
+                pullRequestTitle:
+                    'LKDB-301: Unread messages folder in Messenger',
+                pullRequestDescription:
+                    'Adds a pinned Unread folder row at the top of the messaging inbox.',
+                primaryReference: {
+                    kind: 'key',
+                    value: 'LKDB-301',
+                    label: 'LKDB-301',
+                },
+                taskReferences: [
+                    {
+                        kind: 'key',
+                        value: 'LKDB-301',
+                        label: 'LKDB-301',
+                    },
+                ],
+                businessSignals: {
+                    ticketKeys: ['LKDB-301'],
+                },
+            },
+            hooks,
+        );
+
+        expect(callAgent).toHaveBeenCalled();
+        expect(callAgent.mock.calls[0]?.[1]).toContain('PRIMARY_REFERENCE');
+        expect(callAgent.mock.calls[0]?.[1]).toContain('LKDB-301');
+        expect(result.normalized).toMatchObject({
+            id: 'LKDB-301',
+            title: 'Unread messages folder in Messenger',
+        });
+    });
+
     it('uses the Jira site URL as cloudId candidate when issue link is available', async () => {
         const callTool: CallToolMock = jest
             .fn()

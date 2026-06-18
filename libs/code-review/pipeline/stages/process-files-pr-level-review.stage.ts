@@ -1,4 +1,5 @@
 import { createLogger, createThreadId } from '@kodus/flow';
+import { buildBusinessSignalsFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
@@ -334,9 +335,13 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         }
 
         const prBody = context.pullRequest.body ?? '';
-        const signalSources = this.buildSignalSources(context);
         const prBodyHash = this.computePrBodyHash(prBody);
-        const signals = this.detectSignals(signalSources, prBody);
+        const signals = buildBusinessSignalsFromSources({
+            title: context.pullRequest?.title ?? '',
+            branch: context.pullRequest?.head?.ref ?? '',
+            body: prBody,
+            bodyForKeywords: prBody,
+        });
 
         try {
             const prepareContext = {

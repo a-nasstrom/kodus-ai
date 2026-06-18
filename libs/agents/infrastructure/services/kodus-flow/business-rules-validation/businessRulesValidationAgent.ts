@@ -141,7 +141,7 @@ export class BusinessRulesValidationAgentProvider extends AbstractSkillProvider<
     protected resolveTaskContextMode(
         ctx: BusinessRulesContext,
     ): 'cache_first' | 'agent_first' {
-        return ctx.prepareContext?.taskContextResolutionMode ?? 'cache_first';
+        return ctx.prepareContext?.taskContextResolutionMode ?? 'agent_first';
     }
 
     protected resolveUserLanguage(

@@ -26,8 +26,8 @@ import {
 } from './blueprint.tooling';
 import {
     buildPrTextContext,
+    buildTaskContextManifest,
     mergeTaskContextSources,
-    resolveTaskReferences,
     shouldAttemptMcpFetch,
 } from './task-context-resolver';
 
@@ -234,7 +234,11 @@ export function createBusinessRulesBlueprint(
                         ? prepareContext.taskReference.trim()
                         : undefined;
 
-                const references = resolveTaskReferences({
+                const manifest = buildTaskContextManifest({
+                    title: readPrepareContextString(
+                        prepareContext,
+                        'pullRequestTitle',
+                    ),
                     businessSignals: prepareContext?.businessSignals,
                     taskId: explicitTaskId,
                     taskUrl: explicitTaskUrl,
@@ -244,12 +248,14 @@ export function createBusinessRulesBlueprint(
                 let mcpNormalizedList: TaskContextNormalized[] = [];
                 let traces: CapabilityExecutionTrace[] = [];
 
-                if (shouldAttemptMcpFetch(references)) {
-                    const fetched = await tooling.fetchAllTaskContexts(
+                if (shouldAttemptMcpFetch(manifest.references)) {
+                    const fetched = await tooling.resolveTaskContextFromManifest(
                         ctx,
-                        references,
+                        manifest,
                     );
-                    mcpNormalizedList = fetched.value ?? [];
+                    if (fetched.value) {
+                        mcpNormalizedList = [fetched.value];
+                    }
                     traces = fetched.traces;
                 }
 

@@ -12,6 +12,7 @@ export type {
     TaskContextReadHooks,
     TaskContextReadParams,
     TaskContextReadResult,
+    TaskContextReferenceHint,
     TaskContextScopedReference,
 } from './task-context-read';
 

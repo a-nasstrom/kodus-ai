@@ -1,6 +1,7 @@
 import {
     buildBusinessSignalsFromSources,
     buildPrTextContext,
+    buildTaskContextManifest,
     dedupeTaskReferences,
     mergeTaskContextSources,
     resolveTaskReferences,
@@ -121,6 +122,55 @@ describe('task-context-resolver', () => {
                 expect.arrayContaining(['PROJ-100', 'PROJ-200']),
             );
             expect(signals.requirementKeywords).toContain('acceptance criteria');
+        });
+
+        it('anchors ticket scope to the PR title when body contains SRS cross-refs', () => {
+            const signals = buildBusinessSignalsFromSources({
+                title: 'LKDB-301: Unread messages folder in Messenger',
+                body: [
+                    'SRS: https://symfa.atlassian.net/wiki/spaces/SPD/pages/5192515598/SRS+Data+Breach+Operations+Portal',
+                    'Cross-refs: LKDB-138, LKDB-169, LKDB-5, LKDB-109, LKDB-110, LKDB-21',
+                ].join('\n'),
+                bodyForKeywords: 'acceptance criteria',
+            });
+
+            expect(signals.ticketKeys).toEqual(['LKDB-301']);
+            expect(signals.taskLinks).toEqual([
+                'https://symfa.atlassian.net/wiki/spaces/SPD/pages/5192515598/SRS+Data+Breach+Operations+Portal',
+            ]);
+        });
+
+        it('builds a manifest with title as primary reference', () => {
+            const manifest = buildTaskContextManifest({
+                title: 'LKDB-301: Unread messages folder in Messenger',
+                businessSignals: buildBusinessSignalsFromSources({
+                    title: 'LKDB-301: Unread messages folder in Messenger',
+                    body: 'Adds unread folder row',
+                }),
+            });
+
+            expect(manifest.primaryReference).toEqual(
+                expect.objectContaining({
+                    kind: 'key',
+                    value: 'LKDB-301',
+                }),
+            );
+            expect(manifest.references[0]?.value).toBe('LKDB-301');
+        });
+
+        it('resolves MCP references from title ticket for SRS-heavy PR bodies', () => {
+            const refs = resolveTaskReferences({
+                businessSignals: buildBusinessSignalsFromSources({
+                    title: 'LKDB-301: Unread messages folder in Messenger',
+                    body: 'See LKDB-138 and https://symfa.atlassian.net/wiki/spaces/SPD/pages/5192515598',
+                }),
+            });
+
+            expect(refs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ kind: 'key', value: 'LKDB-301' }),
+                ]),
+            );
         });
     });
 

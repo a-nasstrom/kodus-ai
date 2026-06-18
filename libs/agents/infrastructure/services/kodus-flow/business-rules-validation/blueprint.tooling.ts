@@ -1,5 +1,4 @@
 import {
-    fetchAllTaskContexts,
     fetchPullRequestDiff,
     fetchPullRequestMetadata,
     fetchTaskContext as fetchTaskContextCapability,
@@ -19,7 +18,10 @@ import {
     TaskContextNormalized,
     TaskQuality,
 } from './types';
-import type { TaskReference } from './task-context-resolver';
+import type {
+    TaskContextManifest,
+    TaskReference,
+} from './task-context-resolver';
 
 export const SKILL_NAME = 'business-rules-validation';
 export const PR_METADATA_CAPABILITY = 'pr.metadata.read';
@@ -52,10 +54,10 @@ export interface BusinessRulesBlueprintTooling {
     fetchTaskContext: (
         ctx: BusinessRulesContext,
     ) => Promise<ToolingResult<TaskContextNormalized | undefined>>;
-    fetchAllTaskContexts: (
+    resolveTaskContextFromManifest: (
         ctx: BusinessRulesContext,
-        references: TaskReference[],
-    ) => Promise<ToolingResult<TaskContextNormalized[]>>;
+        manifest: TaskContextManifest,
+    ) => Promise<ToolingResult<TaskContextNormalized | undefined>>;
 }
 
 export function resolvePullRequestDescription(
@@ -280,30 +282,32 @@ export function createBusinessRulesBlueprintTooling(
             };
         },
 
-        fetchAllTaskContexts: async (
+        resolveTaskContextFromManifest: async (
             ctx: BusinessRulesContext,
-            references: TaskReference[],
+            manifest: TaskContextManifest,
         ) => {
-            if (!references.length) {
-                return { value: [], traces: [] };
+            if (!manifest.references.length) {
+                return { value: undefined, traces: [] };
             }
 
             const scope = resolveExecutionScope(ctx);
-            const baseParams = buildTaskContextReadParams(
-                ctx,
-                scope,
-                capabilityTools,
-                hooks,
-                providerType,
-            );
-            const fetched = await fetchAllTaskContexts(
+            const resolutionMode =
+                hooks?.resolveTaskContextMode?.(ctx, providerType) ??
+                'agent_first';
+            const taskContext = await fetchTaskContextCapability(
                 fetcher,
                 capabilityRuntime,
-                baseParams,
-                references.map((reference) => ({
-                    kind: reference.kind,
-                    value: reference.value,
-                })),
+                buildTaskContextReadParams(
+                    ctx,
+                    scope,
+                    capabilityTools,
+                    hooks,
+                    providerType,
+                    {
+                        manifest,
+                        resolutionMode,
+                    },
+                ),
                 {
                     getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
                     getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
@@ -315,8 +319,8 @@ export function createBusinessRulesBlueprintTooling(
             );
 
             return {
-                value: fetched.normalized,
-                traces: fetched.traces,
+                value: taskContext.normalized,
+                traces: taskContext.traces,
             };
         },
     };
@@ -328,7 +332,19 @@ function buildTaskContextReadParams(
     capabilityTools: ReturnType<typeof createCapabilityToolRuntime>,
     hooks: CapabilityExecutionHooks<BusinessRulesContext> | undefined,
     providerType: string,
+    overrides?: {
+        manifest?: TaskContextManifest;
+        resolutionMode?: 'cache_first' | 'agent_first';
+    },
 ) {
+    const manifest = overrides?.manifest;
+    const primaryReference = manifest?.primaryReference;
+    const taskReferences = manifest?.references ?? [];
+    const resolutionMode =
+        overrides?.resolutionMode ??
+        hooks?.resolveTaskContextMode?.(ctx, providerType) ??
+        'agent_first';
+
     return {
         skillName: SKILL_NAME,
         organizationId: scope.organizationId,
@@ -343,17 +359,30 @@ function buildTaskContextReadParams(
             ctx,
             'pullRequestDescription',
         ),
+        pullRequestTitle: readPrepareContextString(ctx, 'pullRequestTitle'),
         taskContext: readPrepareContextString(ctx, 'taskContext'),
-        taskId: readPrepareContextString(ctx, 'taskId'),
-        taskUrl: readPrepareContextString(ctx, 'taskUrl'),
-        taskReference: readPrepareContextString(ctx, 'taskReference'),
+        taskId:
+            primaryReference?.kind === 'key'
+                ? primaryReference.value
+                : readPrepareContextString(ctx, 'taskId'),
+        taskUrl:
+            primaryReference?.kind === 'url'
+                ? primaryReference.value
+                : readPrepareContextString(ctx, 'taskUrl'),
+        taskReference:
+            primaryReference?.label ??
+            readPrepareContextString(ctx, 'taskReference'),
         userLanguage: ctx.userLanguage,
         thread: ctx.thread,
         excludedTools: resolveExcludedTools(capabilityTools),
         businessSignals: asBusinessSignalHints(ctx.prepareContext?.businessSignals),
-        taskContextResolutionMode:
-            hooks?.resolveTaskContextMode?.(ctx, providerType) ?? 'cache_first',
-        enableAgenticFallback: ctx.prepareContext?.enableAgenticFallback,
+        primaryReference,
+        taskReferences,
+        taskContextResolutionMode: resolutionMode,
+        enableAgenticFallback:
+            resolutionMode === 'agent_first'
+                ? true
+                : ctx.prepareContext?.enableAgenticFallback,
     };
 }
 

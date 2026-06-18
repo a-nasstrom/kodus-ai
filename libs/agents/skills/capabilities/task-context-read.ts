@@ -29,6 +29,12 @@ interface TaskContextSignalHints {
     requirementKeywords?: string[];
 }
 
+export interface TaskContextReferenceHint {
+    kind: 'key' | 'url';
+    value: string;
+    label?: string;
+}
+
 export interface TaskContextReadParams {
     skillName: string;
     organizationId: string;
@@ -40,6 +46,7 @@ export interface TaskContextReadParams {
     headRef?: string;
     userQuestion?: string;
     pullRequestDescription?: string;
+    pullRequestTitle?: string;
     taskContext?: string;
     taskId?: string;
     taskUrl?: string;
@@ -50,6 +57,8 @@ export interface TaskContextReadParams {
     taskContextResolutionMode?: ResolutionMode;
     enableAgenticFallback?: boolean;
     businessSignals?: TaskContextSignalHints;
+    primaryReference?: TaskContextReferenceHint;
+    taskReferences?: TaskContextReferenceHint[];
 }
 
 export interface TaskContextReadResult {
@@ -1344,27 +1353,12 @@ async function fetchTaskContextWithAgentFallback(
             ? input.params.userLanguage.trim()
             : 'en-US';
 
-    const prompt = `Resolve task context using available MCP tools.
-
-AVAILABLE_TOOLS: ${input.candidateTools.join(', ') || '(none)'}
-USER_QUESTION: ${input.params.userQuestion ?? ''}
-PULL_REQUEST_DESCRIPTION:
-${input.params.pullRequestDescription ?? ''}
-KNOWN_TOKENS: ${[...hints.issueKeys, ...hints.issueLinks].join(', ') || '(none)'}
-KNOWN_ISSUE_NUMBERS: ${hints.issueNumbers.join(', ') || '(none)'}
-KNOWN_REPOSITORY_OWNER: ${input.params.repositoryOwner ?? '(unknown)'}
-KNOWN_REPOSITORY_NAME: ${input.params.repositoryName ?? '(unknown)'}
-USER_LANGUAGE: ${userLanguage}
-
-When calling tools that require repository data, prioritize KNOWN_REPOSITORY_OWNER and KNOWN_REPOSITORY_NAME.
-
-Return ONLY JSON:
-{
-  "taskContext": "string",
-  "title": "optional",
-  "id": "optional",
-  "toolsUsed": ["toolName"]
-}`;
+    const prompt = buildAgenticTaskContextPrompt({
+        params: input.params,
+        candidateTools: input.candidateTools,
+        hints,
+        userLanguage,
+    });
 
     try {
         const agentOptions: AgentCallOptions = {
@@ -1801,6 +1795,71 @@ function scoreNormalizedContext(value: TaskContextNormalized): number {
         score += 1;
     }
     return score;
+}
+
+function buildAgenticTaskContextPrompt(input: {
+    params: TaskContextReadParams;
+    candidateTools: string[];
+    hints: TaskContextHints;
+    userLanguage: string;
+}): string {
+    const primaryReference = formatTaskReferenceHint(input.params.primaryReference);
+    const referenceLines =
+        input.params.taskReferences?.map(formatTaskReferenceHint).filter(Boolean) ??
+        [];
+    const fallbackReferences = [
+        ...input.hints.explicitIssueKeys,
+        ...input.hints.explicitIssueLinks,
+        ...input.hints.issueKeys,
+        ...input.hints.issueLinks,
+    ];
+    const referencesBlock =
+        referenceLines.length > 0
+            ? referenceLines.join('\n')
+            : fallbackReferences.join('\n') || '(none)';
+
+    return `Resolve business task context for a pull request using the available MCP tools.
+
+You choose which tools to call (Jira, Linear, Confluence, Notion, etc.). Do not assume a specific provider.
+
+AVAILABLE_TOOLS: ${input.candidateTools.join(', ') || '(none)'}
+PRIMARY_REFERENCE (scope anchor for this PR): ${primaryReference || '(none)'}
+ALL_REFERENCES (issue keys, ticket URLs, doc links — use what fits each tool):
+${referencesBlock}
+PR_TITLE: ${input.params.pullRequestTitle?.trim() || '(unknown)'}
+PULL_REQUEST_DESCRIPTION:
+${input.params.pullRequestDescription ?? ''}
+USER_QUESTION: ${input.params.userQuestion ?? ''}
+KNOWN_ISSUE_NUMBERS: ${input.hints.issueNumbers.join(', ') || '(none)'}
+KNOWN_REPOSITORY_OWNER: ${input.params.repositoryOwner ?? '(unknown)'}
+KNOWN_REPOSITORY_NAME: ${input.params.repositoryName ?? '(unknown)'}
+USER_LANGUAGE: ${input.userLanguage}
+
+Policy:
+- PRIMARY_REFERENCE is the main scope for this PR when present.
+- Resolve requirements for that scope first using the best matching MCP tool(s).
+- Parent epics, SRS/Confluence docs, or cross-linked tickets are supporting context only unless PRIMARY_REFERENCE is itself a doc URL.
+- You may call multiple tools when references point to different systems.
+- When calling tools that require repository data, prioritize KNOWN_REPOSITORY_OWNER and KNOWN_REPOSITORY_NAME.
+
+Return ONLY JSON:
+{
+  "taskContext": "string",
+  "title": "optional",
+  "id": "optional",
+  "toolsUsed": ["toolName"]
+}`;
+}
+
+function formatTaskReferenceHint(
+    reference: TaskContextReferenceHint | undefined,
+): string {
+    if (!reference?.value?.trim()) {
+        return '';
+    }
+
+    const label = reference.label?.trim() || reference.value.trim();
+    return `- ${reference.kind}: ${label} (${reference.value.trim()})`;
 }
 
 function isUsableTaskContext(value: TaskContextNormalized): boolean {

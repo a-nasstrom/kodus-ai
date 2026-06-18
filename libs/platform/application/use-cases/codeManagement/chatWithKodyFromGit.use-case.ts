@@ -476,14 +476,6 @@ export class ChatWithKodyFromGitUseCase {
         }
 
         const pullRequestTitle = this.getPullRequestTitle(params);
-        const signalSources = [
-            commentBody,
-            pullRequestTitle,
-            pullRequestDescription,
-            headRef,
-        ]
-            .filter(Boolean)
-            .join('\n');
 
         const prepareContext = {
             userQuestion: commentBody,
@@ -499,7 +491,9 @@ export class ChatWithKodyFromGitUseCase {
             customInstructions: this.extractCustomInstructions(params),
             taskReference: commentBody,
             businessSignals: buildBusinessSignalsFromSources({
-                combinedForTickets: signalSources,
+                title: pullRequestTitle,
+                branch: headRef,
+                body: pullRequestDescription,
                 bodyForKeywords: pullRequestDescription ?? commentBody,
             }),
         };

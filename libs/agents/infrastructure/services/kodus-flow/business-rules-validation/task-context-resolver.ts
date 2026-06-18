@@ -23,6 +23,11 @@ export interface TaskReference {
     label: string;
 }
 
+export interface TaskContextManifest {
+    primaryReference?: TaskReference;
+    references: TaskReference[];
+}
+
 export interface MergeTaskContextSourcesInput {
     mcpNormalizedList: TaskContextNormalized[];
     prTextContext: string;
@@ -63,30 +68,48 @@ export function buildPrTextContext(input: {
 }
 
 export function buildBusinessSignalsFromSources(input: {
+    title?: string;
+    branch?: string;
+    body?: string;
+    /** @deprecated Prefer title, branch, and body for ordered ticket scoping. */
     combinedForTickets?: string;
     bodyForKeywords?: string;
     taskId?: string;
     taskUrl?: string;
 }): BusinessRulesSignals {
-    const combined = input.combinedForTickets ?? '';
-    const body = input.bodyForKeywords ?? '';
+    const title = input.title?.trim() ?? '';
+    const branch = input.branch?.trim() ?? '';
+    const body =
+        input.body?.trim() ??
+        (input.title || input.branch
+            ? ''
+            : (input.combinedForTickets?.trim() ?? ''));
+    const keywordsBody = input.bodyForKeywords?.trim() ?? body;
     const normalizedTaskId = input.taskId?.trim().toUpperCase();
     const normalizedTaskUrl = input.taskUrl?.trim();
 
-    const ticketKeys = uniqueNonEmpty([
-        ...(normalizedTaskId ? [normalizedTaskId] : []),
-        ...(combined.match(PIPELINE_TICKET_KEY_PATTERN)?.map((match) =>
-            match.toUpperCase(),
-        ) ?? []),
+    const titleKeys = extractTicketKeysFromText(title);
+    const branchKeys = extractTicketKeysFromText(branch);
+    const bodyKeys = extractTicketKeysFromText(body);
+
+    const ticketKeys = buildScopedTicketKeys({
+        explicitTaskId: normalizedTaskId,
+        titleKeys,
+        branchKeys,
+        bodyKeys,
+    });
+
+    const scannedLinks = uniqueNonEmpty([
+        ...extractUrlsFromText(title),
+        ...extractUrlsFromText(branch),
+        ...extractUrlsFromText(body),
     ]);
     const taskLinks = uniqueNonEmpty([
-        ...(normalizedTaskUrl ? [normalizedTaskUrl] : []),
-        ...(combined.match(/https?:\/\/[^\s)>\]"']+/g) ?? []).map((url) =>
-            normalizeUrl(url),
-        ),
+        ...(normalizedTaskUrl ? [normalizeUrl(normalizedTaskUrl)] : []),
+        ...scannedLinks,
     ]);
 
-    const lower = body.toLowerCase();
+    const lower = keywordsBody.toLowerCase();
     const requirementKeywords = REQUIREMENT_KEYWORDS.filter((keyword) =>
         lower.includes(keyword),
     );
@@ -123,6 +146,85 @@ export function resolveTaskReferences(input: {
     ]);
 
     return dedupeTaskReferences(keys, links).slice(0, MAX_TASK_REFERENCES);
+}
+
+export function buildTaskContextManifest(input: {
+    title?: string;
+    businessSignals?: BusinessRulesSignals;
+    taskId?: string;
+    taskUrl?: string;
+    taskReference?: string;
+}): TaskContextManifest {
+    const references = resolveTaskReferences(input);
+    const primaryReference = resolvePrimaryTaskReference({
+        title: input.title,
+        taskId: input.taskId,
+        taskUrl: input.taskUrl,
+        references,
+    });
+
+    return {
+        primaryReference,
+        references,
+    };
+}
+
+function resolvePrimaryTaskReference(input: {
+    title?: string;
+    taskId?: string;
+    taskUrl?: string;
+    references: TaskReference[];
+}): TaskReference | undefined {
+    const titleKeys = extractTicketKeysFromText(input.title);
+    if (titleKeys.length > 0) {
+        const titleKey = titleKeys[0]!;
+        const matched = input.references.find(
+            (reference) =>
+                reference.kind === 'key' &&
+                reference.value.toUpperCase() === titleKey,
+        );
+        if (matched) {
+            return matched;
+        }
+
+        return {
+            kind: 'key',
+            value: titleKey,
+            label: titleKey,
+        };
+    }
+
+    const explicitTaskId = input.taskId?.trim().toUpperCase();
+    if (explicitTaskId) {
+        return (
+            input.references.find(
+                (reference) =>
+                    reference.kind === 'key' &&
+                    reference.value.toUpperCase() === explicitTaskId,
+            ) ?? {
+                kind: 'key',
+                value: explicitTaskId,
+                label: explicitTaskId,
+            }
+        );
+    }
+
+    const explicitTaskUrl = input.taskUrl?.trim();
+    if (explicitTaskUrl) {
+        return (
+            input.references.find(
+                (reference) =>
+                    reference.kind === 'url' &&
+                    normalizeUrl(reference.value) === normalizeUrl(explicitTaskUrl),
+            ) ?? {
+                kind: 'url',
+                value: explicitTaskUrl,
+                label: explicitTaskUrl,
+            }
+        );
+    }
+
+    return input.references[0];
 }
 
 /** @deprecated Use resolveTaskReferences */
@@ -291,6 +393,53 @@ function formatTicketSection(ticket: TaskContextNormalized): string {
     }
 
     return parts.join('\n\n');
+}
+
+function extractTicketKeysFromText(text?: string): string[] {
+    if (!text?.trim()) {
+        return [];
+    }
+
+    const keys = new Set<string>();
+    for (const match of text.matchAll(PIPELINE_TICKET_KEY_PATTERN)) {
+        keys.add(match[0].toUpperCase());
+    }
+
+    return [...keys];
+}
+
+function buildScopedTicketKeys(input: {
+    explicitTaskId?: string;
+    titleKeys: string[];
+    branchKeys: string[];
+    bodyKeys: string[];
+}): string[] {
+    const { explicitTaskId, titleKeys, branchKeys, bodyKeys } = input;
+
+    if (titleKeys.length > 0) {
+        return uniqueNonEmpty([
+            ...(explicitTaskId ? [explicitTaskId] : []),
+            ...titleKeys,
+            ...branchKeys,
+        ]).slice(0, MAX_TASK_REFERENCES);
+    }
+
+    return uniqueNonEmpty([
+        ...(explicitTaskId ? [explicitTaskId] : []),
+        ...branchKeys,
+        ...bodyKeys,
+    ]).slice(0, MAX_TASK_REFERENCES);
+}
+
+function extractUrlsFromText(text?: string): string[] {
+    if (!text?.trim()) {
+        return [];
+    }
+
+    const matches = text.match(/https?:\/\/[^\s)>\]"']+/g) ?? [];
+    return uniqueNonEmpty(
+        matches.map((url) => normalizeUrl(url)).filter(Boolean),
+    );
 }
 
 function extractIssueKeysFromUserProvidedText(text?: string): string[] {

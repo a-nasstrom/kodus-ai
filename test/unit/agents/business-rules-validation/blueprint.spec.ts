@@ -1301,7 +1301,7 @@ describe('business-rules blueprint', () => {
         );
     });
 
-    it('merges two ticket contexts when multiple keys are present', async () => {
+    it('resolves multiple references through agent-first task context fetch', async () => {
         const fetcher = {
             callTool: jest
                 .fn()
@@ -1314,39 +1314,21 @@ describe('business-rules blueprint', () => {
                         });
                     }
 
-                    const issueKey = (args as Record<string, unknown>)
-                        ?.issueIdOrKey;
-                    if (toolName === 'getJiraIssue' && issueKey === 'PROJ-100') {
-                        return Promise.resolve({
-                            result: {
-                                data: {
-                                    key: 'PROJ-100',
-                                    fields: {
-                                        summary: 'Epic checkout',
-                                        description: 'Parent epic scope',
-                                    },
-                                },
-                            },
-                        });
-                    }
-                    if (toolName === 'getJiraIssue' && issueKey === 'PROJ-101') {
-                        return Promise.resolve({
-                            result: {
-                                data: {
-                                    key: 'PROJ-101',
-                                    fields: {
-                                        summary: 'Sub-task validation',
-                                        description: 'Card validation rules',
-                                        acceptanceCriteria: ['Reject invalid card'],
-                                    },
-                                },
-                            },
-                        });
-                    }
-
                     return Promise.resolve({ result: {} });
                 }),
-            callAgent: jest.fn(),
+            callAgent: jest.fn().mockResolvedValue({
+                result: JSON.stringify({
+                    id: 'PROJ-100',
+                    title: 'Epic checkout | Sub-task validation',
+                    taskContext: [
+                        '## From ticket PROJ-100',
+                        'Parent epic scope',
+                        '## From ticket PROJ-101',
+                        'Reject invalid card',
+                    ].join('\n'),
+                    toolsUsed: ['getJiraIssue'],
+                }),
+            }),
             getRegisteredTools: jest
                 .fn()
                 .mockReturnValue([
@@ -1373,7 +1355,7 @@ describe('business-rules blueprint', () => {
             getSeedTaskContextTools: jest
                 .fn()
                 .mockResolvedValue(['getJiraIssue']),
-            resolveTaskContextMode: jest.fn().mockReturnValue('cache_first'),
+            resolveTaskContextMode: jest.fn().mockReturnValue('agent_first'),
             saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
             resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
             recordExecution: jest.fn().mockResolvedValue(undefined),
@@ -1417,14 +1399,11 @@ describe('business-rules blueprint', () => {
             next = await step.fn(next);
         }
 
+        expect(fetcher.callAgent).toHaveBeenCalled();
         expect(next.taskContext).toContain('## From ticket PROJ-100');
         expect(next.taskContext).toContain('## From ticket PROJ-101');
         expect(next.taskContext).toContain('Epic checkout');
         expect(next.taskContext).toContain('Reject invalid card');
-        const jiraCalls = fetcher.callTool.mock.calls.filter(
-            (call: unknown[]) => call[0] === 'getJiraIssue',
-        );
-        expect(jiraCalls.length).toBeGreaterThanOrEqual(2);
     });
 
     it('classifies ## From PR only context as PARTIAL or better', () => {
