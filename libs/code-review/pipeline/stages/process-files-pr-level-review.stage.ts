@@ -21,6 +21,8 @@ import {
     KodyRulesPrLevelAnalysisService,
 } from '@libs/ee/codeBase/kodyRulesPrLevelAnalysis.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+import { getConnectedTaskManagementMcps } from '../helpers/connected-task-management-mcps';
+import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 
 @Injectable()
 export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -46,6 +48,8 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         private readonly crossFileAnalysisService: CrossFileAnalysisService,
 
         private readonly businessRulesValidationAgentProvider: BusinessRulesValidationAgentProvider,
+
+        private readonly mcpManagerService: MCPManagerService,
     ) {
         super();
     }
@@ -337,6 +341,10 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         const signalSources = this.buildSignalSources(context);
         const prBodyHash = this.computePrBodyHash(prBody);
         const signals = this.detectSignals(signalSources, prBody);
+        const connectedMcps = await getConnectedTaskManagementMcps(
+            this.mcpManagerService,
+            context.organizationAndTeamData,
+        );
 
         try {
             const prepareContext = {
@@ -348,9 +356,11 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 },
                 repository: context.repository,
                 pullRequestDescription: prBody,
+                pullRequestTitle: context.pullRequest?.title ?? '',
                 platformType: context.platformType,
                 defaultBranch: context.pullRequest?.base?.ref,
                 businessSignals: signals,
+                connectedTaskMcps: connectedMcps,
             };
             const thread = this.createBusinessLogicThread(context);
 

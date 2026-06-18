@@ -27,15 +27,24 @@ describe('ProcessFilesPrLevelReviewStage', () => {
     let businessRulesValidationAgentProvider: {
         execute: jest.Mock;
     };
+    let mcpManagerService: {
+        getConnections: jest.Mock;
+        getIntegrations: jest.Mock;
+    };
 
     beforeEach(() => {
         businessRulesValidationAgentProvider = {
             execute: jest.fn(),
         };
+        mcpManagerService = {
+            getConnections: jest.fn().mockResolvedValue([]),
+            getIntegrations: jest.fn().mockResolvedValue([]),
+        };
         stage = new ProcessFilesPrLevelReviewStage(
             {} as any,
             {} as any,
             businessRulesValidationAgentProvider as any,
+            mcpManagerService as any,
         );
         jest.clearAllMocks();
     });
@@ -311,6 +320,43 @@ Encontrei contexto suficiente da task, mas nao consegui carregar o diff da pull 
                         businessSignals: expect.objectContaining({
                             ticketKeys: ['DL-2773'],
                         }),
+                    }),
+                }),
+            );
+        });
+
+        it('passes pullRequestTitle and connectedTaskMcps to the agent', async () => {
+            mcpManagerService.getConnections.mockResolvedValue([
+                {
+                    appName: 'Jira',
+                    provider: 'jira',
+                    organizationId: 'org-1',
+                },
+            ]);
+
+            businessRulesValidationAgentProvider.execute.mockResolvedValue(
+                '## Business Rules Validation\n\nStatus: no gaps',
+            );
+
+            const context = ctx({
+                pullRequest: {
+                    number: 42,
+                    body: 'Implements DL-2773',
+                    title: '[DL-2773] Add print working mode',
+                    head: { ref: 'feature/print-mode' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            await (stage as any).runBusinessLogicValidation(context);
+
+            expect(
+                businessRulesValidationAgentProvider.execute,
+            ).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    prepareContext: expect.objectContaining({
+                        pullRequestTitle: '[DL-2773] Add print working mode',
+                        connectedTaskMcps: ['jira'],
                     }),
                 }),
             );

@@ -13,6 +13,7 @@ import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+import { getConnectedTaskManagementMcps } from '../helpers/connected-task-management-mcps';
 
 /**
  * Validates that the code in the PR matches the business requirements
@@ -55,16 +56,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         'githubissues',
         'atlassianrovo',
     ] as const;
-
-    private static readonly TASK_MANAGEMENT_HINTS = [
-        'jira',
-        'linear',
-        'notion',
-        'clickup',
-        'googledocs',
-        'atlassianrovo',
-        'githubissues',
-    ];
 
     /** Maps task-management MCP names to URL domain patterns.
      *  If a URL in the PR description contains one of these domains,
@@ -124,8 +115,10 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
 
         const prBodyHash = this.computePrBodyHash(prBody);
         const signals = this.detectSignals(signalSources, prBody);
-        const connectedMcps =
-            await this.getConnectedTaskManagementMcps(context);
+        const connectedMcps = await getConnectedTaskManagementMcps(
+            this.mcpManagerService,
+            context.organizationAndTeamData,
+        );
 
         try {
             const prepareContext = {
@@ -358,110 +351,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             taskLinks: this.detectTaskLinks(combined),
             requirementKeywords: this.detectRequirementKeywords(body),
         };
-    }
-
-    /**
-     * Returns the normalized names of connected task-management MCPs
-     * (e.g. ['jira', 'atlassianrovo']). Considers both installed connections
-     * (`mcp_connections`) and OAuth-authenticated managed plugins
-     * (`mcp_integration_oauth`, surfaced as `active` on integrations).
-     */
-    private async getConnectedTaskManagementMcps(
-        context: CodeReviewPipelineContext,
-    ): Promise<string[]> {
-        try {
-            const orgId = context.organizationAndTeamData?.organizationId;
-            const matched: string[] = [];
-
-            const allConnections = await this.mcpManagerService.getConnections(
-                context.organizationAndTeamData,
-                false,
-            );
-
-            for (const conn of (allConnections ?? []).filter(
-                (c) => c.organizationId === orgId,
-            )) {
-                this.appendTaskManagementHints(matched, [
-                    conn.appName,
-                    conn.provider,
-                    conn.integrationId,
-                ]);
-            }
-
-            const integrations = await this.mcpManagerService.getIntegrations(
-                context.organizationAndTeamData,
-            );
-
-            for (const integration of integrations ?? []) {
-                if (integration.isDefault) {
-                    continue;
-                }
-
-                const isUsable =
-                    integration.isConnected === true ||
-                    integration.active === true;
-                if (!isUsable) {
-                    continue;
-                }
-
-                this.appendTaskManagementHints(matched, [
-                    integration.id,
-                    integration.appName,
-                    integration.name,
-                    integration.provider,
-                ]);
-            }
-
-            return matched;
-        } catch (error) {
-            this.logger.warn({
-                message: `[BUSINESS-LOGIC] Failed to fetch MCP connections: ${error instanceof Error ? error.message : String(error)}`,
-                context: this.stageName,
-                error,
-            });
-            return [];
-        }
-    }
-
-    private appendTaskManagementHints(
-        matched: string[],
-        aliases: Array<string | undefined>,
-    ): void {
-        for (const hint of this.matchTaskManagementHints(aliases)) {
-            if (!matched.includes(hint)) {
-                matched.push(hint);
-            }
-        }
-    }
-
-    private normalizeMcpAlias(value: string | undefined): string {
-        if (typeof value !== 'string') {
-            return '';
-        }
-        return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
-    }
-
-    private matchTaskManagementHints(
-        aliases: Array<string | undefined>,
-    ): string[] {
-        const matched: string[] = [];
-
-        for (const raw of aliases) {
-            const alias = this.normalizeMcpAlias(raw);
-            if (!alias) {
-                continue;
-            }
-
-            const hint =
-                BusinessLogicValidationStage.TASK_MANAGEMENT_HINTS.find(
-                    (h) => alias.includes(h) || h.includes(alias),
-                );
-            if (hint && !matched.includes(hint)) {
-                matched.push(hint);
-            }
-        }
-
-        return matched;
     }
 
     /**

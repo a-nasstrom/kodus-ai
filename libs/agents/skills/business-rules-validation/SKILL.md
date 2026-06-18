@@ -22,7 +22,7 @@ metadata:
             tool-mode: any
             allow-without-tools: true
         execution-policy:
-            on-missing-mcp: skip
+            on-missing-mcp: fallback
             on-mcp-connect-error: fail
             fetcher-timeout-ms: 120000
             analyzer-timeout-ms: 120000

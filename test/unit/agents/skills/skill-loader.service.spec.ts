@@ -108,10 +108,10 @@ describe('SkillLoaderService', () => {
         ]);
         expect(meta.fetcherPolicy).toEqual({
             toolMode: 'any',
-            allowWithoutTools: false,
+            allowWithoutTools: true,
         });
         expect(meta.executionPolicy).toEqual({
-            onMissingMcp: 'fail',
+            onMissingMcp: 'fallback',
             onMcpConnectError: 'fail',
             fetcherTimeoutMs: 120000,
             analyzerTimeoutMs: 120000,
@@ -130,13 +130,7 @@ describe('SkillLoaderService', () => {
                 requiredFields: ['needsMoreInfo', 'summary'],
             },
         });
-        expect(meta.requiredMcps).toEqual([
-            {
-                category: 'task-management',
-                label: 'Task Management',
-                examples: 'Jira, Linear, Notion, ClickUp, Github Issues',
-            },
-        ]);
+        expect(meta.requiredMcps).toBeUndefined();
     });
 
     it('parses complex YAML frontmatter using a YAML parser', () => {
