@@ -405,6 +405,12 @@ describe('business-rules blueprint', () => {
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 77 },
                 connectedTaskMcps: ['jira'],
+                businessSignals: {
+                    ticketKeys: ['KC-1457'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/jira/software/c/projects/KC/boards/2?selectedIssue=KC-1457',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -627,6 +633,12 @@ describe('business-rules blueprint', () => {
                     headRef: 'feature/PROJ-123',
                 },
                 connectedTaskMcps: ['jira'],
+                businessSignals: {
+                    ticketKeys: ['PROJ-123'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-123.',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -809,6 +821,12 @@ describe('business-rules blueprint', () => {
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 24 },
                 connectedTaskMcps: ['jira'],
+                businessSignals: {
+                    ticketKeys: ['PROJ-700'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-700',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -1002,6 +1020,12 @@ describe('business-rules blueprint', () => {
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 26 },
                 connectedTaskMcps: ['jira'],
+                businessSignals: {
+                    ticketKeys: ['PROJ-321'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-321',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -1385,6 +1409,12 @@ describe('business-rules blueprint', () => {
                     headRef: 'feat/proj-100-101',
                 },
                 connectedTaskMcps: ['jira'],
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                    ],
+                },
                 taskContext: '',
             },
         } as BusinessRulesContext;

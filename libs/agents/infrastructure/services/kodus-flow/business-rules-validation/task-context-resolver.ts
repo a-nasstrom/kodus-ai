@@ -53,24 +53,10 @@ export function buildPrTextContext(input: {
 }
 
 export function resolvePipelineTaskReferences(input: {
-    title?: string;
-    body?: string;
-    branch?: string;
     businessSignals?: BusinessRulesSignals;
 }): TaskReference[] {
-    const combined = [input.title, input.body, input.branch]
-        .filter((value): value is string => typeof value === 'string')
-        .join('\n');
-
-    const keys = uniqueNonEmpty([
-        ...(input.businessSignals?.ticketKeys ?? []),
-        ...extractIssueKeys(combined),
-    ]);
-
-    const links = uniqueNonEmpty([
-        ...(input.businessSignals?.taskLinks ?? []),
-        ...extractUrls(combined),
-    ]);
+    const keys = uniqueNonEmpty(input.businessSignals?.ticketKeys ?? []);
+    const links = uniqueNonEmpty(input.businessSignals?.taskLinks ?? []);
 
     return dedupeTaskReferences(keys, links).slice(0, MAX_TASK_REFERENCES);
 }
@@ -238,21 +224,6 @@ function formatTicketSection(ticket: TaskContextNormalized): string {
     }
 
     return parts.join('\n\n');
-}
-
-function extractIssueKeys(text: string): string[] {
-    const keys = new Set<string>();
-    for (const match of text.matchAll(ISSUE_KEY_PATTERN)) {
-        if (match[1]) {
-            keys.add(match[1].toUpperCase());
-        }
-    }
-    return [...keys];
-}
-
-function extractUrls(text: string): string[] {
-    const matches = text.match(/https?:\/\/[^\s)>\]"']+/g) ?? [];
-    return uniqueNonEmpty(matches.map((url) => normalizeUrl(url)).filter(Boolean));
 }
 
 function extractIssueKeyFromUrl(url: string): string | undefined {

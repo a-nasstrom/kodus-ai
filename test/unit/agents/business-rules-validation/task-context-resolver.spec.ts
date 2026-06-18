@@ -50,31 +50,40 @@ describe('task-context-resolver', () => {
     });
 
     describe('resolvePipelineTaskReferences', () => {
-        it('collects ticket keys from title, body and branch', () => {
+        it('uses ticket keys and links from pipeline businessSignals only', () => {
             const refs = resolvePipelineTaskReferences({
-                title: '[PROJ-100] Epic',
-                body: 'Also see PROJ-101',
-                branch: 'feat/proj-102-fix',
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-102',
+                    ],
+                    requirementKeywords: [],
+                },
             });
 
-            expect(refs.map((ref) => ref.value)).toEqual(
+            expect(refs.map((ref) => ref.label)).toEqual(
                 expect.arrayContaining(['PROJ-100', 'PROJ-101', 'PROJ-102']),
             );
         });
 
-        it('merges businessSignals with PR text sources', () => {
+        it('does not infer ticket keys from PR text when businessSignals are absent', () => {
             const refs = resolvePipelineTaskReferences({
-                title: 'No keys here',
+                businessSignals: undefined,
+            });
+
+            expect(refs).toEqual([]);
+        });
+
+        it('ignores version-like strings in PR text without pipeline signals', () => {
+            const refs = resolvePipelineTaskReferences({
                 businessSignals: {
-                    ticketKeys: ['DL-1'],
+                    ticketKeys: [],
                     taskLinks: [],
                     requirementKeywords: [],
                 },
             });
 
-            expect(refs).toEqual([
-                expect.objectContaining({ kind: 'key', value: 'DL-1' }),
-            ]);
+            expect(refs).toEqual([]);
         });
     });
 

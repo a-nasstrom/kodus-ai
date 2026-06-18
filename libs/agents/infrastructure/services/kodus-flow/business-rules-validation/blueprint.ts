@@ -219,18 +219,6 @@ export function createBusinessRulesBlueprint(
                 });
 
                 const references = resolvePipelineTaskReferences({
-                    title: readPrepareContextString(
-                        prepareContext,
-                        'pullRequestTitle',
-                    ),
-                    body:
-                        readPrepareContextString(
-                            prepareContext,
-                            'pullRequestDescription',
-                        ) ?? ctx.prBody,
-                    branch:
-                        prepareContext?.pullRequest?.headRef ??
-                        prepareContext?.headRef,
                     businessSignals: prepareContext?.businessSignals,
                 });
 
