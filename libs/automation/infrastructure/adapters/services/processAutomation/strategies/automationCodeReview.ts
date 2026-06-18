@@ -287,10 +287,7 @@ export class AutomationCodeReviewService implements Omit<
                     await this.automationExecutionService.findById(
                         execution.uuid,
                     );
-                if (
-                    freshExecution?.status === AutomationStatus.SKIPPED &&
-                    freshExecution.errorMessage?.includes('Cancelled by user')
-                ) {
+                if (this.isUserCancelledExecution(freshExecution)) {
                     return 'Review cancelled by user';
                 }
 
@@ -472,11 +469,37 @@ export class AutomationCodeReviewService implements Omit<
         }
     }
 
+    private isUserCancelledExecution(
+        execution: IAutomationExecution | null | undefined,
+    ): boolean {
+        if (!execution) {
+            return false;
+        }
+
+        return (
+            execution.status === AutomationStatus.SKIPPED &&
+            (execution.errorMessage?.includes(WORKFLOW_JOB_CANCELLED_MESSAGE) ??
+                false)
+        );
+    }
+
     private async _handleExecutionCompletion(
         execution: IAutomationExecution,
         result: any,
         payload: any,
     ) {
+        const freshExecution =
+            await this.automationExecutionService.findById(execution.uuid);
+        if (this.isUserCancelledExecution(freshExecution)) {
+            this.logger.log({
+                message:
+                    'Skipping completion update because the review was cancelled by user',
+                context: AutomationCodeReviewService.name,
+                metadata: { executionUuid: execution.uuid },
+            });
+            return;
+        }
+
         if (!result) {
             await this.updateAutomationExecution(
                 execution,
@@ -565,6 +588,18 @@ export class AutomationCodeReviewService implements Omit<
         error: any,
         payload: any,
     ) {
+        const freshExecution =
+            await this.automationExecutionService.findById(execution.uuid);
+        if (this.isUserCancelledExecution(freshExecution)) {
+            this.logger.log({
+                message:
+                    'Skipping error update because the review was cancelled by user',
+                context: AutomationCodeReviewService.name,
+                metadata: { executionUuid: execution.uuid },
+            });
+            return;
+        }
+
         const errorMessage =
             error.message ||
             'An unexpected error occurred during code review automation.';

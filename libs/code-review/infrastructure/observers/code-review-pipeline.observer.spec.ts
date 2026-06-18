@@ -79,11 +79,6 @@ describe('CodeReviewPipelineObserver', () => {
     });
 
     it('should start pipeline check on pipeline start', async () => {
-        observersContext.checkRunId = 123;
-        context.repository = {
-            fullName: 'acme/repo',
-        } as any;
-
         await observer.onPipelineStart(
             context as CodeReviewPipelineContext,
             observersContext,
@@ -94,16 +89,7 @@ describe('CodeReviewPipelineObserver', () => {
             context,
             '_pipelineStart',
         );
-        expect(mockAutomationExecutionService.update).toHaveBeenCalledWith(
-            { uuid: 'exec-1' },
-            {
-                dataExecution: expect.objectContaining({
-                    checkRunId: 123,
-                    checkRepositoryOwner: 'acme',
-                    checkRepositoryName: 'repo',
-                }),
-            },
-        );
+        expect(mockAutomationExecutionService.update).not.toHaveBeenCalled();
     });
 
     it('should finalize pipeline check on pipeline finish (success)', async () => {

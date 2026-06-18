@@ -328,6 +328,18 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
             };
         }
 
+        const prBody = context.pullRequest?.body ?? '';
+        const currentHash = this.computePrBodyHash(prBody);
+        const lastHash = (context.pipelineMetadata?.lastExecution as any)
+            ?.businessLogicHash;
+        if (lastHash && lastHash === currentHash) {
+            return {
+                reason: 'unchanged_body',
+                message:
+                    'Skipped: PR description has not changed since the last review.',
+            };
+        }
+
         return null;
     }
 

@@ -308,6 +308,11 @@ export class PipelineChecksService implements IPipelineChecksService {
 
             if (checkId) {
                 observerContext.checkRunId = checkId;
+                await this.afterCheckRunCreated(
+                    observerContext,
+                    context,
+                    checkId,
+                );
             }
         } catch (e) {
             this.logger.error({
@@ -316,6 +321,19 @@ export class PipelineChecksService implements IPipelineChecksService {
                 context: PipelineChecksService.name,
             });
         }
+    }
+
+    /**
+     * Hook for subclasses to persist check metadata before startCheck returns.
+     * Keeps checkRunId available for user-initiated cancellation even when
+     * the observer persists execution data asynchronously.
+     */
+    protected async afterCheckRunCreated(
+        _observerContext: PipelineObserverContext,
+        _context: CodeReviewPipelineContext,
+        _checkRunId: string | number,
+    ): Promise<void> {
+        // Default: no-op. CodeReviewPipelineChecksService overrides this.
     }
 
     async updateCheck(
