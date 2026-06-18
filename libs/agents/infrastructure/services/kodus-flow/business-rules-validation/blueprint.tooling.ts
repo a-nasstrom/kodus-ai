@@ -637,6 +637,10 @@ function resolveSupplementalKeyReferences(
     agentTicket: TaskContextNormalized,
 ): TaskReference[] {
     const agentSurface = buildAgentTaskContextSurface(agentTicket);
+    const primaryKey =
+        manifest.primaryReference?.kind === 'key'
+            ? manifest.primaryReference.value.trim().toUpperCase()
+            : undefined;
 
     return manifest.references.filter((reference) => {
         if (reference.kind !== 'key') {
@@ -644,10 +648,15 @@ function resolveSupplementalKeyReferences(
         }
 
         const normalizedKey = reference.value.trim().toUpperCase();
-        if (
-            !normalizedKey ||
-            agentSurfaceContainsIssueKey(agentSurface, normalizedKey)
-        ) {
+        if (!normalizedKey) {
+            return false;
+        }
+
+        if (primaryKey && normalizedKey === primaryKey) {
+            return false;
+        }
+
+        if (agentSurfaceContainsIssueKey(agentSurface, normalizedKey)) {
             return false;
         }
 
