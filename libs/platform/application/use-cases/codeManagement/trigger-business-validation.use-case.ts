@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { BusinessRulesPrepareContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
-import { getConnectedTaskManagementMcps } from '@libs/code-review/pipeline/helpers/connected-task-management-mcps';
 import { IntegrationConfigKey } from '@libs/core/domain/enums/Integration-config-key.enum';
 import { IUseCase } from '@libs/core/domain/interfaces/use-case.interface';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -15,7 +14,6 @@ import {
 import { PullRequest } from '@libs/platform/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@libs/platform/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
-import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 
 interface TriggerBusinessValidationInput {
     prUrl?: string;
@@ -88,7 +86,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
         private readonly businessRulesValidationAgentProvider: BusinessRulesValidationAgentProvider,
-        private readonly mcpManagerService: MCPManagerService,
     ) {}
 
     async execute(params: {
@@ -123,10 +120,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             taskUrl: input.taskUrl,
             platformType,
             executionContext,
-            connectedTaskMcps: await getConnectedTaskManagementMcps(
-                this.mcpManagerService,
-                organizationAndTeamData,
-            ),
         });
 
         const result = await this.businessRulesValidationAgentProvider.execute({
@@ -539,7 +532,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
         taskId?: string;
         taskUrl?: string;
         platformType?: string;
-        connectedTaskMcps?: string[];
         executionContext:
             | PullRequestValidationExecutionContext
             | LocalDiffValidationExecutionContext;
@@ -550,7 +542,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             taskId,
             taskUrl,
             platformType,
-            connectedTaskMcps,
             executionContext,
         } = params;
         const prepareContext: BusinessRulesPrepareContext = {
@@ -560,7 +551,6 @@ export class TriggerBusinessValidationUseCase implements IUseCase {
             taskUrl: taskUrl?.trim() || undefined,
             pullRequestDescription: executionContext.pullRequestDescription,
             platformType: platformType || undefined,
-            connectedTaskMcps,
             businessSignals: this.detectSignals(
                 executionContext.pullRequestDescription,
                 taskReference,

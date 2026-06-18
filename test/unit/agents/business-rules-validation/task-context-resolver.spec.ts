@@ -2,7 +2,6 @@ import {
     buildBusinessSignalsFromSources,
     buildPrTextContext,
     dedupeTaskReferences,
-    hasExplicitTaskReferenceInput,
     mergeTaskContextSources,
     resolveTaskReferences,
     shouldAttemptMcpFetch,
@@ -97,57 +96,16 @@ describe('task-context-resolver', () => {
     });
 
     describe('shouldAttemptMcpFetch', () => {
-        it('returns true when explicit task references exist even without connected MCP hints', () => {
+        it('returns true when references are non-empty', () => {
             expect(
-                shouldAttemptMcpFetch(
-                    [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }],
-                    { hasExplicitTaskReference: true },
-                ),
+                shouldAttemptMcpFetch([
+                    { kind: 'key', value: 'PROJ-1', label: 'PROJ-1' },
+                ]),
             ).toBe(true);
-        });
-
-        it('returns true for pipeline signals when task MCP is connected', () => {
-            expect(
-                shouldAttemptMcpFetch(
-                    [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }],
-                    {
-                        connectedTaskMcps: ['jira'],
-                        hasExplicitTaskReference: false,
-                    },
-                ),
-            ).toBe(true);
-        });
-
-        it('returns false for pipeline signals when no task MCP is connected', () => {
-            expect(
-                shouldAttemptMcpFetch(
-                    [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }],
-                    {
-                        connectedTaskMcps: [],
-                        hasExplicitTaskReference: false,
-                    },
-                ),
-            ).toBe(false);
         });
 
         it('returns false when references are empty', () => {
-            expect(shouldAttemptMcpFetch([], { connectedTaskMcps: ['jira'] })).toBe(
-                false,
-            );
-        });
-    });
-
-    describe('hasExplicitTaskReferenceInput', () => {
-        it('detects explicit taskId, taskUrl, or taskReference', () => {
-            expect(hasExplicitTaskReferenceInput({ taskId: 'PROJ-1' })).toBe(
-                true,
-            );
-            expect(
-                hasExplicitTaskReferenceInput({
-                    taskReference: '@kody -v business-logic',
-                }),
-            ).toBe(true);
-            expect(hasExplicitTaskReferenceInput({})).toBe(false);
+            expect(shouldAttemptMcpFetch([])).toBe(false);
         });
     });
 

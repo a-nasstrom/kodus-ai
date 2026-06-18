@@ -5,7 +5,6 @@ import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
 import { BasePipelineStage } from '@libs/core/infrastructure/pipeline/abstracts/base-stage.abstract';
 import { StageVisibility } from '@libs/core/infrastructure/pipeline/enums/stage-visibility.enum';
 import { PipelineError } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-context.interface';
-import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import { DeliveryStatus } from '@libs/platformData/domain/pullRequests/enums/deliveryStatus.enum';
 import { ISuggestionByPR } from '@libs/platformData/domain/pullRequests/interfaces/pullRequests.interface';
 import { Injectable } from '@nestjs/common';
@@ -13,7 +12,6 @@ import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
-import { getConnectedTaskManagementMcps } from '../helpers/connected-task-management-mcps';
 
 /**
  * Validates that the code in the PR matches the business requirements
@@ -72,7 +70,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
 
     constructor(
         private readonly businessRulesValidationAgentProvider: BusinessRulesValidationAgentProvider,
-        private readonly mcpManagerService: MCPManagerService,
     ) {
         super();
     }
@@ -115,10 +112,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
 
         const prBodyHash = this.computePrBodyHash(prBody);
         const signals = this.detectSignals(signalSources, prBody);
-        const connectedMcps = await getConnectedTaskManagementMcps(
-            this.mcpManagerService,
-            context.organizationAndTeamData,
-        );
 
         try {
             const prepareContext = {
@@ -134,7 +127,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 platformType: context.platformType,
                 defaultBranch: context.pullRequest?.base?.ref,
                 businessSignals: signals,
-                connectedTaskMcps: connectedMcps,
             };
             const thread = this.createBusinessLogicThread(context);
 

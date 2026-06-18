@@ -404,7 +404,6 @@ describe('business-rules blueprint', () => {
             prepareContext: {
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 77 },
-                connectedTaskMcps: ['jira'],
                 businessSignals: {
                     ticketKeys: ['KC-1457'],
                     taskLinks: [
@@ -632,7 +631,6 @@ describe('business-rules blueprint', () => {
                     pullRequestNumber: 22,
                     headRef: 'feature/PROJ-123',
                 },
-                connectedTaskMcps: ['jira'],
                 businessSignals: {
                     ticketKeys: ['PROJ-123'],
                     taskLinks: [
@@ -820,7 +818,6 @@ describe('business-rules blueprint', () => {
                     'Related to https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-700',
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 24 },
-                connectedTaskMcps: ['jira'],
                 businessSignals: {
                     ticketKeys: ['PROJ-700'],
                     taskLinks: [
@@ -1019,7 +1016,6 @@ describe('business-rules blueprint', () => {
                     'Related to https://kodustech.atlassian.net/browse/PROJ-321',
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 26 },
-                connectedTaskMcps: ['jira'],
                 businessSignals: {
                     ticketKeys: ['PROJ-321'],
                     taskLinks: [
@@ -1292,7 +1288,6 @@ describe('business-rules blueprint', () => {
                 pullRequestDescription: 'Refactor logging internals',
                 pullRequest: { pullRequestNumber: 50, headRef: 'chore/logging' },
                 repository: { id: 'repo-1', name: 'my-repo' },
-                connectedTaskMcps: [],
                 taskContext: '',
             },
         } as BusinessRulesContext);
@@ -1408,7 +1403,6 @@ describe('business-rules blueprint', () => {
                     pullRequestNumber: 51,
                     headRef: 'feat/proj-100-101',
                 },
-                connectedTaskMcps: ['jira'],
                 businessSignals: {
                     ticketKeys: ['PROJ-100', 'PROJ-101'],
                     taskLinks: [

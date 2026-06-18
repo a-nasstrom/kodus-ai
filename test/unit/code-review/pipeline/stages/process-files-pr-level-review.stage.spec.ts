@@ -27,24 +27,15 @@ describe('ProcessFilesPrLevelReviewStage', () => {
     let businessRulesValidationAgentProvider: {
         execute: jest.Mock;
     };
-    let mcpManagerService: {
-        getConnections: jest.Mock;
-        getIntegrations: jest.Mock;
-    };
 
     beforeEach(() => {
         businessRulesValidationAgentProvider = {
             execute: jest.fn(),
         };
-        mcpManagerService = {
-            getConnections: jest.fn().mockResolvedValue([]),
-            getIntegrations: jest.fn().mockResolvedValue([]),
-        };
         stage = new ProcessFilesPrLevelReviewStage(
             {} as any,
             {} as any,
             businessRulesValidationAgentProvider as any,
-            mcpManagerService as any,
         );
         jest.clearAllMocks();
     });
@@ -325,15 +316,7 @@ Encontrei contexto suficiente da task, mas nao consegui carregar o diff da pull 
             );
         });
 
-        it('passes pullRequestTitle and connectedTaskMcps to the agent', async () => {
-            mcpManagerService.getConnections.mockResolvedValue([
-                {
-                    appName: 'Jira',
-                    provider: 'jira',
-                    organizationId: 'org-1',
-                },
-            ]);
-
+        it('passes pullRequestTitle and businessSignals to the agent', async () => {
             businessRulesValidationAgentProvider.execute.mockResolvedValue(
                 '## Business Rules Validation\n\nStatus: no gaps',
             );
@@ -356,7 +339,9 @@ Encontrei contexto suficiente da task, mas nao consegui carregar o diff da pull 
                 expect.objectContaining({
                     prepareContext: expect.objectContaining({
                         pullRequestTitle: '[DL-2773] Add print working mode',
-                        connectedTaskMcps: ['jira'],
+                        businessSignals: expect.objectContaining({
+                            ticketKeys: ['DL-2773'],
+                        }),
                     }),
                 }),
             );

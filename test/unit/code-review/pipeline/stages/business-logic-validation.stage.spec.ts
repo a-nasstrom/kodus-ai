@@ -11,25 +11,9 @@ jest.mock('@kodus/flow', () => ({
     createThreadId: jest.fn(),
 }));
 
-type JiraConnection = {
-    appName: string;
-    provider: string;
-    organizationId: string;
-};
-
-const jiraConnection = (organizationId: string): JiraConnection => ({
-    appName: 'Jira',
-    provider: 'jira',
-    organizationId,
-});
-
 describe('BusinessLogicValidationStage', () => {
     let stage: BusinessLogicValidationStage;
     let agentProvider: { execute: jest.Mock };
-    let mcpManagerService: {
-        getConnections: jest.Mock;
-        getIntegrations: jest.Mock;
-    };
 
     const buildContext = (overrides: Record<string, unknown> = {}) => ({
         organizationAndTeamData: {
@@ -55,14 +39,7 @@ describe('BusinessLogicValidationStage', () => {
 
     beforeEach(() => {
         agentProvider = { execute: jest.fn() };
-        mcpManagerService = {
-            getConnections: jest.fn().mockResolvedValue([jiraConnection('org-1')]),
-            getIntegrations: jest.fn().mockResolvedValue([]),
-        };
-        stage = new BusinessLogicValidationStage(
-            agentProvider as any,
-            mcpManagerService as any,
-        );
+        stage = new BusinessLogicValidationStage(agentProvider as any);
         jest.clearAllMocks();
     });
 
@@ -123,7 +100,7 @@ describe('BusinessLogicValidationStage', () => {
             );
         });
 
-        it('passes pullRequestTitle and connectedTaskMcps to the agent', async () => {
+        it('passes pullRequestTitle and businessSignals to the agent', async () => {
             const context = buildContext({
                 pullRequest: {
                     number: 42,
@@ -140,7 +117,9 @@ describe('BusinessLogicValidationStage', () => {
                 expect.objectContaining({
                     prepareContext: expect.objectContaining({
                         pullRequestTitle: 'Fix export PROJ-1',
-                        connectedTaskMcps: ['jira'],
+                        businessSignals: expect.objectContaining({
+                            ticketKeys: ['PROJ-1'],
+                        }),
                     }),
                 }),
             );
@@ -290,12 +269,7 @@ describe('BusinessLogicValidationStage', () => {
     });
 
     describe('runs without task MCP connected', () => {
-        it('does not skip evaluateSkip when only non-task MCPs are connected', async () => {
-            mcpManagerService.getConnections.mockResolvedValue([
-                { appName: 'Slack', provider: 'slack', organizationId: 'org-1' },
-            ]);
-            mcpManagerService.getIntegrations.mockResolvedValue([]);
-
+        it('does not skip evaluateSkip when ticket key is in PR body', async () => {
             const context = buildContext({
                 pullRequest: {
                     number: 42,
@@ -312,9 +286,6 @@ describe('BusinessLogicValidationStage', () => {
         });
 
         it('still runs the agent when no task MCP is connected', async () => {
-            mcpManagerService.getConnections.mockResolvedValue([]);
-            mcpManagerService.getIntegrations.mockResolvedValue([]);
-
             const context = buildContext({
                 pullRequest: {
                     number: 42,
@@ -331,18 +302,6 @@ describe('BusinessLogicValidationStage', () => {
         });
 
         it('does not skip when Atlassian Rovo OAuth is active without a connection row', async () => {
-            mcpManagerService.getConnections.mockResolvedValue([]);
-            mcpManagerService.getIntegrations.mockResolvedValue([
-                {
-                    id: 'atlassian-rovo-default',
-                    name: 'Atlassian Rovo',
-                    appName: 'Atlassian Rovo',
-                    provider: 'kodusmcp',
-                    active: true,
-                    isConnected: false,
-                },
-            ]);
-
             const context = buildContext({
                 pullRequest: {
                     number: 42,
@@ -359,18 +318,6 @@ describe('BusinessLogicValidationStage', () => {
         });
 
         it('does not skip for a custom MCP named Jira with only OAuth active', async () => {
-            mcpManagerService.getConnections.mockResolvedValue([]);
-            mcpManagerService.getIntegrations.mockResolvedValue([
-                {
-                    id: 'custom-jira-1',
-                    name: 'Company Jira',
-                    appName: 'Company Jira',
-                    provider: 'custom',
-                    active: true,
-                    isConnected: false,
-                },
-            ]);
-
             const context = buildContext({
                 pullRequest: {
                     number: 42,

@@ -135,16 +135,8 @@ export function resolvePipelineTaskReferences(input: {
     return resolveTaskReferences(input);
 }
 
-export function hasExplicitTaskReferenceInput(input: {
-    taskId?: string;
-    taskUrl?: string;
-    taskReference?: string;
-}): boolean {
-    return Boolean(
-        input.taskId?.trim() ||
-            input.taskUrl?.trim() ||
-            input.taskReference?.trim(),
-    );
+export function shouldAttemptMcpFetch(references: TaskReference[]): boolean {
+    return references.length > 0;
 }
 
 export function dedupeTaskReferences(
@@ -196,27 +188,6 @@ export function dedupeTaskReferences(
     }
 
     return references;
-}
-
-export function shouldAttemptMcpFetch(
-    references: TaskReference[],
-    input?: {
-        connectedTaskMcps?: string[];
-        hasExplicitTaskReference?: boolean;
-    },
-): boolean {
-    if (references.length === 0) {
-        return false;
-    }
-
-    if (input?.hasExplicitTaskReference) {
-        return true;
-    }
-
-    return (
-        Array.isArray(input?.connectedTaskMcps) &&
-        input.connectedTaskMcps.length > 0
-    );
 }
 
 export function mergeTaskContextSources(
