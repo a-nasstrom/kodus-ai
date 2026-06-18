@@ -327,8 +327,37 @@ export function createBusinessRulesBlueprintTooling(
                 traces.push(...agentResult.traces);
 
                 if (isUsableTaskContextNormalized(agentResult.normalized)) {
+                    const normalizedTickets: TaskContextNormalized[] = [
+                        agentResult.normalized,
+                    ];
+                    const supplementalReferences =
+                        resolveSupplementalKeyReferences(
+                            manifest,
+                            agentResult.normalized,
+                        );
+
+                    if (supplementalReferences.length > 0) {
+                        const supplementalResults = await fetchAllTaskContexts(
+                            fetcher,
+                            capabilityRuntime,
+                            {
+                                ...baseParams,
+                                taskContextResolutionMode: 'cache_first',
+                            },
+                            supplementalReferences.map((reference) => ({
+                                kind: reference.kind,
+                                value: reference.value,
+                            })),
+                            capabilityHooks,
+                        );
+                        traces.push(...supplementalResults.traces);
+                        normalizedTickets.push(
+                            ...supplementalResults.normalized,
+                        );
+                    }
+
                     return {
-                        value: [agentResult.normalized],
+                        value: normalizedTickets,
                         traces,
                     };
                 }
@@ -601,6 +630,35 @@ function asBusinessSignalHints(
         taskLinks,
         requirementKeywords,
     };
+}
+
+function resolveSupplementalKeyReferences(
+    manifest: TaskContextManifest,
+    agentTicket: TaskContextNormalized,
+): TaskReference[] {
+    const agentSurface = buildAgentTaskContextSurface(agentTicket);
+
+    return manifest.references.filter((reference) => {
+        if (reference.kind !== 'key') {
+            return false;
+        }
+
+        const normalizedKey = reference.value.trim().toUpperCase();
+        if (!normalizedKey || agentSurface.includes(normalizedKey)) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
+function buildAgentTaskContextSurface(
+    ticket: TaskContextNormalized,
+): string {
+    return [ticket.id, ticket.title, ticket.description]
+        .filter((part): part is string => typeof part === 'string')
+        .join('\n')
+        .toUpperCase();
 }
 
 function sanitizeStringArray(value: unknown): string[] | undefined {
