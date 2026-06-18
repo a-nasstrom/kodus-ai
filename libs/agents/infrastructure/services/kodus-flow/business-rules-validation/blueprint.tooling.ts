@@ -1,7 +1,9 @@
 import {
+    fetchAllTaskContexts,
     fetchPullRequestDiff,
     fetchPullRequestMetadata,
     fetchTaskContext as fetchTaskContextCapability,
+    isUsableTaskContextNormalized,
     PrDiffReadParams,
     PrMetadataReadParams,
 } from '@libs/agents/skills/capabilities';
@@ -57,7 +59,7 @@ export interface BusinessRulesBlueprintTooling {
     resolveTaskContextFromManifest: (
         ctx: BusinessRulesContext,
         manifest: TaskContextManifest,
-    ) => Promise<ToolingResult<TaskContextNormalized | undefined>>;
+    ) => Promise<ToolingResult<TaskContextNormalized[]>>;
 }
 
 export function resolvePullRequestDescription(
@@ -287,40 +289,69 @@ export function createBusinessRulesBlueprintTooling(
             manifest: TaskContextManifest,
         ) => {
             if (!manifest.references.length) {
-                return { value: undefined, traces: [] };
+                return { values: [], traces: [] };
             }
 
             const scope = resolveExecutionScope(ctx);
             const resolutionMode =
                 hooks?.resolveTaskContextMode?.(ctx, providerType) ??
                 'agent_first';
-            const taskContext = await fetchTaskContextCapability(
-                fetcher,
-                capabilityRuntime,
-                buildTaskContextReadParams(
-                    ctx,
-                    scope,
-                    capabilityTools,
-                    hooks,
-                    providerType,
-                    {
-                        manifest,
-                        resolutionMode,
-                    },
-                ),
+            const capabilityHooks = {
+                getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
+                getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
+                saveCachedTaskContextTools:
+                    hooks?.saveCachedTaskContextTools,
+                resolvePreferredTool: hooks?.resolvePreferredTool,
+                recordExecution: hooks?.recordExecution,
+            };
+            const baseParams = buildTaskContextReadParams(
+                ctx,
+                scope,
+                capabilityTools,
+                hooks,
+                providerType,
                 {
-                    getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
-                    getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
-                    saveCachedTaskContextTools:
-                        hooks?.saveCachedTaskContextTools,
-                    resolvePreferredTool: hooks?.resolvePreferredTool,
-                    recordExecution: hooks?.recordExecution,
+                    manifest,
+                    resolutionMode,
                 },
             );
+            const traces: CapabilityExecutionTrace[] = [];
+
+            if (resolutionMode === 'agent_first') {
+                const agentResult = await fetchTaskContextCapability(
+                    fetcher,
+                    capabilityRuntime,
+                    baseParams,
+                    capabilityHooks,
+                );
+                traces.push(...agentResult.traces);
+
+                if (isUsableTaskContextNormalized(agentResult.normalized)) {
+                    return {
+                        values: [agentResult.normalized],
+                        traces,
+                    };
+                }
+            }
+
+            const perReferenceResults = await fetchAllTaskContexts(
+                fetcher,
+                capabilityRuntime,
+                {
+                    ...baseParams,
+                    taskContextResolutionMode: 'cache_first',
+                },
+                manifest.references.map((reference) => ({
+                    kind: reference.kind,
+                    value: reference.value,
+                })),
+                capabilityHooks,
+            );
+            traces.push(...perReferenceResults.traces);
 
             return {
-                value: taskContext.normalized,
-                traces: taskContext.traces,
+                values: perReferenceResults.normalized,
+                traces,
             };
         },
     };
