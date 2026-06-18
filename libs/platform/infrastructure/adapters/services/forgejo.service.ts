@@ -103,6 +103,7 @@ import {
     repoDeleteHook,
     repoDownloadPullDiffOrPatch,
     repoEditHook,
+    repoEditPullRequest,
     repoGet,
     repoGetAllCommits,
     repoGetContents,
@@ -2898,7 +2899,6 @@ export class ForgejoService implements Omit<
 
     private formatPromptForLLM(lineComment: any): string {
         let copyPrompt = '';
-
         if (lineComment?.suggestion?.llmPrompt) {
             if (lineComment.path) {
                 copyPrompt += `File ${lineComment.path}:\n\n`;
@@ -2910,14 +2910,14 @@ export class ForgejoService implements Omit<
                 copyPrompt += `Line ${lineComment.line}:\n\n`;
             }
 
-            copyPrompt += lineComment.suggestion.llmPrompt;
+            copyPrompt += lineComment?.suggestion?.llmPrompt;
 
             if (lineComment?.body?.improvedCode) {
                 copyPrompt +=
-                    '\n\nSuggested Code:\n\n' + lineComment.body.improvedCode;
+                    '\n\nSuggested Code:\n\n' + lineComment?.body?.improvedCode;
             }
 
-            copyPrompt = `\n\n<details>\n\n<summary>Prompt for LLM</summary>\n\n\`\`\`\n\n${copyPrompt}\n\n\`\`\`\n\n</details>\n\n`;
+            copyPrompt = `\n<details>\n<summary>Prompt for LLM</summary>\n\n\`\`\`\n${copyPrompt}\n\`\`\`\n</details>\n`;
         }
 
         return copyPrompt;
