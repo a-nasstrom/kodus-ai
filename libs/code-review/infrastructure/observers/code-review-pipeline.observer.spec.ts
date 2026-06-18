@@ -49,7 +49,18 @@ describe('CodeReviewPipelineObserver', () => {
             startCheck: jest.fn().mockResolvedValue(undefined),
             updateCheck: jest.fn().mockResolvedValue(undefined),
             finalizeCheck: jest.fn().mockResolvedValue(undefined),
+            cancelActiveCheck: jest.fn().mockResolvedValue(undefined),
         };
+
+        mockAutomationExecutionService.findById = jest
+            .fn()
+            .mockResolvedValue({
+                uuid: 'exec-1',
+                dataExecution: {},
+            });
+        mockAutomationExecutionService.update = jest
+            .fn()
+            .mockResolvedValue(undefined);
 
         observer = new CodeReviewPipelineObserver(
             mockAutomationExecutionService,
@@ -68,6 +79,11 @@ describe('CodeReviewPipelineObserver', () => {
     });
 
     it('should start pipeline check on pipeline start', async () => {
+        observersContext.checkRunId = 123;
+        context.repository = {
+            fullName: 'acme/repo',
+        } as any;
+
         await observer.onPipelineStart(
             context as CodeReviewPipelineContext,
             observersContext,
@@ -77,6 +93,16 @@ describe('CodeReviewPipelineObserver', () => {
             observersContext,
             context,
             '_pipelineStart',
+        );
+        expect(mockAutomationExecutionService.update).toHaveBeenCalledWith(
+            { uuid: 'exec-1' },
+            {
+                dataExecution: expect.objectContaining({
+                    checkRunId: 123,
+                    checkRepositoryOwner: 'acme',
+                    checkRepositoryName: 'repo',
+                }),
+            },
         );
     });
 

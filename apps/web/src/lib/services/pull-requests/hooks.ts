@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import {
     useInfiniteQuery,
+    useMutation,
     useQuery,
     useQueryClient,
     type InfiniteData,
@@ -252,4 +253,27 @@ export const usePullRequestExecutionSSE = (enabled = true) => {
             controllerRef.current?.abort();
         };
     }, [enabled, invalidate]);
+};
+
+export const useCancelPullRequestExecution = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (params: { executionUuid: string; teamId: string }) => {
+            const response = await axiosAuthorized.post<{
+                executionUuid: string;
+                status: string;
+                cancelledAt: string;
+            }>(PULL_REQUEST_API.CANCEL_EXECUTION(params.executionUuid), {
+                teamId: params.teamId,
+            });
+
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["pull-request-executions"],
+            });
+        },
+    });
 };

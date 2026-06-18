@@ -17,6 +17,7 @@ import type { PullRequestExecutionGroup } from "./types";
 
 interface PrDataTableProps {
     data: PullRequestExecutionGroup[];
+    teamId?: string;
     loading?: boolean;
     hasNextPage?: boolean;
     isFetchingNextPage?: boolean;
@@ -25,6 +26,7 @@ interface PrDataTableProps {
 
 export const PrDataTable = ({
     data,
+    teamId,
     loading,
     hasNextPage,
     isFetchingNextPage,
@@ -116,7 +118,7 @@ export const PrDataTable = ({
                 </TableHeader>
                 <TableBody>
                     {data.map((group) => (
-                        <PrListItem key={group.prId} group={group} />
+                        <PrListItem key={group.prId} group={group} teamId={teamId} />
                     ))}
                 </TableBody>
             </Table>

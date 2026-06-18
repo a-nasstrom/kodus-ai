@@ -1,7 +1,9 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { createLogger } from '@kodus/flow';
 
-import { runWithTimeout } from './run-with-timeout';
+import { runWithTimeout, runWithTimeoutAndCancellation } from './run-with-timeout';
+import { JobAbortedError } from './abort-signal-race';
+import { WorkflowJobCancellationService } from './workflow-job-cancellation.service';
 import { IJobProcessorRouter } from '@libs/core/workflow/domain/contracts/job-processor-router.contract';
 import { IJobProcessorService } from '@libs/core/workflow/domain/contracts/job-processor.service.contract';
 import {
@@ -48,6 +50,7 @@ export class JobProcessorRouterService
         private readonly astGraphBuildProcessor: AstGraphBuildJobProcessor,
         private readonly astGraphIncrementalProcessor: AstGraphIncrementalJobProcessor,
         private readonly cliReviewProcessor: CliReviewJobProcessorService,
+        private readonly workflowJobCancellationService: WorkflowJobCancellationService,
     ) {}
 
     async process(jobId: string): Promise<void> {
@@ -61,12 +64,36 @@ export class JobProcessorRouterService
         const timeoutMs = this.getProcessTimeoutMs(job.workflowType);
 
         try {
-            return await runWithTimeout(
+            const run = this.supportsUserCancellation(job.workflowType)
+                ? runWithTimeoutAndCancellation
+                : runWithTimeout;
+
+            return await run(
                 (signal) => processor.process(jobId, signal),
                 timeoutMs,
                 `Workflow job ${jobId} timeout after ${timeoutMs}ms`,
+                this.supportsUserCancellation(job.workflowType)
+                    ? {
+                          isCancelled: () =>
+                              this.workflowJobCancellationService.isCancellationRequested(
+                                  jobId,
+                              ),
+                      }
+                    : undefined,
             );
         } catch (error) {
+            if (this.isUserCancellationError(error)) {
+                const latestJob = await this.jobRepository.findOne(jobId);
+                if (latestJob?.status === JobStatus.CANCELLED) {
+                    this.logger.log({
+                        message: `Job ${jobId} cancelled by user`,
+                        context: JobProcessorRouterService.name,
+                        metadata: { jobId, workflowType: job.workflowType },
+                    });
+                    return;
+                }
+            }
+
             const isTimeout = error.message?.includes('timeout after');
 
             // Always mark job as FAILED when an error occurs (including timeout)
@@ -165,4 +192,14 @@ export class JobProcessorRouterService
         }
     }
 
+    private supportsUserCancellation(workflowType: WorkflowType): boolean {
+        return workflowType === WorkflowType.CODE_REVIEW;
+    }
+
+    private isUserCancellationError(error: unknown): boolean {
+        return (
+            error instanceof JobAbortedError ||
+            (error instanceof Error && error.name === 'JobAbortedError')
+        );
+    }
 }

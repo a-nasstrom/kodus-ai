@@ -42,6 +42,52 @@ export class CodeReviewPipelineObserver implements IPipelineObserver {
             context,
             '_pipelineStart',
         );
+        await this.persistCheckRunMetadata(context, observerContext);
+    }
+
+    private async persistCheckRunMetadata(
+        context: CodeReviewPipelineContext,
+        observerContext: PipelineObserverContext,
+    ): Promise<void> {
+        const executionUuid = context.pipelineMetadata?.lastExecution?.uuid;
+        const checkRunId = observerContext.checkRunId;
+        const fullName = context.repository?.fullName;
+
+        if (!executionUuid || !checkRunId || !fullName) {
+            return;
+        }
+
+        const [owner, name] = fullName.split('/');
+        if (!owner || !name) {
+            return;
+        }
+
+        try {
+            const execution =
+                await this.automationExecutionService.findById(executionUuid);
+            if (!execution) {
+                return;
+            }
+
+            await this.automationExecutionService.update(
+                { uuid: executionUuid },
+                {
+                    dataExecution: {
+                        ...execution.dataExecution,
+                        checkRunId,
+                        checkRepositoryOwner: owner,
+                        checkRepositoryName: name,
+                    },
+                },
+            );
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to persist check run metadata for cancellation',
+                context: CodeReviewPipelineObserver.name,
+                error,
+                metadata: { executionUuid, checkRunId },
+            });
+        }
     }
 
     async onPipelineFinish(

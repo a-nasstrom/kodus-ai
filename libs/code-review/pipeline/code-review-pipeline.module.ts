@@ -217,6 +217,7 @@ import { ReviewOrchestratorService } from '../infrastructure/agents/review-orche
         CreateSandboxStage,
         AgentReviewStage,
         ReviewOrchestratorService,
+        PIPELINE_CHECKS_SERVICE_TOKEN,
     ],
 })
 export class CodeReviewPipelineModule {}

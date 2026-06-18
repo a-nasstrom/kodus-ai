@@ -7,6 +7,7 @@ import {
 } from '@libs/identity/domain/auth/contracts/auth.service.contracts';
 import { BackfillHistoricalPRsUseCase } from '@libs/platformData/application/use-cases/pullRequests/backfill-historical-prs.use-case';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
+import { CancelPullRequestExecutionUseCase } from '@libs/code-review/application/use-cases/dashboard/cancel-pull-request-execution.use-case';
 import { GetPullRequestFilesUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-files.use-case';
 import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
 import {
@@ -22,6 +23,7 @@ import {
     Inject,
     NotFoundException,
     OnApplicationShutdown,
+    Param,
     Post,
     Query,
     Res,
@@ -81,6 +83,10 @@ import {
     PullRequestExecutionsResponseDto,
     PullRequestOnboardingSignalsResponseDto,
 } from '../dtos/pull-request-executions-response.dto';
+import {
+    CancelPullRequestExecutionBodyDto,
+    CancelPullRequestExecutionResponseDto,
+} from '@libs/code-review/dtos/dashboard/cancel-pull-request-execution.dto';
 
 @ApiTags('Pull Requests')
 @ApiStandardResponses()
@@ -91,6 +97,7 @@ export class PullRequestController implements OnApplicationShutdown {
 
     constructor(
         private readonly getEnrichedPullRequestsUseCase: GetEnrichedPullRequestsUseCase,
+        private readonly cancelPullRequestExecutionUseCase: CancelPullRequestExecutionUseCase,
         private readonly getPullRequestSuggestionsUseCase: GetPullRequestSuggestionsUseCase,
         private readonly getPullRequestFilesUseCase: GetPullRequestFilesUseCase,
         private readonly codeManagementService: CodeManagementService,
@@ -137,6 +144,31 @@ export class PullRequestController implements OnApplicationShutdown {
         @Query() query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {
         return await this.getEnrichedPullRequestsUseCase.execute(query);
+    }
+
+    @Post('/executions/:executionUuid/cancel')
+    @ApiBearerAuth('jwt')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Update,
+            resource: ResourceType.PullRequests,
+        }),
+    )
+    @ApiOperation({
+        summary: 'Cancel in-progress PR review',
+        description:
+            'Stops an in-progress Kody review execution for the selected team.',
+    })
+    @ApiOkResponse({ type: CancelPullRequestExecutionResponseDto })
+    public async cancelPullRequestExecution(
+        @Param('executionUuid') executionUuid: string,
+        @Body() body: CancelPullRequestExecutionBodyDto,
+    ): Promise<CancelPullRequestExecutionResponseDto> {
+        return await this.cancelPullRequestExecutionUseCase.execute({
+            executionUuid,
+            teamId: body.teamId,
+        });
     }
 
     @Sse('/executions/events')

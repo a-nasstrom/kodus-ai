@@ -423,4 +423,28 @@ describe('PipelineChecksService', () => {
             );
         });
     });
+
+    describe('cancelActiveCheck', () => {
+        it('should mark an active check run as skipped', async () => {
+            await service.cancelActiveCheck({
+                organizationAndTeamData: mockContext.organizationAndTeamData,
+                repository: { owner: 'acme', name: 'repo' },
+                checkRunId: 456,
+                platformType: mockContext.platformType,
+                reason: 'Cancelled by user',
+            });
+
+            expect(checksAdapter.updateCheckRun).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    checkRunId: 456,
+                    status: CheckStatus.COMPLETED,
+                    conclusion: CheckConclusion.SKIPPED,
+                    output: expect.objectContaining({
+                        title: 'Code Review Cancelled',
+                        summary: 'Cancelled by user',
+                    }),
+                }),
+            );
+        });
+    });
 });

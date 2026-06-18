@@ -18,6 +18,7 @@ import { NotificationRecipient } from '@libs/notifications/domain/recipient';
 import { ByokConcurrencyGateService } from './byok-concurrency-gate.service';
 import { DistributedLock } from '@libs/core/workflow/infrastructure/distributed-lock.service';
 import { raceWithAbortSignal } from '@libs/core/workflow/infrastructure/abort-signal-race';
+import { JobAbortedError } from '@libs/core/workflow/infrastructure/abort-signal-race';
 import {
     IRateLimitGateService,
     RATE_LIMIT_GATE_SERVICE_TOKEN,
@@ -147,12 +148,6 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
                 { status: 'success' },
             );
         } catch (rawError) {
-            // Wrap octokit 403/429 in RateLimitError so the consumer
-            // error handler can apply the smart delay. If the error
-            // wasn't a GitHub rate-limit, classifyGitHubError returns
-            // it unchanged. We also defer-re-throw the classified
-            // version so the consumer (RabbitMQErrorHandler) sees the
-            // typed error, not the raw octokit shape.
             const error = classifyGitHubError(rawError) as Error;
 
             if (error.name === 'WorkflowPausedError') {
@@ -164,6 +159,21 @@ export class CodeReviewJobProcessorService implements IJobProcessorService {
                     },
                 });
                 return;
+            }
+
+            if (
+                error instanceof JobAbortedError ||
+                error.name === 'JobAbortedError'
+            ) {
+                const latestJob = await this.jobRepository.findOne(jobId);
+                if (latestJob?.status === JobStatus.CANCELLED) {
+                    this.logger.log({
+                        message: `Job ${jobId} cancelled by user`,
+                        context: CodeReviewJobProcessorService.name,
+                        metadata: { jobId, correlationId },
+                    });
+                    return;
+                }
             }
 
             this.logger.error({

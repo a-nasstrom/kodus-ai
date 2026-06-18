@@ -1,5 +1,7 @@
 import { createLogger } from '@kodus/flow';
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { PlatformType } from '@libs/core/domain/enums';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { IPipelineChecksService } from '@libs/core/infrastructure/pipeline/interfaces/pipeline-checks-service.interface';
 import { Injectable } from '@nestjs/common';
 import {
@@ -405,13 +407,11 @@ export class PipelineChecksService implements IPipelineChecksService {
             return;
         }
 
-        let name: string | undefined;
         let title: string | undefined;
         let summary: string | undefined = reason || undefined;
         if (stageName) {
             const stageCheckInfo = checkStageMap[stageName];
             if (stageCheckInfo) {
-                name = stageCheckInfo.name;
                 title = stageCheckInfo.title;
                 summary = summary || stageCheckInfo.summary;
             }
@@ -437,7 +437,6 @@ export class PipelineChecksService implements IPipelineChecksService {
                 repository,
                 status: CheckStatus.COMPLETED,
                 conclusion,
-                name,
                 output: summary
                     ? { title: title ?? 'Code Review', summary }
                     : undefined,
@@ -449,6 +448,49 @@ export class PipelineChecksService implements IPipelineChecksService {
                 message: 'Failed to finalize check',
                 error: e as Error,
                 context: PipelineChecksService.name,
+            });
+        }
+    }
+
+    async cancelActiveCheck(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { owner: string; name: string };
+        checkRunId: string | number;
+        platformType: PlatformType;
+        reason?: string;
+    }): Promise<void> {
+        const adapter = this.checksAdapterFactory.getAdapter(
+            params.platformType,
+        );
+        if (!adapter) {
+            this.logger.warn({
+                message: `No checks adapter found for platform type: ${params.platformType}`,
+                context: PipelineChecksService.name,
+            });
+            return;
+        }
+
+        try {
+            await adapter.updateCheckRun({
+                checkRunId: params.checkRunId,
+                organizationAndTeamData: params.organizationAndTeamData,
+                repository: params.repository,
+                status: CheckStatus.COMPLETED,
+                conclusion: CheckConclusion.SKIPPED,
+                output: {
+                    title: 'Code Review Cancelled',
+                    summary: params.reason ?? 'Cancelled by user',
+                },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to cancel active check run',
+                error: error as Error,
+                context: PipelineChecksService.name,
+                metadata: {
+                    checkRunId: params.checkRunId,
+                    repository: params.repository.name,
+                },
             });
         }
     }

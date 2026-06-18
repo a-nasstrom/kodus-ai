@@ -25,6 +25,8 @@ import {
     DistributedLock,
     DistributedLockService,
 } from '@libs/core/workflow/infrastructure/distributed-lock.service';
+import { JobAbortedError } from '@libs/core/workflow/infrastructure/abort-signal-race';
+import { WORKFLOW_JOB_CANCELLED_MESSAGE } from '@libs/core/workflow/infrastructure/workflow-job-cancellation';
 import {
     IOrganizationService,
     ORGANIZATION_SERVICE_TOKEN,
@@ -276,6 +278,32 @@ export class AutomationCodeReviewService implements Omit<
             await this._handleExecutionCompletion(execution, result, payload);
             return 'Automation executed successfully';
         } catch (error) {
+            if (this.isUserCancellationError(error)) {
+                if (!execution) {
+                    return 'Review cancelled by user';
+                }
+
+                const freshExecution =
+                    await this.automationExecutionService.findById(
+                        execution.uuid,
+                    );
+                if (
+                    freshExecution?.status === AutomationStatus.SKIPPED &&
+                    freshExecution.errorMessage?.includes('Cancelled by user')
+                ) {
+                    return 'Review cancelled by user';
+                }
+
+                await this.updateAutomationExecution(
+                    execution,
+                    AutomationStatus.SKIPPED,
+                    WORKFLOW_JOB_CANCELLED_MESSAGE,
+                    this._buildExecutionData(payload),
+                    'Kody Review Finished',
+                );
+                return 'Review cancelled by user';
+            }
+
             await this._handleExecutionError(execution, error, payload);
             return 'Error executing automation';
         } finally {
@@ -292,6 +320,13 @@ export class AutomationCodeReviewService implements Omit<
                 }
             }
         }
+    }
+
+    private isUserCancellationError(error: unknown): boolean {
+        return (
+            error instanceof JobAbortedError ||
+            (error instanceof Error && error.name === 'JobAbortedError')
+        );
     }
 
     private async getActiveExecution(
