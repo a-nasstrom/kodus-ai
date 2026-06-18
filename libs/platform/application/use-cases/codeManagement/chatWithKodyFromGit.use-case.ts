@@ -475,7 +475,13 @@ export class ChatWithKodyFromGitUseCase {
             }
         }
 
-        const signalSources = [commentBody, pullRequestDescription, headRef]
+        const pullRequestTitle = this.getPullRequestTitle(params);
+        const signalSources = [
+            commentBody,
+            pullRequestTitle,
+            pullRequestDescription,
+            headRef,
+        ]
             .filter(Boolean)
             .join('\n');
 
@@ -488,6 +494,7 @@ export class ChatWithKodyFromGitUseCase {
             },
             repository,
             pullRequestDescription,
+            pullRequestTitle,
             platformType: params.platformType,
             customInstructions: this.extractCustomInstructions(params),
             taskReference: commentBody,
@@ -1369,6 +1376,29 @@ export class ChatWithKodyFromGitUseCase {
         });
 
         return description;
+    }
+
+    private getPullRequestTitle(params: WebhookParams): string {
+        switch (params.platformType) {
+            case PlatformType.GITHUB:
+                if (params.event === 'issue_comment') {
+                    return params.payload?.issue?.title || '';
+                }
+                return params.payload?.pull_request?.title || '';
+            case PlatformType.GITLAB:
+                return params.payload?.merge_request?.title || '';
+            case PlatformType.BITBUCKET:
+                return params.payload?.pullrequest?.title || '';
+            case PlatformType.AZURE_REPOS:
+                return params.payload?.resource?.pullRequest?.title || '';
+            default:
+                this.logger.warn({
+                    message: `Unsupported platform type: ${params.platformType} for PR title`,
+                    context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
+                });
+                return '';
+        }
     }
 
     private getReviewThreadByCommentId(

@@ -249,10 +249,6 @@ describe('ChatWithKodyFromGitUseCase business-logic integration', () => {
                 acquire: jest.fn(),
                 release: jest.fn(),
             } as any,
-            {
-                getConnections: jest.fn().mockResolvedValue([]),
-                getIntegrations: jest.fn().mockResolvedValue([]),
-            } as any,
         );
     });
 

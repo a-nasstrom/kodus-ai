@@ -78,6 +78,7 @@ describe('ChatWithKodyFromGitUseCase', () => {
                 },
                 issue: {
                     id: 456,
+                    title: '[PROJ-99] Improve refs',
                     body: 'PR description body',
                     pull_request: {
                         url: 'https://api.github.com/repos/kodus/kodus-extension/pulls/132',
@@ -114,6 +115,7 @@ describe('ChatWithKodyFromGitUseCase', () => {
                     userQuestion:
                         '@kody -v business-logic validate this change',
                     pullRequestDescription: 'PR description body',
+                    pullRequestTitle: '[PROJ-99] Improve refs',
                     platformType: PlatformType.GITHUB,
                     repository: expect.objectContaining({
                         id: 'repo-1',
@@ -145,6 +147,7 @@ describe('ChatWithKodyFromGitUseCase', () => {
                 },
                 issue: {
                     id: 456,
+                    title: '[PROJ-99] Improve refs',
                     body: 'PR description body',
                     pull_request: {
                         url: 'https://api.github.com/repos/kodus/kodus-extension/pulls/132',
@@ -182,6 +185,57 @@ describe('ChatWithKodyFromGitUseCase', () => {
                     }),
                     pullRequest: expect.objectContaining({
                         pullRequestNumber: 132,
+                    }),
+                }),
+            }),
+        );
+    });
+
+    it('includes PR title ticket keys in businessSignals for comment-triggered validation', async () => {
+        await useCase.execute({
+            event: 'issue_comment',
+            platformType: PlatformType.GITHUB,
+            payload: {
+                action: 'created',
+                repository: {
+                    id: 'repo-1',
+                    name: 'kodus-extension',
+                },
+                issue: {
+                    id: 456,
+                    title: '[PROJ-99] Improve refs',
+                    body: 'No ticket key in the body',
+                    pull_request: {
+                        url: 'https://api.github.com/repos/kodus/kodus-extension/pulls/132',
+                    },
+                },
+                pull_request: {
+                    head: {
+                        ref: 'feature/improve-refs',
+                    },
+                    base: {
+                        ref: 'main',
+                    },
+                },
+                comment: {
+                    id: 123,
+                    body: '@kody -v business-logic validate this change',
+                },
+                sender: {
+                    id: 'user-1',
+                    login: 'alice',
+                },
+            },
+        } as any);
+
+        expect(
+            businessRulesValidationAgentUseCase.execute,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prepareContext: expect.objectContaining({
+                    pullRequestTitle: '[PROJ-99] Improve refs',
+                    businessSignals: expect.objectContaining({
+                        ticketKeys: ['PROJ-99'],
                     }),
                 }),
             }),

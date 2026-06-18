@@ -314,8 +314,6 @@ export function createBusinessRulesBlueprintTooling(
                 },
             );
 
-            await recordCapabilityExecutionTraces(hooks, fetched.traces);
-
             return {
                 value: fetched.normalized,
                 traces: fetched.traces,
