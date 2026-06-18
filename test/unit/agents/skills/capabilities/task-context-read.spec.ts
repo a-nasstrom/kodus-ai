@@ -1825,4 +1825,85 @@ describe('fetchTaskContext capability', () => {
             ]),
         );
     });
+
+    it('returns unresolved references when a scoped fetch does not produce usable context', async () => {
+        const callTool: CallToolMock = jest
+            .fn()
+            .mockImplementation((toolName: string, args: Record<string, unknown>) => {
+                if (toolName !== 'getJiraIssue') {
+                    return Promise.resolve({ result: {} });
+                }
+
+                const issueKey = String(args.issueIdOrKey ?? '');
+                if (issueKey === 'PROJ-101') {
+                    return Promise.resolve({ result: {} });
+                }
+
+                return Promise.resolve({
+                    result: {
+                        data: {
+                            key: issueKey,
+                            fields: {
+                                summary: `Summary for ${issueKey}`,
+                                description: `Requirements for ${issueKey}`,
+                            },
+                        },
+                    },
+                });
+            });
+
+        const toolCaller: ToolCaller = {
+            callTool,
+            getRegisteredTools: () => [{ name: 'getJiraIssue' }],
+            getToolsForLLM: () => [
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        required: ['cloudId', 'issueIdOrKey'],
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => ['getJiraIssue']),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        const result = await fetchAllTaskContexts(
+            toolCaller,
+            createCapabilityRuntime('jira'),
+            {
+                ...createBaseParams(),
+                pullRequestDescription:
+                    'https://kodustech.atlassian.net/browse/PROJ-100\nhttps://kodustech.atlassian.net/browse/PROJ-101',
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+            },
+            [
+                { kind: 'key', value: 'PROJ-100' },
+                { kind: 'key', value: 'PROJ-101' },
+            ],
+            hooks,
+        );
+
+        expect(result.normalized).toEqual([
+            expect.objectContaining({ id: 'PROJ-100' }),
+        ]);
+        expect(result.unresolvedReferences).toEqual([
+            { kind: 'key', value: 'PROJ-101' },
+        ]);
+    });
 });

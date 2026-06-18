@@ -233,6 +233,16 @@ describe('task-context-resolver', () => {
             ]);
         });
 
+        it('ignores lowercase branch tokens that are not valid issue keys', () => {
+            const refs = resolveTaskReferences({
+                title: 'Feature without ticket',
+                branch: 'feature/v2-1-hotfix',
+                body: 'No ticket keys here',
+            });
+
+            expect(refs).toEqual([]);
+        });
+
         it('returns PR-only context when MCP list is empty', () => {
             const prText = buildPrTextContext({ title: 'Title-only fix' });
             const merged = mergeTaskContextSources({
@@ -242,6 +252,52 @@ describe('task-context-resolver', () => {
 
             expect(merged.taskContext).toBe(prText);
             expect(merged.taskContextNormalized).toBeUndefined();
+        });
+
+        it('deduplicates normalized tickets by id before merging sections', () => {
+            const merged = mergeTaskContextSources({
+                mcpNormalizedList: [
+                    {
+                        id: 'PROJ-100',
+                        title: 'Epic checkout',
+                        description: 'Agent payload',
+                    },
+                    {
+                        id: 'PROJ-100',
+                        title: 'Epic checkout duplicate',
+                        description: 'Deterministic duplicate',
+                    },
+                ],
+                prTextContext: '',
+            });
+
+            expect(merged.taskContext.match(/## From ticket PROJ-100/g)).toHaveLength(
+                1,
+            );
+        });
+
+        it('surfaces unresolved MCP references in the merged task context', () => {
+            const merged = mergeTaskContextSources({
+                mcpNormalizedList: [
+                    {
+                        id: 'PROJ-100',
+                        title: 'Epic checkout',
+                        description: 'Loaded ticket',
+                    },
+                ],
+                prTextContext: '',
+                unresolvedReferences: [
+                    {
+                        kind: 'key',
+                        value: 'PROJ-999',
+                        label: 'PROJ-999',
+                        source: 'body',
+                    },
+                ],
+            });
+
+            expect(merged.taskContext).toContain('## Unresolved task references');
+            expect(merged.taskContext).toContain('PROJ-999');
         });
     });
 });

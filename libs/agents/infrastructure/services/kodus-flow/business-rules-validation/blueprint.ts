@@ -11,7 +11,7 @@ import { BlueprintStep } from '@libs/shared/blueprint/blueprint.types';
 
 
 
-import { BusinessRulesContext, TaskContextNormalized } from './types';
+import { BusinessRulesContext, TaskContextNormalized, TaskReference } from './types';
 import {
     buildBusinessLogicEligibility,
     getPullRequestDiffMissingInfoMessage,
@@ -261,6 +261,7 @@ export function createBusinessRulesBlueprint(
 
                 let mcpNormalizedList: TaskContextNormalized[] = [];
                 let traces: CapabilityExecutionTrace[] = [];
+                let unresolvedReferences: TaskReference[] = [];
 
                 if (shouldAttemptMcpFetch(manifest.references)) {
                     const fetched = await tooling.resolveTaskContextFromManifest(
@@ -269,11 +270,13 @@ export function createBusinessRulesBlueprint(
                     );
                     mcpNormalizedList = fetched.value;
                     traces = fetched.traces;
+                    unresolvedReferences = fetched.unresolvedReferences;
                 }
 
                 const merged = mergeTaskContextSources({
                     mcpNormalizedList,
                     prTextContext,
+                    unresolvedReferences,
                 });
 
                 return {

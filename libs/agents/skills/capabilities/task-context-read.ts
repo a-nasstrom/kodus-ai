@@ -310,9 +310,12 @@ export async function fetchAllTaskContexts(
 ): Promise<{
     normalized: TaskContextNormalized[];
     traces: CapabilityExecutionTrace[];
+    unresolvedReferences: TaskContextScopedReference[];
 }> {
+    const logger = createLogger('TaskContextReadCapability');
     const normalized: TaskContextNormalized[] = [];
     const traces: CapabilityExecutionTrace[] = [];
+    const unresolvedReferences: TaskContextScopedReference[] = [];
 
     for (const reference of references) {
         const scopedParams = buildScopedTaskContextReadParams(params, reference);
@@ -327,10 +330,27 @@ export async function fetchAllTaskContexts(
 
         if (isUsableTaskContextNormalized(result.normalized)) {
             normalized.push(result.normalized!);
+            continue;
         }
+
+        unresolvedReferences.push(reference);
     }
 
-    return { normalized, traces };
+    if (unresolvedReferences.length > 0) {
+        logger.warn({
+            message: 'Some task references could not be resolved from MCP',
+            context: 'TaskContextReadCapability',
+            metadata: {
+                requestedReferences: references.length,
+                resolvedReferences: normalized.length,
+                unresolvedReferences: unresolvedReferences.map(
+                    (reference) => reference.value,
+                ),
+            },
+        });
+    }
+
+    return { normalized, traces, unresolvedReferences };
 }
 
 function buildScopedTaskContextReadParams(
@@ -360,7 +380,7 @@ function buildScopedTaskContextReadParams(
         taskContext: undefined,
         primaryReference: referenceHint,
         taskReferences: [referenceHint],
-        enableAgenticFallback: false,
+        enableAgenticFallback: params.enableAgenticFallback !== false,
     };
 
     if (reference.kind === 'key') {

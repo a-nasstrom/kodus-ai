@@ -1,4 +1,5 @@
 import type { TaskContextNormalized } from '@libs/agents/skills/capabilities';
+import { createLogger } from '@kodus/flow';
 import type {
     BusinessRulesSignals,
     TaskContextManifest,
@@ -15,8 +16,10 @@ export type {
 
 export const MAX_TASK_REFERENCES = 5;
 
+const taskContextResolverLogger = createLogger('TaskContextResolver');
+
 const ISSUE_KEY_PATTERN = /\b([A-Za-z][A-Za-z0-9_]+-\d+)\b/g;
-const PIPELINE_TICKET_KEY_PATTERN = /[A-Za-z][A-Za-z0-9_]+-\d+/g;
+const PIPELINE_TICKET_KEY_PATTERN = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
 
 const REQUIREMENT_KEYWORDS = [
     'requirement',
@@ -30,6 +33,7 @@ const REQUIREMENT_KEYWORDS = [
 export interface MergeTaskContextSourcesInput {
     mcpNormalizedList: TaskContextNormalized[];
     prTextContext: string;
+    unresolvedReferences?: TaskReference[];
 }
 
 export interface MergeTaskContextSourcesResult {
@@ -135,9 +139,9 @@ export function resolveTaskReferences(input: {
         input.body !== undefined;
 
     if (hasRawSources) {
-        return resolveTaskReferencesFromSources(input).slice(
-            0,
-            MAX_TASK_REFERENCES,
+        return limitTaskReferences(
+            resolveTaskReferencesFromSources(input),
+            'resolveTaskReferencesFromSources',
         );
     }
 
@@ -159,10 +163,13 @@ export function resolveTaskReferences(input: {
         ...(input.businessSignals?.taskLinks ?? []),
     ]);
 
-    return dedupeTaskReferences(keys, links, {
-        explicitKeys: new Set(explicitKeys.map((key) => key.toUpperCase())),
-        explicitLinks: new Set(explicitLinks.map((url) => normalizeUrl(url))),
-    }).slice(0, MAX_TASK_REFERENCES);
+    return limitTaskReferences(
+        dedupeTaskReferences(keys, links, {
+            explicitKeys: new Set(explicitKeys.map((key) => key.toUpperCase())),
+            explicitLinks: new Set(explicitLinks.map((url) => normalizeUrl(url))),
+        }),
+        'dedupeTaskReferences',
+    );
 }
 
 export function buildTaskContextManifest(input: {
@@ -475,8 +482,9 @@ export function mergeTaskContextSources(
     const mergedAcceptanceCriteria: string[] = [];
     const mergedLinks: string[] = [];
     let primaryNormalized: TaskContextNormalized | undefined;
+    const dedupedTickets = dedupeNormalizedTickets(input.mcpNormalizedList);
 
-    for (const ticket of input.mcpNormalizedList) {
+    for (const ticket of dedupedTickets) {
         const label = ticket.id?.trim() || ticket.title?.trim() || 'ticket';
         sections.push(`## From ticket ${label}`, '', formatTicketSection(ticket));
 
@@ -499,6 +507,21 @@ export function mergeTaskContextSources(
         }
     }
 
+    const unresolvedReferences = input.unresolvedReferences ?? [];
+    if (unresolvedReferences.length > 0) {
+        if (sections.length > 0) {
+            sections.push('');
+        }
+        sections.push('## Unresolved task references', '');
+        sections.push(
+            'The following linked tasks could not be loaded from MCP:',
+        );
+        for (const reference of unresolvedReferences) {
+            const label = reference.label?.trim() || reference.value;
+            sections.push(`- ${label} (${reference.kind}: ${reference.value})`);
+        }
+    }
+
     const prText = input.prTextContext.trim();
     if (prText) {
         if (sections.length > 0) {
@@ -516,14 +539,14 @@ export function mergeTaskContextSources(
         return { taskContext };
     }
 
-    if (input.mcpNormalizedList.length === 1 && !prText) {
+    if (dedupedTickets.length === 1 && !prText && unresolvedReferences.length === 0) {
         return {
             taskContext,
-            taskContextNormalized: input.mcpNormalizedList[0],
+            taskContextNormalized: dedupedTickets[0],
         };
     }
 
-    const titles = input.mcpNormalizedList
+    const titles = dedupedTickets
         .map((ticket) => ticket.title?.trim())
         .filter((title): title is string => Boolean(title));
 
@@ -531,9 +554,9 @@ export function mergeTaskContextSources(
         taskContext,
         taskContextNormalized: {
             id:
-                input.mcpNormalizedList.length === 1
+                dedupedTickets.length === 1
                     ? primaryNormalized?.id
-                    : input.mcpNormalizedList
+                    : dedupedTickets
                           .map((ticket) => ticket.id)
                           .filter(Boolean)
                           .join(', '),
@@ -546,6 +569,70 @@ export function mergeTaskContextSources(
             sourceProvider: primaryNormalized?.sourceProvider,
         },
     };
+}
+
+function dedupeNormalizedTickets(
+    tickets: TaskContextNormalized[],
+): TaskContextNormalized[] {
+    const seen = new Set<string>();
+    const deduped: TaskContextNormalized[] = [];
+
+    tickets.forEach((ticket, index) => {
+        const key = buildNormalizedTicketDedupeKey(ticket, index);
+        if (seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        deduped.push(ticket);
+    });
+
+    return deduped;
+}
+
+function buildNormalizedTicketDedupeKey(
+    ticket: TaskContextNormalized,
+    index: number,
+): string {
+    const id = ticket.id?.trim().toUpperCase();
+    if (id) {
+        return `id:${id}`;
+    }
+
+    const title = ticket.title?.trim().toUpperCase();
+    if (title) {
+        return `title:${title}`;
+    }
+
+    const description = ticket.description?.trim();
+    if (description) {
+        return `desc:${description.slice(0, 120)}`;
+    }
+
+    return `ticket:${index}`;
+}
+
+function limitTaskReferences(
+    references: TaskReference[],
+    source: string,
+): TaskReference[] {
+    if (references.length <= MAX_TASK_REFERENCES) {
+        return references;
+    }
+
+    taskContextResolverLogger.warn({
+        message: 'Task reference list truncated',
+        context: 'TaskContextResolver',
+        metadata: {
+            source,
+            totalReferences: references.length,
+            maxReferences: MAX_TASK_REFERENCES,
+            droppedReferences: references.slice(MAX_TASK_REFERENCES).map(
+                (reference) => reference.value,
+            ),
+        },
+    });
+
+    return references.slice(0, MAX_TASK_REFERENCES);
 }
 
 function formatTicketSection(ticket: TaskContextNormalized): string {
@@ -578,7 +665,9 @@ function extractTicketKeysFromText(text?: string): string[] {
 
     const keys = new Set<string>();
     for (const match of text.matchAll(PIPELINE_TICKET_KEY_PATTERN)) {
-        keys.add(match[0].toUpperCase());
+        if (match[1]) {
+            keys.add(match[1].toUpperCase());
+        }
     }
 
     return [...keys];

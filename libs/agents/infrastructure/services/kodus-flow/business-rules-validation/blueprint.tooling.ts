@@ -34,6 +34,12 @@ interface ToolingResult<T> {
     traces: CapabilityExecutionTrace[];
 }
 
+export interface TaskContextManifestFetchResult {
+    value: TaskContextNormalized[];
+    traces: CapabilityExecutionTrace[];
+    unresolvedReferences: TaskReference[];
+}
+
 interface ExecutionScope {
     organizationId: string;
     teamId: string;
@@ -59,7 +65,7 @@ export interface BusinessRulesBlueprintTooling {
     resolveTaskContextFromManifest: (
         ctx: BusinessRulesContext,
         manifest: TaskContextManifest,
-    ) => Promise<ToolingResult<TaskContextNormalized[]>>;
+    ) => Promise<TaskContextManifestFetchResult>;
 }
 
 export function resolvePullRequestDescription(
@@ -289,7 +295,7 @@ export function createBusinessRulesBlueprintTooling(
             manifest: TaskContextManifest,
         ) => {
             if (!manifest.references.length) {
-                return { value: [], traces: [] };
+                return { value: [], traces: [], unresolvedReferences: [] };
             }
 
             const scope = resolveExecutionScope(ctx);
@@ -316,6 +322,7 @@ export function createBusinessRulesBlueprintTooling(
                 },
             );
             const traces: CapabilityExecutionTrace[] = [];
+            let unresolvedReferences: TaskReference[] = [];
 
             if (resolutionMode === 'agent_first') {
                 const agentResult = await fetchTaskContextCapability(
@@ -331,7 +338,7 @@ export function createBusinessRulesBlueprintTooling(
                         agentResult.normalized,
                     ];
                     const supplementalReferences =
-                        resolveSupplementalKeyReferences(
+                        resolveSupplementalReferences(
                             manifest,
                             agentResult.normalized,
                         );
@@ -354,11 +361,15 @@ export function createBusinessRulesBlueprintTooling(
                         normalizedTickets.push(
                             ...supplementalResults.normalized,
                         );
+                        unresolvedReferences = mapScopedReferencesToTaskReferences(
+                            supplementalResults.unresolvedReferences,
+                        );
                     }
 
                     return {
                         value: normalizedTickets,
                         traces,
+                        unresolvedReferences,
                     };
                 }
             }
@@ -377,10 +388,14 @@ export function createBusinessRulesBlueprintTooling(
                 capabilityHooks,
             );
             traces.push(...perReferenceResults.traces);
+            unresolvedReferences = mapScopedReferencesToTaskReferences(
+                perReferenceResults.unresolvedReferences,
+            );
 
             return {
                 value: perReferenceResults.normalized,
                 traces,
+                unresolvedReferences,
             };
         },
     };
@@ -632,7 +647,7 @@ function asBusinessSignalHints(
     };
 }
 
-function resolveSupplementalKeyReferences(
+function resolveSupplementalReferences(
     manifest: TaskContextManifest,
     agentTicket: TaskContextNormalized,
 ): TaskReference[] {
@@ -641,27 +656,65 @@ function resolveSupplementalKeyReferences(
         manifest.primaryReference?.kind === 'key'
             ? manifest.primaryReference.value.trim().toUpperCase()
             : undefined;
+    const primaryUrl =
+        manifest.primaryReference?.kind === 'url'
+            ? normalizeTaskReferenceUrl(manifest.primaryReference.value)
+            : undefined;
 
     return manifest.references.filter((reference) => {
-        if (reference.kind !== 'key') {
+        if (
+            primaryKey &&
+            reference.kind === 'key' &&
+            reference.value.trim().toUpperCase() === primaryKey
+        ) {
             return false;
         }
 
-        const normalizedKey = reference.value.trim().toUpperCase();
-        if (!normalizedKey) {
+        if (
+            primaryUrl &&
+            reference.kind === 'url' &&
+            normalizeTaskReferenceUrl(reference.value) === primaryUrl
+        ) {
             return false;
         }
 
-        if (primaryKey && normalizedKey === primaryKey) {
+        if (reference.kind === 'key') {
+            const normalizedKey = reference.value.trim().toUpperCase();
+            if (
+                !normalizedKey ||
+                agentSurfaceContainsIssueKey(agentSurface, normalizedKey)
+            ) {
+                return false;
+            }
+
+            return true;
+        }
+
+        const normalizedUrl = normalizeTaskReferenceUrl(reference.value);
+        if (!normalizedUrl) {
             return false;
         }
 
-        if (agentSurfaceContainsIssueKey(agentSurface, normalizedKey)) {
-            return false;
-        }
-
-        return true;
+        return !agentSurface.includes(normalizedUrl.toUpperCase());
     });
+}
+
+function mapScopedReferencesToTaskReferences(
+    references: Array<{ kind: 'key' | 'url'; value: string }>,
+): TaskReference[] {
+    return references.map((reference) => ({
+        kind: reference.kind,
+        value:
+            reference.kind === 'key'
+                ? reference.value.trim().toUpperCase()
+                : reference.value.trim(),
+        label: reference.value.trim(),
+        source: 'body' as const,
+    }));
+}
+
+function normalizeTaskReferenceUrl(url: string): string {
+    return url.trim().replace(/[),.;]+$/g, '');
 }
 
 function buildAgentTaskContextSurface(
