@@ -1,8 +1,10 @@
 import {
+    buildBusinessSignalsFromSources,
     buildPrTextContext,
     dedupeTaskReferences,
+    hasExplicitTaskReferenceInput,
     mergeTaskContextSources,
-    resolvePipelineTaskReferences,
+    resolveTaskReferences,
     shouldAttemptMcpFetch,
 } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 
@@ -49,9 +51,9 @@ describe('task-context-resolver', () => {
         });
     });
 
-    describe('resolvePipelineTaskReferences', () => {
+    describe('resolveTaskReferences', () => {
         it('uses ticket keys and links from pipeline businessSignals only', () => {
-            const refs = resolvePipelineTaskReferences({
+            const refs = resolveTaskReferences({
                 businessSignals: {
                     ticketKeys: ['PROJ-100', 'PROJ-101'],
                     taskLinks: [
@@ -66,38 +68,101 @@ describe('task-context-resolver', () => {
             );
         });
 
-        it('does not infer ticket keys from PR text when businessSignals are absent', () => {
-            const refs = resolvePipelineTaskReferences({
+        it('includes explicit taskId and taskUrl without re-scanning PR fields', () => {
+            const refs = resolveTaskReferences({
+                taskId: 'PROJ-999',
+                taskUrl: 'https://kodustech.atlassian.net/browse/PROJ-888',
                 businessSignals: undefined,
             });
 
-            expect(refs).toEqual([]);
+            expect(refs.map((ref) => ref.label)).toEqual(
+                expect.arrayContaining(['PROJ-999', 'PROJ-888']),
+            );
         });
 
-        it('ignores version-like strings in PR text without pipeline signals', () => {
-            const refs = resolvePipelineTaskReferences({
-                businessSignals: {
-                    ticketKeys: [],
-                    taskLinks: [],
-                    requirementKeywords: [],
-                },
+        it('extracts ticket keys from user-provided taskReference only', () => {
+            const refs = resolveTaskReferences({
+                taskReference:
+                    '@kody -v business-logic\nAcceptance criteria for PROJ-55',
             });
 
-            expect(refs).toEqual([]);
+            expect(refs).toEqual([
+                expect.objectContaining({ kind: 'key', value: 'PROJ-55' }),
+            ]);
+        });
+
+        it('does not infer ticket keys when no signals or explicit references exist', () => {
+            expect(resolveTaskReferences({})).toEqual([]);
         });
     });
 
     describe('shouldAttemptMcpFetch', () => {
-        it('returns true only when MCPs and references are both present', () => {
+        it('returns true when explicit task references exist even without connected MCP hints', () => {
             expect(
-                shouldAttemptMcpFetch(['jira'], [
-                    { kind: 'key', value: 'PROJ-1', label: 'PROJ-1' },
-                ]),
+                shouldAttemptMcpFetch(
+                    [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }],
+                    { hasExplicitTaskReference: true },
+                ),
             ).toBe(true);
-            expect(shouldAttemptMcpFetch([], [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }])).toBe(
+        });
+
+        it('returns true for pipeline signals when task MCP is connected', () => {
+            expect(
+                shouldAttemptMcpFetch(
+                    [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }],
+                    {
+                        connectedTaskMcps: ['jira'],
+                        hasExplicitTaskReference: false,
+                    },
+                ),
+            ).toBe(true);
+        });
+
+        it('returns false for pipeline signals when no task MCP is connected', () => {
+            expect(
+                shouldAttemptMcpFetch(
+                    [{ kind: 'key', value: 'PROJ-1', label: 'PROJ-1' }],
+                    {
+                        connectedTaskMcps: [],
+                        hasExplicitTaskReference: false,
+                    },
+                ),
+            ).toBe(false);
+        });
+
+        it('returns false when references are empty', () => {
+            expect(shouldAttemptMcpFetch([], { connectedTaskMcps: ['jira'] })).toBe(
                 false,
             );
-            expect(shouldAttemptMcpFetch(['jira'], [])).toBe(false);
+        });
+    });
+
+    describe('hasExplicitTaskReferenceInput', () => {
+        it('detects explicit taskId, taskUrl, or taskReference', () => {
+            expect(hasExplicitTaskReferenceInput({ taskId: 'PROJ-1' })).toBe(
+                true,
+            );
+            expect(
+                hasExplicitTaskReferenceInput({
+                    taskReference: '@kody -v business-logic',
+                }),
+            ).toBe(true);
+            expect(hasExplicitTaskReferenceInput({})).toBe(false);
+        });
+    });
+
+    describe('buildBusinessSignalsFromSources', () => {
+        it('merges explicit task id with scanned combined sources', () => {
+            const signals = buildBusinessSignalsFromSources({
+                combinedForTickets: 'Implements PROJ-100',
+                bodyForKeywords: 'Given user acceptance criteria',
+                taskId: 'PROJ-200',
+            });
+
+            expect(signals.ticketKeys).toEqual(
+                expect.arrayContaining(['PROJ-100', 'PROJ-200']),
+            );
+            expect(signals.requirementKeywords).toContain('acceptance criteria');
         });
     });
 

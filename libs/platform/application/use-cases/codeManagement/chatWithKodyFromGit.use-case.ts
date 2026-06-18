@@ -2,11 +2,14 @@ import { createLogger, createThreadId } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
+import { buildBusinessSignalsFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
+import { getConnectedTaskManagementMcps } from '@libs/code-review/pipeline/helpers/connected-task-management-mcps';
 import { ConversationAgentUseCase } from '@libs/agents/application/use-cases/conversation-agent.use-case';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { IntegrationConfigEntity } from '@libs/integrations/domain/integrationConfigs/entities/integration-config.entity';
 import { CodeManagementService } from '@libs/platform/infrastructure/adapters/services/codeManagement.service';
+import { MCPManagerService } from '@libs/mcp-server/services/mcp-manager.service';
 import {
     ISandboxLeaseManager,
     SANDBOX_LEASE_MANAGER_TOKEN,
@@ -162,6 +165,7 @@ export class ChatWithKodyFromGitUseCase {
 
         @Inject(SANDBOX_LEASE_MANAGER_TOKEN)
         private readonly leaseManager: ISandboxLeaseManager,
+        private readonly mcpManagerService: MCPManagerService,
     ) {}
 
     async execute(params: WebhookParams): Promise<void> {
@@ -474,6 +478,14 @@ export class ChatWithKodyFromGitUseCase {
             }
         }
 
+        const connectedTaskMcps = await getConnectedTaskManagementMcps(
+            this.mcpManagerService,
+            organizationAndTeamData,
+        );
+        const signalSources = [commentBody, pullRequestDescription, headRef]
+            .filter(Boolean)
+            .join('\n');
+
         const prepareContext = {
             userQuestion: commentBody,
             pullRequest: {
@@ -485,6 +497,12 @@ export class ChatWithKodyFromGitUseCase {
             pullRequestDescription,
             platformType: params.platformType,
             customInstructions: this.extractCustomInstructions(params),
+            taskReference: commentBody,
+            connectedTaskMcps,
+            businessSignals: buildBusinessSignalsFromSources({
+                combinedForTickets: signalSources,
+                bodyForKeywords: pullRequestDescription ?? commentBody,
+            }),
         };
 
         const response = await this.businessRulesValidationAgentUseCase.execute(

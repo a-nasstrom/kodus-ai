@@ -26,8 +26,9 @@ import {
 } from './blueprint.tooling';
 import {
     buildPrTextContext,
+    hasExplicitTaskReferenceInput,
     mergeTaskContextSources,
-    resolvePipelineTaskReferences,
+    resolveTaskReferences,
     shouldAttemptMcpFetch,
 } from './task-context-resolver';
 
@@ -218,18 +219,43 @@ export function createBusinessRulesBlueprint(
                         prepareContext?.headRef,
                 });
 
-                const references = resolvePipelineTaskReferences({
+                const explicitTaskId =
+                    typeof prepareContext?.taskId === 'string' &&
+                    prepareContext.taskId.trim().length > 0
+                        ? prepareContext.taskId.trim()
+                        : undefined;
+                const explicitTaskUrl =
+                    typeof prepareContext?.taskUrl === 'string' &&
+                    prepareContext.taskUrl.trim().length > 0
+                        ? prepareContext.taskUrl.trim()
+                        : undefined;
+                const explicitTaskReference =
+                    typeof prepareContext?.taskReference === 'string' &&
+                    prepareContext.taskReference.trim().length > 0
+                        ? prepareContext.taskReference.trim()
+                        : undefined;
+
+                const references = resolveTaskReferences({
                     businessSignals: prepareContext?.businessSignals,
+                    taskId: explicitTaskId,
+                    taskUrl: explicitTaskUrl,
+                    taskReference: explicitTaskReference,
                 });
 
                 let mcpNormalizedList: TaskContextNormalized[] = [];
                 let traces: CapabilityExecutionTrace[] = [];
 
                 if (
-                    shouldAttemptMcpFetch(
-                        prepareContext?.connectedTaskMcps,
-                        references,
-                    )
+                    shouldAttemptMcpFetch(references, {
+                        connectedTaskMcps: prepareContext?.connectedTaskMcps,
+                        hasExplicitTaskReference: hasExplicitTaskReferenceInput(
+                            {
+                                taskId: explicitTaskId,
+                                taskUrl: explicitTaskUrl,
+                                taskReference: explicitTaskReference,
+                            },
+                        ),
+                    })
                 ) {
                     const fetched = await tooling.fetchAllTaskContexts(
                         ctx,
@@ -499,7 +525,14 @@ function readPrepareContextPrDiff(ctx: BusinessRulesContext): string {
 
 function readPrepareContextString(
     prepareContext: BusinessRulesContext['prepareContext'],
-    key: 'pullRequestTitle' | 'pullRequestDescription',
+    key: keyof Pick<
+        NonNullable<BusinessRulesContext['prepareContext']>,
+        | 'pullRequestTitle'
+        | 'pullRequestDescription'
+        | 'taskId'
+        | 'taskUrl'
+        | 'taskReference'
+    >,
 ): string | undefined {
     const value = prepareContext?.[key];
     return typeof value === 'string' && value.trim().length > 0

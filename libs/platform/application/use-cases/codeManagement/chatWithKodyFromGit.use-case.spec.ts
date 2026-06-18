@@ -49,6 +49,10 @@ describe('ChatWithKodyFromGitUseCase', () => {
         businessRulesValidationAgentUseCase = {
             execute: jest.fn().mockResolvedValue(undefined),
         };
+        const mcpManagerService = {
+            getConnections: jest.fn().mockResolvedValue([]),
+            getIntegrations: jest.fn().mockResolvedValue([]),
+        };
 
         const leaseManager = {
             acquire: jest.fn().mockResolvedValue({
@@ -65,6 +69,7 @@ describe('ChatWithKodyFromGitUseCase', () => {
             conversationAgentUseCase as any,
             businessRulesValidationAgentUseCase as any,
             leaseManager as any,
+            mcpManagerService as any,
         );
     });
 

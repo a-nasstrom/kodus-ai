@@ -4,6 +4,16 @@ import type { BusinessRulesSignals } from './types';
 export const MAX_TASK_REFERENCES = 5;
 
 const ISSUE_KEY_PATTERN = /\b([A-Za-z][A-Za-z0-9_]+-\d+)\b/g;
+const PIPELINE_TICKET_KEY_PATTERN = /[A-Za-z][A-Za-z0-9_]+-\d+/g;
+
+const REQUIREMENT_KEYWORDS = [
+    'requirement',
+    'acceptance criteria',
+    'user story',
+    'given',
+    'when',
+    'then',
+] as const;
 
 export type TaskReferenceKind = 'key' | 'url';
 
@@ -52,13 +62,89 @@ export function buildPrTextContext(input: {
     return content;
 }
 
-export function resolvePipelineTaskReferences(input: {
+export function buildBusinessSignalsFromSources(input: {
+    combinedForTickets?: string;
+    bodyForKeywords?: string;
+    taskId?: string;
+    taskUrl?: string;
+}): BusinessRulesSignals {
+    const combined = input.combinedForTickets ?? '';
+    const body = input.bodyForKeywords ?? '';
+    const normalizedTaskId = input.taskId?.trim().toUpperCase();
+    const normalizedTaskUrl = input.taskUrl?.trim();
+
+    const ticketKeys = uniqueNonEmpty([
+        ...(normalizedTaskId ? [normalizedTaskId] : []),
+        ...(combined.match(PIPELINE_TICKET_KEY_PATTERN)?.map((match) =>
+            match.toUpperCase(),
+        ) ?? []),
+    ]);
+    const taskLinks = uniqueNonEmpty([
+        ...(normalizedTaskUrl ? [normalizedTaskUrl] : []),
+        ...(combined.match(/https?:\/\/[^\s)>\]"']+/g) ?? []).map((url) =>
+            normalizeUrl(url),
+        ),
+    ]);
+
+    const lower = body.toLowerCase();
+    const requirementKeywords = REQUIREMENT_KEYWORDS.filter((keyword) =>
+        lower.includes(keyword),
+    );
+
+    return {
+        ticketKeys,
+        taskLinks,
+        requirementKeywords,
+    };
+}
+
+export function resolveTaskReferences(input: {
     businessSignals?: BusinessRulesSignals;
+    taskId?: string;
+    taskUrl?: string;
+    taskReference?: string;
 }): TaskReference[] {
-    const keys = uniqueNonEmpty(input.businessSignals?.ticketKeys ?? []);
-    const links = uniqueNonEmpty(input.businessSignals?.taskLinks ?? []);
+    const explicitKeys = uniqueNonEmpty([
+        ...(input.taskId?.trim() ? [input.taskId.trim()] : []),
+        ...extractIssueKeysFromUserProvidedText(input.taskReference),
+    ]);
+    const explicitLinks = uniqueNonEmpty([
+        ...(input.taskUrl?.trim() ? [input.taskUrl.trim()] : []),
+        ...extractUrlsFromUserProvidedText(input.taskReference),
+    ]);
+
+    const keys = uniqueNonEmpty([
+        ...explicitKeys,
+        ...(input.businessSignals?.ticketKeys ?? []),
+    ]);
+    const links = uniqueNonEmpty([
+        ...explicitLinks,
+        ...(input.businessSignals?.taskLinks ?? []),
+    ]);
 
     return dedupeTaskReferences(keys, links).slice(0, MAX_TASK_REFERENCES);
+}
+
+/** @deprecated Use resolveTaskReferences */
+export function resolvePipelineTaskReferences(input: {
+    businessSignals?: BusinessRulesSignals;
+    taskId?: string;
+    taskUrl?: string;
+    taskReference?: string;
+}): TaskReference[] {
+    return resolveTaskReferences(input);
+}
+
+export function hasExplicitTaskReferenceInput(input: {
+    taskId?: string;
+    taskUrl?: string;
+    taskReference?: string;
+}): boolean {
+    return Boolean(
+        input.taskId?.trim() ||
+            input.taskUrl?.trim() ||
+            input.taskReference?.trim(),
+    );
 }
 
 export function dedupeTaskReferences(
@@ -113,13 +199,23 @@ export function dedupeTaskReferences(
 }
 
 export function shouldAttemptMcpFetch(
-    connectedTaskMcps: string[] | undefined,
     references: TaskReference[],
+    input?: {
+        connectedTaskMcps?: string[];
+        hasExplicitTaskReference?: boolean;
+    },
 ): boolean {
+    if (references.length === 0) {
+        return false;
+    }
+
+    if (input?.hasExplicitTaskReference) {
+        return true;
+    }
+
     return (
-        Array.isArray(connectedTaskMcps) &&
-        connectedTaskMcps.length > 0 &&
-        references.length > 0
+        Array.isArray(input?.connectedTaskMcps) &&
+        input.connectedTaskMcps.length > 0
     );
 }
 
@@ -224,6 +320,32 @@ function formatTicketSection(ticket: TaskContextNormalized): string {
     }
 
     return parts.join('\n\n');
+}
+
+function extractIssueKeysFromUserProvidedText(text?: string): string[] {
+    if (!text?.trim()) {
+        return [];
+    }
+
+    const keys = new Set<string>();
+    for (const match of text.matchAll(ISSUE_KEY_PATTERN)) {
+        if (match[1]) {
+            keys.add(match[1].toUpperCase());
+        }
+    }
+
+    return [...keys];
+}
+
+function extractUrlsFromUserProvidedText(text?: string): string[] {
+    if (!text?.trim()) {
+        return [];
+    }
+
+    const matches = text.match(/https?:\/\/[^\s)>\]"']+/g) ?? [];
+    return uniqueNonEmpty(
+        matches.map((url) => normalizeUrl(url)).filter(Boolean),
+    );
 }
 
 function extractIssueKeyFromUrl(url: string): string | undefined {
