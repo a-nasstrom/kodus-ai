@@ -273,6 +273,61 @@ export async function fetchTaskContext(
     };
 }
 
+export interface TaskContextScopedReference {
+    kind: 'key' | 'url';
+    value: string;
+}
+
+export async function fetchAllTaskContexts(
+    toolCaller: ToolCaller,
+    capabilityRuntime: SkillCapabilityRuntimeConfig,
+    params: TaskContextReadParams,
+    references: TaskContextScopedReference[],
+    hooks?: TaskContextReadHooks,
+): Promise<{
+    normalized: TaskContextNormalized[];
+    traces: CapabilityExecutionTrace[];
+}> {
+    const normalized: TaskContextNormalized[] = [];
+    const traces: CapabilityExecutionTrace[] = [];
+
+    for (const reference of references) {
+        const scopedParams: TaskContextReadParams = {
+            ...params,
+            taskId: reference.kind === 'key' ? reference.value : undefined,
+            taskUrl: reference.kind === 'url' ? reference.value : undefined,
+            taskReference: reference.value,
+            businessSignals: {
+                ticketKeys:
+                    reference.kind === 'key' ? [reference.value] : undefined,
+                taskLinks:
+                    reference.kind === 'url' ? [reference.value] : undefined,
+            },
+            enableAgenticFallback: false,
+        };
+
+        const result = await fetchTaskContext(
+            toolCaller,
+            capabilityRuntime,
+            scopedParams,
+            hooks,
+        );
+        traces.push(...result.traces);
+
+        if (isUsableTaskContextNormalized(result.normalized)) {
+            normalized.push(result.normalized!);
+        }
+    }
+
+    return { normalized, traces };
+}
+
+export function isUsableTaskContextNormalized(
+    value: TaskContextNormalized | undefined,
+): value is TaskContextNormalized {
+    return Boolean(value && isUsableTaskContext(value));
+}
+
 async function resolveTaskContextDiscovery(input: {
     toolCaller: ToolCaller;
     capabilityRuntime: SkillCapabilityRuntimeConfig;

@@ -1,5 +1,4 @@
 import { BusinessLogicValidationStage } from '@/code-review/pipeline/stages/business-logic-validation.stage';
-import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 
 jest.mock('@kodus/flow', () => ({
     createLogger: () => ({
@@ -100,7 +99,7 @@ describe('BusinessLogicValidationStage', () => {
             expect(decision).toBeNull();
         });
 
-        it('skips with no_signals when title, branch and body have no ticket key or matching URL', async () => {
+        it('does not skip when title, branch and body have no ticket key (PR text is valid context)', async () => {
             const context = buildContext({
                 pullRequest: {
                     number: 42,
@@ -113,9 +112,7 @@ describe('BusinessLogicValidationStage', () => {
 
             const decision = await (stage as any).evaluateSkip(context);
 
-            expect(decision).toEqual(
-                expect.objectContaining({ reason: 'no_signals' }),
-            );
+            expect(decision).toBeNull();
         });
     });
 
@@ -126,13 +123,13 @@ describe('BusinessLogicValidationStage', () => {
             );
         });
 
-        it('passes a ticket key found in the PR title to the agent', async () => {
+        it('passes pullRequestTitle and connectedTaskMcps to the agent', async () => {
             const context = buildContext({
                 pullRequest: {
                     number: 42,
                     body: 'No identifier in the body',
-                    title: '[DL-2773] Add print working mode',
-                    head: { ref: 'feature/print-mode' },
+                    title: 'Fix export PROJ-1',
+                    head: { ref: 'feature/export' },
                     base: { ref: 'main' },
                 },
             });
@@ -142,9 +139,8 @@ describe('BusinessLogicValidationStage', () => {
             expect(agentProvider.execute).toHaveBeenCalledWith(
                 expect.objectContaining({
                     prepareContext: expect.objectContaining({
-                        businessSignals: expect.objectContaining({
-                            ticketKeys: ['DL-2773'],
-                        }),
+                        pullRequestTitle: 'Fix export PROJ-1',
+                        connectedTaskMcps: ['jira'],
                     }),
                 }),
             );
@@ -293,8 +289,8 @@ describe('BusinessLogicValidationStage', () => {
         });
     });
 
-    describe('skip when no task MCP connected', () => {
-        it('returns a skip decision when only non-task MCPs are connected', async () => {
+    describe('runs without task MCP connected', () => {
+        it('does not skip evaluateSkip when only non-task MCPs are connected', async () => {
             mcpManagerService.getConnections.mockResolvedValue([
                 { appName: 'Slack', provider: 'slack', organizationId: 'org-1' },
             ]);
@@ -312,9 +308,26 @@ describe('BusinessLogicValidationStage', () => {
 
             const decision = await (stage as any).evaluateSkip(context);
 
-            expect(decision).toEqual(
-                expect.objectContaining({ reason: 'no_task_mcp' }),
-            );
+            expect(decision).toBeNull();
+        });
+
+        it('still runs the agent when no task MCP is connected', async () => {
+            mcpManagerService.getConnections.mockResolvedValue([]);
+            mcpManagerService.getIntegrations.mockResolvedValue([]);
+
+            const context = buildContext({
+                pullRequest: {
+                    number: 42,
+                    body: 'Refactor logging only',
+                    title: 'Refactor logging',
+                    head: { ref: 'chore/refactor' },
+                    base: { ref: 'main' },
+                },
+            });
+
+            await stage.execute(context as any);
+
+            expect(agentProvider.execute).toHaveBeenCalled();
         });
 
         it('does not skip when Atlassian Rovo OAuth is active without a connection row', async () => {
@@ -371,34 +384,6 @@ describe('BusinessLogicValidationStage', () => {
             const decision = await (stage as any).evaluateSkip(context);
 
             expect(decision).toBeNull();
-        });
-    });
-
-    describe('agent NO_TASK_MCP sentinel handling', () => {
-        it('skips silently with no_task_mcp outcome when the agent returns the sentinel', async () => {
-            agentProvider.execute.mockResolvedValue(
-                BusinessRulesValidationAgentProvider.NO_TASK_MCP_SENTINEL,
-            );
-
-            const context = buildContext({
-                pullRequest: {
-                    number: 42,
-                    body: 'Implements DL-2773',
-                    title: '',
-                    head: { ref: '' },
-                    base: { ref: 'main' },
-                },
-            });
-
-            const result = await stage.execute(context as any);
-
-            expect(result.businessLogicResults).toEqual([]);
-            expect(result.businessLogicOutcome).toEqual(
-                expect.objectContaining({
-                    kind: 'skipped',
-                    reason: 'no_task_mcp',
-                }),
-            );
         });
     });
 });

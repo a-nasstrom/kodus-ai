@@ -1,4 +1,5 @@
 import {
+    fetchAllTaskContexts,
     fetchPullRequestDiff,
     fetchPullRequestMetadata,
     fetchTaskContext as fetchTaskContextCapability,
@@ -18,6 +19,7 @@ import {
     TaskContextNormalized,
     TaskQuality,
 } from './types';
+import type { TaskReference } from './task-context-resolver';
 
 export const SKILL_NAME = 'business-rules-validation';
 export const PR_METADATA_CAPABILITY = 'pr.metadata.read';
@@ -50,6 +52,10 @@ export interface BusinessRulesBlueprintTooling {
     fetchTaskContext: (
         ctx: BusinessRulesContext,
     ) => Promise<ToolingResult<TaskContextNormalized | undefined>>;
+    fetchAllTaskContexts: (
+        ctx: BusinessRulesContext,
+        references: TaskReference[],
+    ) => Promise<ToolingResult<TaskContextNormalized[]>>;
 }
 
 export function resolvePullRequestDescription(
@@ -108,17 +114,45 @@ export function classifyTaskQualityFromSources(input: {
         return 'EMPTY';
     }
 
+    const ticketSectionCount = countSections(normalized, '## From ticket');
+    const hasFromPr = /(^|\n)\s*## From PR\b/im.test(normalized);
+    const prSection = hasFromPr
+        ? extractMarkdownSection(normalized, 'From PR')
+        : '';
+
     const hasAcceptanceCriteriaSection =
-        /(^|\n)\s*acceptance criteria\s*:/im.test(normalized);
-    const hasTitleSection = /(^|\n)\s*title\s*:/im.test(normalized);
-    const hasDescriptionSection = /(^|\n)\s*description\s*:/im.test(normalized);
-    const bulletLikeRequirements = countRequirementListItems(normalized);
+        /(^|\n)\s*acceptance criteria\s*:/im.test(normalized) ||
+        /(^|\n)\s*acceptance criteria\s*:/im.test(prSection);
+    const hasTitleSection =
+        /(^|\n)\s*title\s*:/im.test(normalized) ||
+        /(^|\n)\s*title\s*:/im.test(prSection);
+    const hasDescriptionSection =
+        /(^|\n)\s*description\s*:/im.test(normalized) ||
+        /(^|\n)\s*description\s*:/im.test(prSection);
+    const bulletLikeRequirements = countRequirementListItems(
+        prSection || normalized,
+    );
+
+    if (
+        ticketSectionCount >= 1 &&
+        (hasFromPr || hasAcceptanceCriteriaSection || bulletLikeRequirements >= 1)
+    ) {
+        return hasAcceptanceCriteriaSection || bulletLikeRequirements >= 2
+            ? 'COMPLETE'
+            : 'PARTIAL';
+    }
 
     if (
         (hasAcceptanceCriteriaSection || bulletLikeRequirements >= 2) &&
         (hasDescriptionSection || hasTitleSection || normalized.length >= 120)
     ) {
         return 'COMPLETE';
+    }
+
+    if (hasFromPr && (prSection.trim().length >= 20 || hasTitleSection)) {
+        return hasAcceptanceCriteriaSection || bulletLikeRequirements >= 2
+            ? 'COMPLETE'
+            : 'PARTIAL';
     }
 
     if (hasDescriptionSection || normalized.length >= 80) {
@@ -223,39 +257,13 @@ export function createBusinessRulesBlueprintTooling(
             const taskContext = await fetchTaskContextCapability(
                 fetcher,
                 capabilityRuntime,
-                {
-                    skillName: SKILL_NAME,
-                    organizationId: scope.organizationId,
-                    teamId: scope.teamId,
-                    repositoryOwner: resolveRepositoryOwner(ctx),
-                    repositoryName: resolveRepositoryName(ctx),
-                    pullRequestNumber: resolvePullRequestNumber(ctx),
-                    prBody: ctx.prBody,
-                    headRef: resolvePullRequestHeadRef(ctx),
-                    userQuestion: readPrepareContextString(ctx, 'userQuestion'),
-                    pullRequestDescription: readPrepareContextString(
-                        ctx,
-                        'pullRequestDescription',
-                    ),
-                    taskContext: readPrepareContextString(ctx, 'taskContext'),
-                    taskId: readPrepareContextString(ctx, 'taskId'),
-                    taskUrl: readPrepareContextString(ctx, 'taskUrl'),
-                    taskReference: readPrepareContextString(
-                        ctx,
-                        'taskReference',
-                    ),
-                    userLanguage: ctx.userLanguage,
-                    thread: ctx.thread,
-                    excludedTools: resolveExcludedTools(capabilityTools),
-                    businessSignals: asBusinessSignalHints(
-                        ctx.prepareContext?.businessSignals,
-                    ),
-                    taskContextResolutionMode:
-                        hooks?.resolveTaskContextMode?.(ctx, providerType) ??
-                        'cache_first',
-                    enableAgenticFallback:
-                        ctx.prepareContext?.enableAgenticFallback,
-                },
+                buildTaskContextReadParams(
+                    ctx,
+                    scope,
+                    capabilityTools,
+                    hooks,
+                    providerType,
+                ),
                 {
                     getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
                     getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
@@ -271,7 +279,102 @@ export function createBusinessRulesBlueprintTooling(
                 traces: taskContext.traces,
             };
         },
+
+        fetchAllTaskContexts: async (
+            ctx: BusinessRulesContext,
+            references: TaskReference[],
+        ) => {
+            if (!references.length) {
+                return { value: [], traces: [] };
+            }
+
+            const scope = resolveExecutionScope(ctx);
+            const baseParams = buildTaskContextReadParams(
+                ctx,
+                scope,
+                capabilityTools,
+                hooks,
+                providerType,
+            );
+            const fetched = await fetchAllTaskContexts(
+                fetcher,
+                capabilityRuntime,
+                baseParams,
+                references.map((reference) => ({
+                    kind: reference.kind,
+                    value: reference.value,
+                })),
+                {
+                    getSeedTaskContextTools: hooks?.getSeedTaskContextTools,
+                    getCachedTaskContextTools: hooks?.getCachedTaskContextTools,
+                    saveCachedTaskContextTools:
+                        hooks?.saveCachedTaskContextTools,
+                    resolvePreferredTool: hooks?.resolvePreferredTool,
+                    recordExecution: hooks?.recordExecution,
+                },
+            );
+
+            await recordCapabilityExecutionTraces(hooks, fetched.traces);
+
+            return {
+                value: fetched.normalized,
+                traces: fetched.traces,
+            };
+        },
     };
+}
+
+function buildTaskContextReadParams(
+    ctx: BusinessRulesContext,
+    scope: ExecutionScope,
+    capabilityTools: ReturnType<typeof createCapabilityToolRuntime>,
+    hooks: CapabilityExecutionHooks<BusinessRulesContext> | undefined,
+    providerType: string,
+) {
+    return {
+        skillName: SKILL_NAME,
+        organizationId: scope.organizationId,
+        teamId: scope.teamId,
+        repositoryOwner: resolveRepositoryOwner(ctx),
+        repositoryName: resolveRepositoryName(ctx),
+        pullRequestNumber: resolvePullRequestNumber(ctx),
+        prBody: ctx.prBody,
+        headRef: resolvePullRequestHeadRef(ctx),
+        userQuestion: readPrepareContextString(ctx, 'userQuestion'),
+        pullRequestDescription: readPrepareContextString(
+            ctx,
+            'pullRequestDescription',
+        ),
+        taskContext: readPrepareContextString(ctx, 'taskContext'),
+        taskId: readPrepareContextString(ctx, 'taskId'),
+        taskUrl: readPrepareContextString(ctx, 'taskUrl'),
+        taskReference: readPrepareContextString(ctx, 'taskReference'),
+        userLanguage: ctx.userLanguage,
+        thread: ctx.thread,
+        excludedTools: resolveExcludedTools(capabilityTools),
+        businessSignals: asBusinessSignalHints(ctx.prepareContext?.businessSignals),
+        taskContextResolutionMode:
+            hooks?.resolveTaskContextMode?.(ctx, providerType) ?? 'cache_first',
+        enableAgenticFallback: ctx.prepareContext?.enableAgenticFallback,
+    };
+}
+
+function countSections(value: string, header: string): number {
+    const pattern = new RegExp(`(^|\\n)\\s*${escapeRegExp(header)}\\b`, 'gim');
+    return [...value.matchAll(pattern)].length;
+}
+
+function extractMarkdownSection(value: string, header: string): string {
+    const pattern = new RegExp(
+        `(?:^|\\n)\\s*## ${escapeRegExp(header)}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`,
+        'im',
+    );
+    const match = value.match(pattern);
+    return match?.[1]?.trim() ?? '';
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function resolvePullRequestNumber(

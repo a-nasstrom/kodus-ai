@@ -55,6 +55,8 @@ export function buildBusinessRulesAnalysisPrompt(
         'INSTRUCTIONS:',
         'Check EACH acceptance criterion against the PR_DIFF. For each one, determine: IMPLEMENTED, MISSING, or PARTIAL.',
         'Then scan for any task requirements in FULL_TASK_CONTEXT not covered by the acceptance criteria list.',
+        'When FULL_TASK_CONTEXT contains multiple "## From ticket" sections, validate the PR_DIFF against the union of all ticket requirements and cite the ticket section in each finding.',
+        'When a "## From PR" section is present, treat its title, branch, and description as additional business requirements.',
         'Write ALL generated prose in USER LANGUAGE.',
         'Only requirement quotes copied from task context may remain in the original source language.',
         'Do not mix languages in headings, status labels, findings, explanations, or suggested actions.',

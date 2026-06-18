@@ -427,24 +427,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
     private async shouldRunBusinessLogicValidation(
         context: CodeReviewPipelineContext,
     ): Promise<boolean> {
-        if (!context.codeReviewConfig?.reviewOptions?.business_logic) {
-            return false;
-        }
-
-        const prBody = context.pullRequest?.body ?? '';
-        const signalSources = this.buildSignalSources(context);
-        if (!this.hasBusinessSignals(signalSources)) {
-            return false;
-        }
-
-        const currentHash = this.computePrBodyHash(prBody);
-        const lastHash = (context.pipelineMetadata?.lastExecution as any)
-            ?.businessLogicHash;
-        if (lastHash && lastHash === currentHash) {
-            return false;
-        }
-
-        return true;
+        return Boolean(context.codeReviewConfig?.reviewOptions?.business_logic);
     }
 
     /**

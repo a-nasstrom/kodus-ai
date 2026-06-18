@@ -1,8 +1,8 @@
 import { createBusinessRulesBlueprint } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint';
 import { classifyTaskQualityFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint.tooling';
+import { buildPrTextContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
 import { SkillCapabilityRuntimeConfig } from '@libs/agents/skills/generic-skill-runner.service';
-import { CapabilityStrategyScope } from '@libs/agents/skills/runtime/skill-runtime.types';
 import { runBlueprint } from '@libs/shared/blueprint/blueprint.runner';
 
 const defaultRuntimeConfig: SkillCapabilityRuntimeConfig = {
@@ -404,6 +404,7 @@ describe('business-rules blueprint', () => {
             prepareContext: {
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 77 },
+                connectedTaskMcps: ['jira'],
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -625,6 +626,7 @@ describe('business-rules blueprint', () => {
                     pullRequestNumber: 22,
                     headRef: 'feature/PROJ-123',
                 },
+                connectedTaskMcps: ['jira'],
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -660,7 +662,7 @@ describe('business-rules blueprint', () => {
         ).toBe(true);
     });
 
-    it('uses agentic fallback for task context when no deterministic task tool is registered', async () => {
+    it('uses PR text when no task MCP is connected and agentic fallback is enabled', async () => {
         const fetcher = {
             callTool: jest.fn().mockResolvedValue({
                 result: { result: { success: true, data: 'diff content' } },
@@ -707,14 +709,9 @@ describe('business-rules blueprint', () => {
             next = await step.fn(next);
         }
 
-        expect(fetcher.callAgent).toHaveBeenCalledTimes(1);
-        expect(next.taskContext).toContain('Checkout business validation');
-        expect(
-            next.capabilityExecutionTrace?.some(
-                (trace) =>
-                    trace.mode === 'agentic' && trace.toolName === 'search',
-            ),
-        ).toBe(true);
+        expect(fetcher.callAgent).not.toHaveBeenCalled();
+        expect(next.taskContext).toContain('## From PR');
+        expect(next.taskContext).toContain('PROJ-999');
     });
 
     it('enforces seeded task-context boundary before applying cache ordering', async () => {
@@ -811,6 +808,7 @@ describe('business-rules blueprint', () => {
                     'Related to https://kodustech.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-700',
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 24 },
+                connectedTaskMcps: ['jira'],
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -831,7 +829,7 @@ describe('business-rules blueprint', () => {
         expect(next.taskContext).toContain('Known seeded strategy task');
     });
 
-    it('supports agent-first mode and saves learned tools to cache hook', async () => {
+    it('uses PR text when agent-first mode is configured but no task MCP is connected', async () => {
         const fetcher = {
             callTool: jest.fn().mockResolvedValue({
                 result: { result: { success: true, data: 'diff content' } },
@@ -902,14 +900,10 @@ describe('business-rules blueprint', () => {
             next = await step.fn(next);
         }
 
-        expect(fetcher.callAgent).toHaveBeenCalledTimes(1);
-        expect(saveCachedTaskContextTools).toHaveBeenCalledWith(
-            expect.objectContaining<CapabilityStrategyScope>({
-                capability: 'task.context.read',
-            }),
-            expect.arrayContaining(['search']),
-        );
-        expect(next.taskContext).toContain('Agent discovered task context');
+        expect(fetcher.callAgent).not.toHaveBeenCalled();
+        expect(saveCachedTaskContextTools).not.toHaveBeenCalled();
+        expect(next.taskContext).toContain('## From PR');
+        expect(next.taskContext).toContain('PROJ-701');
     });
 
     it('blocks write tools in deterministic task.context.read via explicit allowlist', async () => {
@@ -1007,6 +1001,7 @@ describe('business-rules blueprint', () => {
                     'Related to https://kodustech.atlassian.net/browse/PROJ-321',
                 repository: { id: 'repo-1', name: 'my-repo' },
                 pullRequest: { pullRequestNumber: 26 },
+                connectedTaskMcps: ['jira'],
                 taskContext: '',
             },
         } as BusinessRulesContext;
@@ -1235,5 +1230,187 @@ describe('business-rules blueprint', () => {
                 prDiffStatus: 'usable',
             }),
         );
+    });
+
+    it('proceeds with PR text context when no task MCP is connected', async () => {
+        const fetcher = {
+            callTool: jest.fn().mockResolvedValue({
+                result: { result: { success: true, data: 'diff content' } },
+            }),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([{ name: 'KODUS_GET_PULL_REQUEST_DIFF' }]),
+        } as any;
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+        );
+        const resolveStep = steps.find(
+            (step) =>
+                step.type === 'deterministic' &&
+                step.name === 'resolveTaskContext',
+        );
+
+        if (!resolveStep || resolveStep.type !== 'deterministic') {
+            throw new Error('resolveTaskContext step not found');
+        }
+
+        const next = await resolveStep.fn({
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prBody: 'Refactor logging internals',
+            prepareContext: {
+                pullRequestTitle: 'Refactor logging',
+                pullRequestDescription: 'Refactor logging internals',
+                pullRequest: { pullRequestNumber: 50, headRef: 'chore/logging' },
+                repository: { id: 'repo-1', name: 'my-repo' },
+                connectedTaskMcps: [],
+                taskContext: '',
+            },
+        } as BusinessRulesContext);
+
+        expect(next.taskContext).toContain('## From PR');
+        expect(next.taskContext).toContain('Title: Refactor logging');
+        expect(next.taskContext).toContain('Branch: chore/logging');
+        expect(fetcher.callTool).not.toHaveBeenCalledWith(
+            'getJiraIssue',
+            expect.anything(),
+        );
+    });
+
+    it('merges two ticket contexts when multiple keys are present', async () => {
+        const fetcher = {
+            callTool: jest
+                .fn()
+                .mockImplementation((toolName: string, args?: unknown) => {
+                    if (toolName === 'KODUS_GET_PULL_REQUEST_DIFF') {
+                        return Promise.resolve({
+                            result: {
+                                result: { success: true, data: 'diff content' },
+                            },
+                        });
+                    }
+
+                    const issueKey = (args as Record<string, unknown>)
+                        ?.issueIdOrKey;
+                    if (toolName === 'getJiraIssue' && issueKey === 'PROJ-100') {
+                        return Promise.resolve({
+                            result: {
+                                data: {
+                                    key: 'PROJ-100',
+                                    fields: {
+                                        summary: 'Epic checkout',
+                                        description: 'Parent epic scope',
+                                    },
+                                },
+                            },
+                        });
+                    }
+                    if (toolName === 'getJiraIssue' && issueKey === 'PROJ-101') {
+                        return Promise.resolve({
+                            result: {
+                                data: {
+                                    key: 'PROJ-101',
+                                    fields: {
+                                        summary: 'Sub-task validation',
+                                        description: 'Card validation rules',
+                                        acceptanceCriteria: ['Reject invalid card'],
+                                    },
+                                },
+                            },
+                        });
+                    }
+
+                    return Promise.resolve({ result: {} });
+                }),
+            callAgent: jest.fn(),
+            getRegisteredTools: jest
+                .fn()
+                .mockReturnValue([
+                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
+                    { name: 'getJiraIssue' },
+                ]),
+            getToolsForLLM: jest.fn().mockReturnValue([
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                        required: ['cloudId', 'issueIdOrKey'],
+                    },
+                },
+            ]),
+        } as any;
+
+        const hooks = {
+            getCachedTaskContextTools: jest.fn().mockResolvedValue([]),
+            getSeedTaskContextTools: jest
+                .fn()
+                .mockResolvedValue(['getJiraIssue']),
+            resolveTaskContextMode: jest.fn().mockReturnValue('cache_first'),
+            saveCachedTaskContextTools: jest.fn().mockResolvedValue(undefined),
+            resolvePreferredTool: jest.fn().mockResolvedValue(undefined),
+            recordExecution: jest.fn().mockResolvedValue(undefined),
+        };
+
+        const steps = createBusinessRulesBlueprint(
+            fetcher,
+            defaultRuntimeConfig,
+            hooks,
+        );
+        const deterministicSteps = steps.filter(
+            (step) => step.type === 'deterministic',
+        );
+
+        let next = {
+            organizationAndTeamData: {
+                organizationId: 'org-1',
+                teamId: 'team-1',
+            },
+            userLanguage: 'en-US',
+            prepareContext: {
+                pullRequestTitle: 'PROJ-100 and PROJ-101 checkout',
+                pullRequestDescription:
+                    'Implements PROJ-100 epic and PROJ-101 sub-task. https://kodustech.atlassian.net/browse/PROJ-100',
+                repository: { id: 'repo-1', name: 'my-repo' },
+                pullRequest: {
+                    pullRequestNumber: 51,
+                    headRef: 'feat/proj-100-101',
+                },
+                connectedTaskMcps: ['jira'],
+                taskContext: '',
+            },
+        } as BusinessRulesContext;
+
+        for (const step of deterministicSteps) {
+            next = await step.fn(next);
+        }
+
+        expect(next.taskContext).toContain('## From ticket PROJ-100');
+        expect(next.taskContext).toContain('## From ticket PROJ-101');
+        expect(next.taskContext).toContain('Epic checkout');
+        expect(next.taskContext).toContain('Reject invalid card');
+        const jiraCalls = fetcher.callTool.mock.calls.filter(
+            (call: unknown[]) => call[0] === 'getJiraIssue',
+        );
+        expect(jiraCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('classifies ## From PR only context as PARTIAL or better', () => {
+        expect(
+            classifyTaskQualityFromSources({
+                taskContext: buildPrTextContext({
+                    title: 'Fix export for admin users',
+                    body: 'Implements export feature with validation for admin-only access.',
+                }),
+            }),
+        ).not.toBe('EMPTY');
     });
 });

@@ -39,6 +39,7 @@ export interface BusinessRulesPrepareContext extends Record<string, unknown> {
     taskReference?: string;
     prDiff?: string;
     pullRequestDescription?: string;
+    pullRequestTitle?: string;
     pullRequestNumber?: number;
     headRef?: string;
     baseRef?: string;
@@ -56,6 +57,7 @@ export interface BusinessRulesPrepareContext extends Record<string, unknown> {
     taskContext?: string;
     customInstructions?: string;
     businessSignals?: BusinessRulesSignals;
+    connectedTaskMcps?: string[];
 
     enableAgenticFallback?: boolean;
     taskContextResolutionMode?: 'cache_first' | 'agent_first';

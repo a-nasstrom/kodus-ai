@@ -124,6 +124,8 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
 
         const prBodyHash = this.computePrBodyHash(prBody);
         const signals = this.detectSignals(signalSources, prBody);
+        const connectedMcps =
+            await this.getConnectedTaskManagementMcps(context);
 
         try {
             const prepareContext = {
@@ -135,9 +137,11 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 },
                 repository: context.repository,
                 pullRequestDescription: prBody,
+                pullRequestTitle: context.pullRequest?.title ?? '',
                 platformType: context.platformType,
                 defaultBranch: context.pullRequest?.base?.ref,
                 businessSignals: signals,
+                connectedTaskMcps: connectedMcps,
             };
             const thread = this.createBusinessLogicThread(context);
 
@@ -158,33 +162,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 });
 
             const result = await Promise.race([agentPromise, timeoutPromise]);
-
-            // No task-management MCP connected — treat as if the category
-            // were disabled: skip silently, no PR comment.
-            if (
-                result ===
-                BusinessRulesValidationAgentProvider.NO_TASK_MCP_SENTINEL
-            ) {
-                this.logger.log({
-                    message:
-                        '[BUSINESS-LOGIC] Skipped — no task-management MCP connected.',
-                    context: this.stageName,
-                    metadata: {
-                        organizationId:
-                            context.organizationAndTeamData?.organizationId,
-                        prNumber: context.pullRequest?.number,
-                    },
-                });
-
-                return this.updateContext(context, (draft) => {
-                    draft.businessLogicResults = [];
-                    draft.businessLogicOutcome = {
-                        kind: 'skipped',
-                        reason: 'no_task_mcp',
-                        message: 'Skipped: no task-management MCP connected.',
-                    };
-                });
-            }
 
             const classification = this.classifyResult(result);
 
@@ -347,41 +324,6 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 reason: 'option_off',
                 message:
                     'Business logic validation is disabled in the code review configuration.',
-            };
-        }
-
-        const connectedMcps =
-            await this.getConnectedTaskManagementMcps(context);
-
-        if (connectedMcps.length === 0) {
-            return {
-                reason: 'no_task_mcp',
-                message:
-                    'Skipped: no task-management MCP connected (Jira, Atlassian Rovo, Linear, Notion, ClickUp, etc.).',
-            };
-        }
-
-        const prBody = context.pullRequest?.body ?? '';
-        const signalSources = this.buildSignalSources(context);
-
-        if (
-            !this.hasRelevantBusinessSignals(signalSources, connectedMcps)
-        ) {
-            return {
-                reason: 'no_signals',
-                message:
-                    'Skipped: no ticket key or task link matching a connected MCP found in the PR description, title or branch name.',
-            };
-        }
-
-        const currentHash = this.computePrBodyHash(prBody);
-        const lastHash = (context.pipelineMetadata?.lastExecution as any)
-            ?.businessLogicHash;
-        if (lastHash && lastHash === currentHash) {
-            return {
-                reason: 'unchanged_body',
-                message:
-                    'Skipped: PR description has not changed since the last review.',
             };
         }
 

@@ -67,7 +67,7 @@ describe('ProcessFilesPrLevelReviewStage', () => {
         expect(shouldRun).toBe(true);
     });
 
-    it('should not run business logic validation when only requirement keywords exist without task id or link', async () => {
+    it('runs business logic validation when only requirement keywords exist (no ticket id)', async () => {
         (posthog.isFeatureEnabled as jest.Mock).mockResolvedValue(true);
 
         const context = {
@@ -91,7 +91,7 @@ describe('ProcessFilesPrLevelReviewStage', () => {
             context,
         );
 
-        expect(shouldRun).toBe(false);
+        expect(shouldRun).toBe(true);
     });
 
     it('builds business-logic prepareContext using the nested pullRequest contract expected by the provider', async () => {

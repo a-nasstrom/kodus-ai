@@ -20,9 +20,9 @@ metadata:
                 mode: provider_dynamic
         fetcher-policy:
             tool-mode: any
-            allow-without-tools: false
+            allow-without-tools: true
         execution-policy:
-            on-missing-mcp: fail
+            on-missing-mcp: skip
             on-mcp-connect-error: fail
             fetcher-timeout-ms: 120000
             analyzer-timeout-ms: 120000
@@ -38,10 +38,6 @@ metadata:
                 required-fields:
                     - needsMoreInfo
                     - summary
-        required-mcps:
-            - category: task-management
-              label: Task Management
-              examples: Jira, Atlassian Rovo, Linear, Notion, ClickUp, Github Issues
 ---
 
 # Business Rules Gap Analysis
