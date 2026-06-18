@@ -234,16 +234,30 @@ export function createBusinessRulesBlueprint(
                         ? prepareContext.taskReference.trim()
                         : undefined;
 
-                const manifest = buildTaskContextManifest({
-                    title: readPrepareContextString(
+                const prTitle = readPrepareContextString(
+                    prepareContext,
+                    'pullRequestTitle',
+                );
+                const prBranch =
+                    prepareContext?.pullRequest?.headRef ??
+                    prepareContext?.headRef;
+                const prBodyForManifest =
+                    readPrepareContextString(
                         prepareContext,
-                        'pullRequestTitle',
-                    ),
-                    businessSignals: prepareContext?.businessSignals,
-                    taskId: explicitTaskId,
-                    taskUrl: explicitTaskUrl,
-                    taskReference: explicitTaskReference,
-                });
+                        'pullRequestDescription',
+                    ) ?? ctx.prBody;
+
+                const manifest =
+                    prepareContext?.taskContextManifest ??
+                    buildTaskContextManifest({
+                        title: prTitle,
+                        branch: prBranch,
+                        body: prBodyForManifest,
+                        businessSignals: prepareContext?.businessSignals,
+                        taskId: explicitTaskId,
+                        taskUrl: explicitTaskUrl,
+                        taskReference: explicitTaskReference,
+                    });
 
                 let mcpNormalizedList: TaskContextNormalized[] = [];
                 let traces: CapabilityExecutionTrace[] = [];

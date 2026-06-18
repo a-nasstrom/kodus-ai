@@ -29,10 +29,17 @@ interface TaskContextSignalHints {
     requirementKeywords?: string[];
 }
 
+export type TaskContextReferenceSource =
+    | 'title'
+    | 'branch'
+    | 'body'
+    | 'explicit';
+
 export interface TaskContextReferenceHint {
     kind: 'key' | 'url';
     value: string;
     label?: string;
+    source?: TaskContextReferenceSource;
 }
 
 export interface TaskContextReadParams {
@@ -123,6 +130,7 @@ interface AgentFallbackParams {
     params: TaskContextReadParams;
     providerType: string;
     candidateTools: string[];
+    taskContextToolSignatures: Map<string, TaskContextToolSignature>;
     hooks?: TaskContextReadHooks;
     logger: ReturnType<typeof createLogger>;
 }
@@ -162,9 +170,13 @@ export async function fetchTaskContext(
         hooks,
         logger,
     });
+    const taskMcpToolsAvailable =
+        discovery.candidateTools.length > 0 ||
+        discovery.registeredTools.some((toolName) =>
+            taskContextToolSignatures.has(toolName),
+        );
     const allowAgenticFallback =
-        params.enableAgenticFallback !== false &&
-        discovery.registeredTools.length > 0;
+        params.enableAgenticFallback !== false && taskMcpToolsAvailable;
 
     const traces: CapabilityExecutionTrace[] = [];
 
@@ -195,6 +207,7 @@ export async function fetchTaskContext(
             params,
             providerType,
             candidateTools: discovery.orderedTools,
+            taskContextToolSignatures,
             hooks,
             logger,
         });
@@ -261,6 +274,7 @@ export async function fetchTaskContext(
         params,
         providerType,
         candidateTools: discovery.orderedTools,
+        taskContextToolSignatures,
         hooks,
         logger,
     });
@@ -1356,6 +1370,8 @@ async function fetchTaskContextWithAgentFallback(
     const prompt = buildAgenticTaskContextPrompt({
         params: input.params,
         candidateTools: input.candidateTools,
+        taskContextToolSignatures: input.taskContextToolSignatures,
+        toolsForLLM: input.toolCaller.getToolsForLLM?.() ?? [],
         hints,
         userLanguage,
     });
@@ -1800,6 +1816,12 @@ function scoreNormalizedContext(value: TaskContextNormalized): number {
 function buildAgenticTaskContextPrompt(input: {
     params: TaskContextReadParams;
     candidateTools: string[];
+    taskContextToolSignatures: Map<string, TaskContextToolSignature>;
+    toolsForLLM: Array<{
+        name?: string;
+        description?: string;
+        parameters?: unknown;
+    }>;
     hints: TaskContextHints;
     userLanguage: string;
 }): string {
@@ -1817,12 +1839,18 @@ function buildAgenticTaskContextPrompt(input: {
         referenceLines.length > 0
             ? referenceLines.join('\n')
             : fallbackReferences.join('\n') || '(none)';
+    const availableToolsBlock = formatAvailableToolsForPrompt({
+        candidateTools: input.candidateTools,
+        taskContextToolSignatures: input.taskContextToolSignatures,
+        toolsForLLM: input.toolsForLLM,
+    });
 
     return `Resolve business task context for a pull request using the available MCP tools.
 
 You choose which tools to call (Jira, Linear, Confluence, Notion, etc.). Do not assume a specific provider.
 
-AVAILABLE_TOOLS: ${input.candidateTools.join(', ') || '(none)'}
+AVAILABLE_TOOLS:
+${availableToolsBlock}
 PRIMARY_REFERENCE (scope anchor for this PR): ${primaryReference || '(none)'}
 ALL_REFERENCES (issue keys, ticket URLs, doc links — use what fits each tool):
 ${referencesBlock}
@@ -1839,7 +1867,8 @@ Policy:
 - PRIMARY_REFERENCE is the main scope for this PR when present.
 - Resolve requirements for that scope first using the best matching MCP tool(s).
 - Parent epics, SRS/Confluence docs, or cross-linked tickets are supporting context only unless PRIMARY_REFERENCE is itself a doc URL.
-- You may call multiple tools when references point to different systems.
+- Prefer direct issue/page fetch tools over broad search when a reference key or URL matches the tool.
+- You may call multiple tools across iterations (e.g. Jira issue then linked Confluence page).
 - When calling tools that require repository data, prioritize KNOWN_REPOSITORY_OWNER and KNOWN_REPOSITORY_NAME.
 
 Return ONLY JSON:
@@ -1851,6 +1880,72 @@ Return ONLY JSON:
 }`;
 }
 
+function formatAvailableToolsForPrompt(input: {
+    candidateTools: string[];
+    taskContextToolSignatures: Map<string, TaskContextToolSignature>;
+    toolsForLLM: Array<{
+        name?: string;
+        description?: string;
+        parameters?: unknown;
+    }>;
+}): string {
+    const candidateSet = new Set(input.candidateTools);
+    const lines: string[] = [];
+    const covered = new Set<string>();
+
+    for (const tool of input.toolsForLLM) {
+        const name =
+            typeof tool.name === 'string' && tool.name.trim().length > 0
+                ? tool.name.trim()
+                : undefined;
+        if (!name || !candidateSet.has(name)) {
+            continue;
+        }
+
+        covered.add(name);
+        const description =
+            typeof tool.description === 'string' && tool.description.trim().length > 0
+                ? tool.description.trim()
+                : undefined;
+        const paramsSummary = formatToolParamsSummary(
+            input.taskContextToolSignatures.get(name),
+        );
+        const suffix = [description, paramsSummary].filter(Boolean).join(' — ');
+        lines.push(suffix ? `- ${name}: ${suffix}` : `- ${name}`);
+    }
+
+    for (const name of input.candidateTools) {
+        if (covered.has(name)) {
+            continue;
+        }
+        const paramsSummary = formatToolParamsSummary(
+            input.taskContextToolSignatures.get(name),
+        );
+        lines.push(paramsSummary ? `- ${name} (${paramsSummary})` : `- ${name}`);
+    }
+
+    return lines.length > 0 ? lines.join('\n') : '(none)';
+}
+
+function formatToolParamsSummary(
+    signature: TaskContextToolSignature | undefined,
+): string {
+    if (!signature) {
+        return '';
+    }
+
+    if (signature.requiredParams.length > 0) {
+        return `required: ${signature.requiredParams.join(', ')}`;
+    }
+
+    const paramNames = Object.keys(signature.properties);
+    if (paramNames.length > 0) {
+        return `params: ${paramNames.join(', ')}`;
+    }
+
+    return '';
+}
+
 function formatTaskReferenceHint(
     reference: TaskContextReferenceHint | undefined,
 ): string {
@@ -1859,7 +1954,11 @@ function formatTaskReferenceHint(
     }
 
     const label = reference.label?.trim() || reference.value.trim();
-    return `- ${reference.kind}: ${label} (${reference.value.trim()})`;
+    const source =
+        reference.source && reference.source !== 'body'
+            ? `, source: ${reference.source}`
+            : '';
+    return `- ${reference.kind}: ${label} (${reference.value.trim()}${source})`;
 }
 
 function isUsableTaskContext(value: TaskContextNormalized): boolean {

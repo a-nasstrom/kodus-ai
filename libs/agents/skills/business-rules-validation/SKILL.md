@@ -26,7 +26,7 @@ metadata:
             on-mcp-connect-error: fail
             fetcher-timeout-ms: 120000
             analyzer-timeout-ms: 120000
-            fetcher-max-iterations: 2
+            fetcher-max-iterations: 3
             analyzer-max-iterations: 1
         contracts:
             input:

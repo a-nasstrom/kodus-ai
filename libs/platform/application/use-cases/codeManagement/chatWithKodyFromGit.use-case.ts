@@ -2,7 +2,7 @@ import { createLogger, createThreadId } from '@kodus/flow';
 import { Inject, Injectable } from '@nestjs/common';
 
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
-import { buildBusinessSignalsFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
+import { buildBusinessSignalsFromSources, buildTaskContextManifest } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { ConversationAgentUseCase } from '@libs/agents/application/use-cases/conversation-agent.use-case';
 import { PlatformType } from '@libs/core/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
@@ -477,6 +477,20 @@ export class ChatWithKodyFromGitUseCase {
 
         const pullRequestTitle = this.getPullRequestTitle(params);
 
+        const businessSignals = buildBusinessSignalsFromSources({
+            title: pullRequestTitle,
+            branch: headRef,
+            body: pullRequestDescription,
+            bodyForKeywords: pullRequestDescription ?? commentBody,
+        });
+        const taskContextManifest = buildTaskContextManifest({
+            title: pullRequestTitle,
+            branch: headRef,
+            body: pullRequestDescription,
+            businessSignals,
+            taskReference: commentBody,
+        });
+
         const prepareContext = {
             userQuestion: commentBody,
             pullRequest: {
@@ -490,12 +504,8 @@ export class ChatWithKodyFromGitUseCase {
             platformType: params.platformType,
             customInstructions: this.extractCustomInstructions(params),
             taskReference: commentBody,
-            businessSignals: buildBusinessSignalsFromSources({
-                title: pullRequestTitle,
-                branch: headRef,
-                body: pullRequestDescription,
-                bodyForKeywords: pullRequestDescription ?? commentBody,
-            }),
+            businessSignals,
+            taskContextManifest,
         };
 
         const response = await this.businessRulesValidationAgentUseCase.execute(

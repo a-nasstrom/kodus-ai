@@ -1,5 +1,8 @@
 import { createLogger, createThreadId } from '@kodus/flow';
-import { buildBusinessSignalsFromSources } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
+import {
+    buildBusinessSignalsFromSources,
+    buildTaskContextManifest,
+} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
 import { LabelType } from '@libs/common/utils/codeManagement/labels';
 import { SeverityLevel } from '@libs/common/utils/enums/severityLevel.enum';
@@ -109,12 +112,20 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
         }
 
         const prBody = context.pullRequest?.body ?? '';
+        const prTitle = context.pullRequest?.title ?? '';
+        const prBranch = context.pullRequest?.head?.ref ?? '';
         const prBodyHash = this.computePrBodyHash(prBody);
         const signals = buildBusinessSignalsFromSources({
-            title: context.pullRequest?.title ?? '',
-            branch: context.pullRequest?.head?.ref ?? '',
+            title: prTitle,
+            branch: prBranch,
             body: prBody,
             bodyForKeywords: prBody,
+        });
+        const taskContextManifest = buildTaskContextManifest({
+            title: prTitle,
+            branch: prBranch,
+            body: prBody,
+            businessSignals: signals,
         });
 
         try {
@@ -122,15 +133,16 @@ export class BusinessLogicValidationStage extends BasePipelineStage<CodeReviewPi
                 userQuestion: '@kody -v business-logic',
                 pullRequest: {
                     pullRequestNumber: context.pullRequest.number,
-                    headRef: context.pullRequest?.head?.ref,
+                    headRef: prBranch,
                     baseRef: context.pullRequest?.base?.ref,
                 },
                 repository: context.repository,
                 pullRequestDescription: prBody,
-                pullRequestTitle: context.pullRequest?.title ?? '',
+                pullRequestTitle: prTitle,
                 platformType: context.platformType,
                 defaultBranch: context.pullRequest?.base?.ref,
                 businessSignals: signals,
+                taskContextManifest,
             };
             const thread = this.createBusinessLogicThread(context);
 

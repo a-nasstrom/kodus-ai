@@ -124,7 +124,15 @@ describe('fetchTaskContext capability', () => {
             callTool: jest.fn(),
             callAgent,
             getRegisteredTools: () => [{ name: 'searchTasks' }],
-            getToolsForLLM: () => [],
+            getToolsForLLM: () => [
+                {
+                    name: 'searchTasks',
+                    parameters: {
+                        required: ['query'],
+                        properties: { query: { type: 'string' } },
+                    },
+                },
+            ],
         };
 
         const hooks = {
@@ -843,7 +851,20 @@ describe('fetchTaskContext capability', () => {
             callTool: jest.fn(),
             callAgent,
             getRegisteredTools: () => [{ name: 'KODUS_GET_GITHUB_ISSUE' }],
-            getToolsForLLM: () => [],
+            getToolsForLLM: () => [
+                {
+                    name: 'KODUS_GET_GITHUB_ISSUE',
+                    description: 'Fetch a GitHub issue from the connected repository',
+                    parameters: {
+                        required: ['issueNumber'],
+                        properties: {
+                            issueNumber: { type: 'number' },
+                            repositoryOwner: { type: 'string' },
+                            repositoryName: { type: 'string' },
+                        },
+                    },
+                },
+            ],
         };
 
         const hooks = {
@@ -1147,6 +1168,7 @@ describe('fetchTaskContext capability', () => {
             getToolsForLLM: () => [
                 {
                     name: 'getJiraIssue',
+                    description: 'Fetch a Jira issue by key or id',
                     parameters: {
                         required: ['cloudId', 'issueIdOrKey'],
                         properties: {
@@ -1157,6 +1179,7 @@ describe('fetchTaskContext capability', () => {
                 },
                 {
                     name: 'search',
+                    description: 'Unified Atlassian search',
                     parameters: {
                         required: ['query'],
                         properties: { query: { type: 'string' } },
@@ -1191,12 +1214,14 @@ describe('fetchTaskContext capability', () => {
                     kind: 'key',
                     value: 'LKDB-301',
                     label: 'LKDB-301',
+                    source: 'title',
                 },
                 taskReferences: [
                     {
                         kind: 'key',
                         value: 'LKDB-301',
                         label: 'LKDB-301',
+                        source: 'title',
                     },
                 ],
                 businessSignals: {
@@ -1209,6 +1234,14 @@ describe('fetchTaskContext capability', () => {
         expect(callAgent).toHaveBeenCalled();
         expect(callAgent.mock.calls[0]?.[1]).toContain('PRIMARY_REFERENCE');
         expect(callAgent.mock.calls[0]?.[1]).toContain('LKDB-301');
+        expect(callAgent.mock.calls[0]?.[1]).toContain('getJiraIssue');
+        expect(callAgent.mock.calls[0]?.[1]).toContain(
+            'Fetch a Jira issue by key or id',
+        );
+        expect(callAgent.mock.calls[0]?.[1]).toContain(
+            'required: cloudId, issueIdOrKey',
+        );
+        expect(callAgent.mock.calls[0]?.[1]).toContain('source: title');
         expect(result.normalized).toMatchObject({
             id: 'LKDB-301',
             title: 'Unread messages folder in Messenger',

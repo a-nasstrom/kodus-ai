@@ -32,6 +32,22 @@ export interface BusinessRulesSignals {
     requirementKeywords?: string[];
 }
 
+export type TaskReferenceKind = 'key' | 'url';
+
+export type TaskReferenceSource = 'title' | 'branch' | 'body' | 'explicit';
+
+export interface TaskReference {
+    kind: TaskReferenceKind;
+    value: string;
+    label: string;
+    source: TaskReferenceSource;
+}
+
+export interface TaskContextManifest {
+    primaryReference?: TaskReference;
+    references: TaskReference[];
+}
+
 export interface BusinessRulesPrepareContext extends Record<string, unknown> {
     userQuestion?: string;
     taskId?: string;
@@ -57,6 +73,7 @@ export interface BusinessRulesPrepareContext extends Record<string, unknown> {
     taskContext?: string;
     customInstructions?: string;
     businessSignals?: BusinessRulesSignals;
+    taskContextManifest?: TaskContextManifest;
 
     enableAgenticFallback?: boolean;
     taskContextResolutionMode?: 'cache_first' | 'agent_first';

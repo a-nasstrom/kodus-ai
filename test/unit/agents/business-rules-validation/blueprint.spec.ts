@@ -858,20 +858,8 @@ describe('business-rules blueprint', () => {
             }),
             getRegisteredTools: jest
                 .fn()
-                .mockReturnValue([
-                    { name: 'KODUS_GET_PULL_REQUEST_DIFF' },
-                    { name: 'search' },
-                ]),
-            getToolsForLLM: jest.fn().mockReturnValue([
-                {
-                    name: 'search',
-                    parameters: {
-                        type: 'object',
-                        properties: { query: { type: 'string' } },
-                        required: ['query'],
-                    },
-                },
-            ]),
+                .mockReturnValue([{ name: 'KODUS_GET_PULL_REQUEST_DIFF' }]),
+            getToolsForLLM: jest.fn().mockReturnValue([]),
         } as any;
 
         const saveCachedTaskContextTools = jest

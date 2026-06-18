@@ -1,5 +1,17 @@
 import type { TaskContextNormalized } from '@libs/agents/skills/capabilities';
-import type { BusinessRulesSignals } from './types';
+import type {
+    BusinessRulesSignals,
+    TaskContextManifest,
+    TaskReference,
+    TaskReferenceSource,
+} from './types';
+
+export type {
+    TaskContextManifest,
+    TaskReference,
+    TaskReferenceKind,
+    TaskReferenceSource,
+} from './types';
 
 export const MAX_TASK_REFERENCES = 5;
 
@@ -14,19 +26,6 @@ const REQUIREMENT_KEYWORDS = [
     'when',
     'then',
 ] as const;
-
-export type TaskReferenceKind = 'key' | 'url';
-
-export interface TaskReference {
-    kind: TaskReferenceKind;
-    value: string;
-    label: string;
-}
-
-export interface TaskContextManifest {
-    primaryReference?: TaskReference;
-    references: TaskReference[];
-}
 
 export interface MergeTaskContextSourcesInput {
     mcpNormalizedList: TaskContextNormalized[];
@@ -122,11 +121,26 @@ export function buildBusinessSignalsFromSources(input: {
 }
 
 export function resolveTaskReferences(input: {
+    title?: string;
+    branch?: string;
+    body?: string;
     businessSignals?: BusinessRulesSignals;
     taskId?: string;
     taskUrl?: string;
     taskReference?: string;
 }): TaskReference[] {
+    const hasRawSources =
+        input.title !== undefined ||
+        input.branch !== undefined ||
+        input.body !== undefined;
+
+    if (hasRawSources) {
+        return resolveTaskReferencesFromSources(input).slice(
+            0,
+            MAX_TASK_REFERENCES,
+        );
+    }
+
     const explicitKeys = uniqueNonEmpty([
         ...(input.taskId?.trim() ? [input.taskId.trim()] : []),
         ...extractIssueKeysFromUserProvidedText(input.taskReference),
@@ -145,11 +159,16 @@ export function resolveTaskReferences(input: {
         ...(input.businessSignals?.taskLinks ?? []),
     ]);
 
-    return dedupeTaskReferences(keys, links).slice(0, MAX_TASK_REFERENCES);
+    return dedupeTaskReferences(keys, links, {
+        explicitKeys: new Set(explicitKeys.map((key) => key.toUpperCase())),
+        explicitLinks: new Set(explicitLinks.map((url) => normalizeUrl(url))),
+    }).slice(0, MAX_TASK_REFERENCES);
 }
 
 export function buildTaskContextManifest(input: {
     title?: string;
+    branch?: string;
+    body?: string;
     businessSignals?: BusinessRulesSignals;
     taskId?: string;
     taskUrl?: string;
@@ -191,6 +210,7 @@ function resolvePrimaryTaskReference(input: {
             kind: 'key',
             value: titleKey,
             label: titleKey,
+            source: 'title',
         };
     }
 
@@ -205,6 +225,7 @@ function resolvePrimaryTaskReference(input: {
                 kind: 'key',
                 value: explicitTaskId,
                 label: explicitTaskId,
+                source: 'explicit',
             }
         );
     }
@@ -220,11 +241,153 @@ function resolvePrimaryTaskReference(input: {
                 kind: 'url',
                 value: explicitTaskUrl,
                 label: explicitTaskUrl,
+                source: 'explicit',
             }
         );
     }
 
     return input.references[0];
+}
+
+const TASK_REFERENCE_SOURCE_PRIORITY: Record<TaskReferenceSource, number> = {
+    explicit: 4,
+    title: 3,
+    branch: 2,
+    body: 1,
+};
+
+function resolveTaskReferencesFromSources(input: {
+    title?: string;
+    branch?: string;
+    body?: string;
+    businessSignals?: BusinessRulesSignals;
+    taskId?: string;
+    taskUrl?: string;
+    taskReference?: string;
+}): TaskReference[] {
+    const ordered: TaskReference[] = [];
+    const keyIndex = new Map<string, number>();
+    const urlIndex = new Map<string, number>();
+
+    const upsertKey = (rawKey: string, source: TaskReferenceSource): void => {
+        const normalizedKey = rawKey.trim().toUpperCase();
+        if (!normalizedKey) {
+            return;
+        }
+
+        const existingIndex = keyIndex.get(normalizedKey);
+        if (existingIndex === undefined) {
+            keyIndex.set(normalizedKey, ordered.length);
+            ordered.push({
+                kind: 'key',
+                value: normalizedKey,
+                label: normalizedKey,
+                source,
+            });
+            return;
+        }
+
+        const existing = ordered[existingIndex]!;
+        if (
+            TASK_REFERENCE_SOURCE_PRIORITY[source] >
+            TASK_REFERENCE_SOURCE_PRIORITY[existing.source]
+        ) {
+            ordered[existingIndex] = {
+                ...existing,
+                source,
+            };
+        }
+    };
+
+    const upsertUrl = (rawUrl: string, source: TaskReferenceSource): void => {
+        const normalizedUrl = normalizeUrl(rawUrl);
+        if (!normalizedUrl) {
+            return;
+        }
+
+        const keyFromUrl = extractIssueKeyFromUrl(normalizedUrl);
+        if (keyFromUrl) {
+            const normalizedKey = keyFromUrl.toUpperCase();
+            if (keyIndex.has(normalizedKey)) {
+                return;
+            }
+        }
+
+        const existingIndex = urlIndex.get(normalizedUrl);
+        if (existingIndex === undefined) {
+            urlIndex.set(normalizedUrl, ordered.length);
+            ordered.push({
+                kind: 'url',
+                value: normalizedUrl,
+                label: keyFromUrl?.toUpperCase() ?? normalizedUrl,
+                source,
+            });
+            return;
+        }
+
+        const existing = ordered[existingIndex]!;
+        if (
+            TASK_REFERENCE_SOURCE_PRIORITY[source] >
+            TASK_REFERENCE_SOURCE_PRIORITY[existing.source]
+        ) {
+            ordered[existingIndex] = {
+                ...existing,
+                source,
+            };
+        }
+    };
+
+    if (input.taskId?.trim()) {
+        upsertKey(input.taskId.trim(), 'explicit');
+    }
+    for (const key of extractIssueKeysFromUserProvidedText(input.taskReference)) {
+        upsertKey(key, 'explicit');
+    }
+    if (input.taskUrl?.trim()) {
+        upsertUrl(input.taskUrl.trim(), 'explicit');
+    }
+    for (const url of extractUrlsFromUserProvidedText(input.taskReference)) {
+        upsertUrl(url, 'explicit');
+    }
+
+    const title = input.title?.trim() ?? '';
+    const branch = input.branch?.trim() ?? '';
+    const body = input.body?.trim() ?? '';
+
+    for (const key of extractTicketKeysFromText(title)) {
+        upsertKey(key, 'title');
+    }
+    for (const url of extractUrlsFromText(title)) {
+        upsertUrl(url, 'title');
+    }
+
+    for (const key of extractTicketKeysFromText(branch)) {
+        upsertKey(key, 'branch');
+    }
+    for (const url of extractUrlsFromText(branch)) {
+        upsertUrl(url, 'branch');
+    }
+
+    const scopedBodyKeys = buildScopedTicketKeys({
+        titleKeys: extractTicketKeysFromText(title),
+        branchKeys: extractTicketKeysFromText(branch),
+        bodyKeys: extractTicketKeysFromText(body),
+    });
+    for (const key of scopedBodyKeys) {
+        upsertKey(key, 'body');
+    }
+    for (const url of extractUrlsFromText(body)) {
+        upsertUrl(url, 'body');
+    }
+
+    for (const key of input.businessSignals?.ticketKeys ?? []) {
+        upsertKey(key, 'body');
+    }
+    for (const url of input.businessSignals?.taskLinks ?? []) {
+        upsertUrl(url, 'body');
+    }
+
+    return ordered;
 }
 
 /** @deprecated Use resolveTaskReferences */
@@ -244,12 +407,16 @@ export function shouldAttemptMcpFetch(references: TaskReference[]): boolean {
 export function dedupeTaskReferences(
     keys: string[],
     links: string[],
+    sourceHints?: {
+        explicitKeys?: Set<string>;
+        explicitLinks?: Set<string>;
+    },
 ): TaskReference[] {
     const references: TaskReference[] = [];
     const seenKeys = new Set<string>();
     const seenUrls = new Set<string>();
 
-    const addKey = (rawKey: string): void => {
+    const addKey = (rawKey: string, source: TaskReferenceSource): void => {
         const normalizedKey = rawKey.trim().toUpperCase();
         if (!normalizedKey || seenKeys.has(normalizedKey)) {
             return;
@@ -259,11 +426,16 @@ export function dedupeTaskReferences(
             kind: 'key',
             value: normalizedKey,
             label: normalizedKey,
+            source,
         });
     };
 
     for (const key of keys) {
-        addKey(key);
+        const normalizedKey = key.trim().toUpperCase();
+        const source = sourceHints?.explicitKeys?.has(normalizedKey)
+            ? 'explicit'
+            : 'body';
+        addKey(key, source);
     }
 
     for (const link of links) {
@@ -282,10 +454,14 @@ export function dedupeTaskReferences(
         }
 
         seenUrls.add(normalizedUrl);
+        const source = sourceHints?.explicitLinks?.has(normalizedUrl)
+            ? 'explicit'
+            : 'body';
         references.push({
             kind: 'url',
             value: normalizedUrl,
             label: keyFromUrl?.toUpperCase() ?? normalizedUrl,
+            source,
         });
     }
 

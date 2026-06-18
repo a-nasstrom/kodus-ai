@@ -100,7 +100,12 @@ describe('task-context-resolver', () => {
         it('returns true when references are non-empty', () => {
             expect(
                 shouldAttemptMcpFetch([
-                    { kind: 'key', value: 'PROJ-1', label: 'PROJ-1' },
+                    {
+                        kind: 'key',
+                        value: 'PROJ-1',
+                        label: 'PROJ-1',
+                        source: 'title',
+                    },
                 ]),
             ).toBe(true);
         });
@@ -153,9 +158,34 @@ describe('task-context-resolver', () => {
                 expect.objectContaining({
                     kind: 'key',
                     value: 'LKDB-301',
+                    source: 'title',
                 }),
             );
             expect(manifest.references[0]?.value).toBe('LKDB-301');
+            expect(manifest.references[0]?.source).toBe('title');
+        });
+
+        it('tags branch and body references with source metadata', () => {
+            const refs = resolveTaskReferences({
+                title: 'Feature without ticket',
+                branch: 'feature/PROJ-55-fix',
+                body: 'See PROJ-99 and https://example.atlassian.net/browse/PROJ-100',
+            });
+
+            expect(refs).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'key',
+                        value: 'PROJ-55',
+                        source: 'branch',
+                    }),
+                    expect.objectContaining({
+                        kind: 'key',
+                        value: 'PROJ-99',
+                        source: 'body',
+                    }),
+                ]),
+            );
         });
 
         it('resolves MCP references from title ticket for SRS-heavy PR bodies', () => {
