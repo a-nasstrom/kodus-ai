@@ -1,4 +1,7 @@
-import { fetchTaskContext } from '@libs/agents/skills/capabilities/task-context-read';
+import {
+    fetchAllTaskContexts,
+    fetchTaskContext,
+} from '@libs/agents/skills/capabilities/task-context-read';
 import {
     SkillCapabilityRuntimeConfig,
     ToolCaller,
@@ -1732,5 +1735,94 @@ describe('fetchTaskContext capability', () => {
             description: 'Fallback context',
             sourceProvider: 'jira',
         });
+    });
+
+    it('fetchAllTaskContexts scopes each reference to its own issue key and link', async () => {
+        const callTool: CallToolMock = jest
+            .fn()
+            .mockImplementation((toolName: string, args: Record<string, unknown>) => {
+                if (toolName !== 'getJiraIssue') {
+                    return Promise.resolve({ result: {} });
+                }
+
+                return Promise.resolve({
+                    result: {
+                        data: {
+                            key: String(args.issueIdOrKey),
+                            fields: {
+                                summary: `Summary for ${String(args.issueIdOrKey)}`,
+                                description: `Requirements for ${String(args.issueIdOrKey)}`,
+                            },
+                        },
+                    },
+                });
+            });
+
+        const toolCaller: ToolCaller = {
+            callTool,
+            getRegisteredTools: () => [{ name: 'getJiraIssue' }],
+            getToolsForLLM: () => [
+                {
+                    name: 'getJiraIssue',
+                    parameters: {
+                        required: ['cloudId', 'issueIdOrKey'],
+                        properties: {
+                            cloudId: { type: 'string' },
+                            issueIdOrKey: { type: 'string' },
+                        },
+                    },
+                },
+            ],
+        };
+
+        const hooks = {
+            getSeedTaskContextTools: jest.fn(async () => ['getJiraIssue']),
+            getCachedTaskContextTools: jest.fn(async () => []),
+            saveCachedTaskContextTools: jest.fn(async () => undefined),
+            resolvePreferredTool: jest.fn(async () => undefined),
+            recordExecution: jest.fn(async () => undefined),
+        };
+
+        const result = await fetchAllTaskContexts(
+            toolCaller,
+            createCapabilityRuntime('jira'),
+            {
+                ...createBaseParams(),
+                pullRequestDescription: [
+                    'Implements PROJ-100 epic and PROJ-101 sub-task.',
+                    'https://kodustech.atlassian.net/browse/PROJ-100',
+                    'https://kodustech.atlassian.net/browse/PROJ-101',
+                ].join('\n'),
+                businessSignals: {
+                    ticketKeys: ['PROJ-100', 'PROJ-101'],
+                    taskLinks: [
+                        'https://kodustech.atlassian.net/browse/PROJ-100',
+                        'https://kodustech.atlassian.net/browse/PROJ-101',
+                    ],
+                },
+            },
+            [
+                { kind: 'key', value: 'PROJ-100' },
+                { kind: 'key', value: 'PROJ-101' },
+            ],
+            hooks,
+        );
+
+        const jiraCalls = callTool.mock.calls.filter(
+            (call) => call[0] === 'getJiraIssue',
+        );
+        expect(jiraCalls).toHaveLength(2);
+        expect(jiraCalls[0]?.[1]).toEqual(
+            expect.objectContaining({ issueIdOrKey: 'PROJ-100' }),
+        );
+        expect(jiraCalls[1]?.[1]).toEqual(
+            expect.objectContaining({ issueIdOrKey: 'PROJ-101' }),
+        );
+        expect(result.normalized).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'PROJ-100' }),
+                expect.objectContaining({ id: 'PROJ-101' }),
+            ]),
+        );
     });
 });

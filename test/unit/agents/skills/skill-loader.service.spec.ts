@@ -115,7 +115,7 @@ describe('SkillLoaderService', () => {
             onMcpConnectError: 'fail',
             fetcherTimeoutMs: 120000,
             analyzerTimeoutMs: 120000,
-            fetcherMaxIterations: 2,
+            fetcherMaxIterations: 3,
             analyzerMaxIterations: 1,
         });
         expect(meta.contracts).toEqual({

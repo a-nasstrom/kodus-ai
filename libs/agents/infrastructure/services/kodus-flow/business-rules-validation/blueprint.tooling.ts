@@ -644,7 +644,10 @@ function resolveSupplementalKeyReferences(
         }
 
         const normalizedKey = reference.value.trim().toUpperCase();
-        if (!normalizedKey || agentSurface.includes(normalizedKey)) {
+        if (
+            !normalizedKey ||
+            agentSurfaceContainsIssueKey(agentSurface, normalizedKey)
+        ) {
             return false;
         }
 
@@ -659,6 +662,22 @@ function buildAgentTaskContextSurface(
         .filter((part): part is string => typeof part === 'string')
         .join('\n')
         .toUpperCase();
+}
+
+function agentSurfaceContainsIssueKey(
+    agentSurface: string,
+    issueKey: string,
+): boolean {
+    const normalizedKey = issueKey.trim().toUpperCase();
+    if (!normalizedKey) {
+        return false;
+    }
+
+    const pattern = new RegExp(
+        `(?<![A-Z0-9])${escapeRegExp(normalizedKey)}(?![A-Z0-9])`,
+        'i',
+    );
+    return pattern.test(agentSurface);
 }
 
 function sanitizeStringArray(value: unknown): string[] | undefined {

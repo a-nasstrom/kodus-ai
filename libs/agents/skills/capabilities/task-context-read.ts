@@ -315,19 +315,7 @@ export async function fetchAllTaskContexts(
     const traces: CapabilityExecutionTrace[] = [];
 
     for (const reference of references) {
-        const scopedParams: TaskContextReadParams = {
-            ...params,
-            taskId: reference.kind === 'key' ? reference.value : undefined,
-            taskUrl: reference.kind === 'url' ? reference.value : undefined,
-            taskReference: reference.value,
-            businessSignals: {
-                ticketKeys:
-                    reference.kind === 'key' ? [reference.value] : undefined,
-                taskLinks:
-                    reference.kind === 'url' ? [reference.value] : undefined,
-            },
-            enableAgenticFallback: false,
-        };
+        const scopedParams = buildScopedTaskContextReadParams(params, reference);
 
         const result = await fetchTaskContext(
             toolCaller,
@@ -343,6 +331,103 @@ export async function fetchAllTaskContexts(
     }
 
     return { normalized, traces };
+}
+
+function buildScopedTaskContextReadParams(
+    params: TaskContextReadParams,
+    reference: TaskContextScopedReference,
+): TaskContextReadParams {
+    const referenceHint: TaskContextReferenceHint = {
+        kind: reference.kind,
+        value: reference.value,
+        label: reference.value,
+    };
+    const matchingLinks = resolveReferenceTaskLinks(params, reference);
+    const scopedDescription =
+        reference.kind === 'url'
+            ? reference.value
+            : matchingLinks.length > 0
+              ? matchingLinks.join('\n')
+              : undefined;
+
+    const sharedScopedFields = {
+        taskReference: reference.value,
+        pullRequestDescription: scopedDescription,
+        prBody: undefined,
+        pullRequestTitle: undefined,
+        headRef: undefined,
+        userQuestion: reference.value,
+        taskContext: undefined,
+        primaryReference: referenceHint,
+        taskReferences: [referenceHint],
+        enableAgenticFallback: false,
+    };
+
+    if (reference.kind === 'key') {
+        return {
+            ...params,
+            ...sharedScopedFields,
+            taskId: reference.value,
+            taskUrl: matchingLinks[0],
+            businessSignals: {
+                ticketKeys: [reference.value],
+                taskLinks: matchingLinks.length ? matchingLinks : undefined,
+            },
+        };
+    }
+
+    return {
+        ...params,
+        ...sharedScopedFields,
+        taskId: undefined,
+        taskUrl: reference.value,
+        businessSignals: {
+            taskLinks: [reference.value],
+        },
+    };
+}
+
+function resolveReferenceTaskLinks(
+    params: TaskContextReadParams,
+    reference: TaskContextScopedReference,
+): string[] {
+    const candidates = uniqueNonEmpty([
+        ...(params.businessSignals?.taskLinks ?? []),
+        ...(params.taskUrl ? [params.taskUrl] : []),
+        ...extractLinks(params.pullRequestDescription ?? ''),
+        ...extractLinks(params.prBody ?? ''),
+    ]);
+
+    if (reference.kind === 'url') {
+        const normalizedReference =
+            normalizeLikelyUrl(reference.value) ?? reference.value;
+        return candidates.some(
+            (link) => (normalizeLikelyUrl(link) ?? link) === normalizedReference,
+        )
+            ? [normalizedReference]
+            : [reference.value];
+    }
+
+    return candidates.filter((link) =>
+        textContainsIssueKey(link, reference.value),
+    );
+}
+
+function textContainsIssueKey(text: string, issueKey: string): boolean {
+    const normalizedKey = issueKey.trim().toUpperCase();
+    if (!normalizedKey) {
+        return false;
+    }
+
+    const pattern = new RegExp(
+        `(?<![A-Z0-9])${escapeRegExpForIssueKey(normalizedKey)}(?![A-Z0-9])`,
+        'i',
+    );
+    return pattern.test(text.toUpperCase());
+}
+
+function escapeRegExpForIssueKey(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function isUsableTaskContextNormalized(
