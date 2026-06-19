@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@components/ui/alert";
 import { Button } from "@components/ui/button";
 import { Card, CardContent, CardHeader } from "@components/ui/card";
@@ -32,23 +32,39 @@ import { ByokAdvancedSettings } from "../_modals/edit-key/_components/advanced-s
 import type { EditKeyForm } from "../_modals/edit-key/_types";
 import { CuratedModelCard, PROVIDER_LABELS } from "./model-card";
 
-const connectSchema = z.object({
-    provider: z.string().min(1),
-    model: z.string().min(1),
-    apiKey: z.string().trim().min(1, "API key is required"),
-    baseURL: z.url().nullable().optional(),
-    temperature: z.number().min(0).max(2).nullable().optional(),
-    maxInputTokens: z.number().int().min(0).nullable().optional(),
-    maxConcurrentRequests: z.number().int().min(0).nullable().optional(),
-    maxOutputTokens: z.number().int().min(0).nullable().optional(),
-    reasoningEffort: z
-        .enum(["none", "low", "medium", "high", "custom"])
-        .nullable()
-        .optional(),
-    reasoningConfigOverride: z.string().nullable().optional(),
-    openrouterProviderOrder: z.array(z.string()).nullable().optional(),
-    openrouterAllowFallbacks: z.boolean().nullable().optional(),
-});
+const buildConnectSchema = (hasExistingKey: boolean) =>
+    z
+        .object({
+            provider: z.string().min(1),
+            model: z.string().min(1),
+            apiKey: z.string().trim().default(""),
+            baseURL: z.url().nullable().optional(),
+            temperature: z.number().min(0).max(2).nullable().optional(),
+            maxInputTokens: z.number().int().min(0).nullable().optional(),
+            maxConcurrentRequests: z
+                .number()
+                .int()
+                .min(0)
+                .nullable()
+                .optional(),
+            maxOutputTokens: z.number().int().min(0).nullable().optional(),
+            reasoningEffort: z
+                .enum(["none", "low", "medium", "high", "custom"])
+                .nullable()
+                .optional(),
+            reasoningConfigOverride: z.string().nullable().optional(),
+            openrouterProviderOrder: z.array(z.string()).nullable().optional(),
+            openrouterAllowFallbacks: z.boolean().nullable().optional(),
+        })
+        .superRefine((data, ctx) => {
+            if (!hasExistingKey && !data.apiKey.trim()) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ["apiKey"],
+                    message: "API key is required",
+                });
+            }
+        });
 
 const resolveInitialVariant = (
     model: CuratedModel,
@@ -85,9 +101,15 @@ export function CuratedConnectPanel({
     const initialBaseURL = variant?.baseURL ?? model.defaults.baseURL ?? null;
     const initialMaxConcurrent = variant?.maxConcurrentRequests ?? null;
 
+    const hasExistingKey = !!existingKey;
+    const connectSchema = useMemo(
+        () => buildConnectSchema(hasExistingKey),
+        [hasExistingKey],
+    );
+
     const form = useForm<EditKeyForm>({
         mode: "onChange",
-        resolver: zodResolver(connectSchema),
+        resolver: zodResolver(connectSchema) as any,
         defaultValues: {
             provider: variant?.provider ?? model.provider,
             model: model.id,
@@ -171,6 +193,12 @@ export function CuratedConnectPanel({
         if (!valid) return null;
 
         const data = form.getValues();
+
+        if (existingKey && !data.apiKey?.trim()) {
+            setTestState({ status: "idle" });
+            return { ok: true, code: "ok", latencyMs: 0 };
+        }
+
         setTestState({ status: "testing" });
 
         try {
@@ -253,8 +281,8 @@ export function CuratedConnectPanel({
                             <AlertDescription className="text-pretty">
                                 A key for <strong>{providerLabel}</strong> is
                                 already stored. Paste a new one to replace it
-                                — or leave blank to keep the current key and
-                                just switch models.
+                                — or leave blank to keep the current key while
+                                you switch models or tweak advanced settings.
                             </AlertDescription>
                         </Alert>
                     )}
@@ -342,11 +370,18 @@ export function CuratedConnectPanel({
                             variant="primary"
                             leftIcon={<SaveIcon />}
                             loading={testing || isSaving}
-                            disabled={!isValid || !apiKey?.trim()}
+                            disabled={
+                                !isValid ||
+                                (!apiKey?.trim() && !existingKey)
+                            }
                             onClick={() => {
                                 void handleTestAndSave();
                             }}>
-                            Test &amp; save
+                            {existingKey && !apiKey?.trim() ? (
+                                "Save"
+                            ) : (
+                                <>Test &amp; save</>
+                            )}
                         </Button>
                     </div>
                 </CardContent>
