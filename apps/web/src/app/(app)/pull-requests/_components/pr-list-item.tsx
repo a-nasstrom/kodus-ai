@@ -1105,22 +1105,15 @@ export const PrListItem = ({ group, teamId }: PrListItemProps) => {
                     }
                 }}
                 isPending={cancelReview.isPending}
-                onConfirm={() => {
+                onConfirm={async () => {
                     if (!stopDialogExecutionUuid || !teamId) {
                         return;
                     }
 
-                    cancelReview.mutate(
-                        {
-                            executionUuid: stopDialogExecutionUuid,
-                            teamId,
-                        },
-                        {
-                            onSuccess: () => {
-                                setStopDialogExecutionUuid(null);
-                            },
-                        },
-                    );
+                    await cancelReview.mutateAsync({
+                        executionUuid: stopDialogExecutionUuid,
+                        teamId,
+                    });
                 }}
             />
         </Fragment>
