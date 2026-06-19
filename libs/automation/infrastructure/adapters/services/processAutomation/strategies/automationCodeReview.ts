@@ -25,6 +25,8 @@ import {
     DistributedLock,
     DistributedLockService,
 } from '@libs/core/workflow/infrastructure/distributed-lock.service';
+import { JobAbortedError } from '@libs/core/workflow/infrastructure/abort-signal-race';
+import { WORKFLOW_JOB_CANCELLED_MESSAGE } from '@libs/core/workflow/infrastructure/workflow-job-cancellation';
 import {
     IOrganizationService,
     ORGANIZATION_SERVICE_TOKEN,
@@ -276,6 +278,29 @@ export class AutomationCodeReviewService implements Omit<
             await this._handleExecutionCompletion(execution, result, payload);
             return 'Automation executed successfully';
         } catch (error) {
+            if (this.isUserCancellationError(error)) {
+                if (!execution) {
+                    return 'Review cancelled by user';
+                }
+
+                const freshExecution =
+                    await this.automationExecutionService.findById(
+                        execution.uuid,
+                    );
+                if (this.isUserCancelledExecution(freshExecution)) {
+                    return 'Review cancelled by user';
+                }
+
+                await this.updateAutomationExecution(
+                    execution,
+                    AutomationStatus.SKIPPED,
+                    WORKFLOW_JOB_CANCELLED_MESSAGE,
+                    this._buildExecutionData(payload),
+                    'Kody Review Finished',
+                );
+                return 'Review cancelled by user';
+            }
+
             await this._handleExecutionError(execution, error, payload);
             return 'Error executing automation';
         } finally {
@@ -292,6 +317,13 @@ export class AutomationCodeReviewService implements Omit<
                 }
             }
         }
+    }
+
+    private isUserCancellationError(error: unknown): boolean {
+        return (
+            error instanceof JobAbortedError ||
+            (error instanceof Error && error.name === 'JobAbortedError')
+        );
     }
 
     private async getActiveExecution(
@@ -437,11 +469,37 @@ export class AutomationCodeReviewService implements Omit<
         }
     }
 
+    private isUserCancelledExecution(
+        execution: IAutomationExecution | null | undefined,
+    ): boolean {
+        if (!execution) {
+            return false;
+        }
+
+        return (
+            execution.status === AutomationStatus.SKIPPED &&
+            (execution.errorMessage?.includes(WORKFLOW_JOB_CANCELLED_MESSAGE) ??
+                false)
+        );
+    }
+
     private async _handleExecutionCompletion(
         execution: IAutomationExecution,
         result: any,
         payload: any,
     ) {
+        const freshExecution =
+            await this.automationExecutionService.findById(execution.uuid);
+        if (this.isUserCancelledExecution(freshExecution)) {
+            this.logger.log({
+                message:
+                    'Skipping completion update because the review was cancelled by user',
+                context: AutomationCodeReviewService.name,
+                metadata: { executionUuid: execution.uuid },
+            });
+            return;
+        }
+
         if (!result) {
             await this.updateAutomationExecution(
                 execution,
@@ -530,6 +588,18 @@ export class AutomationCodeReviewService implements Omit<
         error: any,
         payload: any,
     ) {
+        const freshExecution =
+            await this.automationExecutionService.findById(execution.uuid);
+        if (this.isUserCancelledExecution(freshExecution)) {
+            this.logger.log({
+                message:
+                    'Skipping error update because the review was cancelled by user',
+                context: AutomationCodeReviewService.name,
+                metadata: { executionUuid: execution.uuid },
+            });
+            return;
+        }
+
         const errorMessage =
             error.message ||
             'An unexpected error occurred during code review automation.';

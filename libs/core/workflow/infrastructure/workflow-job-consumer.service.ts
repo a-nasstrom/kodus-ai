@@ -436,6 +436,27 @@ export class WorkflowJobConsumer implements OnApplicationShutdown {
                         'exception.message': error.message,
                     });
 
+                    const latestJob = await this.jobRepository.findOne(
+                        unwrappedMessage.jobId,
+                    );
+                    if (latestJob?.status === JobStatus.CANCELLED) {
+                        await this.inboxRepository.markAsProcessed(
+                            messageId,
+                            consumerId,
+                        );
+                        this.logger.log({
+                            message:
+                                'Workflow job already cancelled; marking inbox processed',
+                            context: WorkflowJobConsumer.name,
+                            metadata: {
+                                messageId,
+                                jobId: unwrappedMessage.jobId,
+                                queueName,
+                            },
+                        });
+                        return;
+                    }
+
                     this.logger.error({
                         message: 'Failed to process workflow job',
                         context: WorkflowJobConsumer.name,

@@ -7,6 +7,7 @@ import { EventBufferService } from '../engine/event-buffer.service';
 
 // Infrastructure - Services
 import { DistributedLockService } from '../infrastructure/distributed-lock.service';
+import { WorkflowJobCancellationService } from '../infrastructure/workflow-job-cancellation.service';
 
 // Infrastructure - Repositories & Models
 import { WorkflowJobModel } from '../infrastructure/repositories/schemas/workflow-job.model';
@@ -53,6 +54,9 @@ const coreProviders = [
 
     // Distributed Lock
     DistributedLockService,
+
+    // User-initiated job cancellation
+    WorkflowJobCancellationService,
 ];
 
 @Global()

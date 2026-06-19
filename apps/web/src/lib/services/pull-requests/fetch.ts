@@ -45,6 +45,8 @@ export const PULL_REQUEST_API = {
             `/pull-requests/executions${queryString ? `?${queryString}` : ""}`,
         );
     },
+    CANCEL_EXECUTION: (executionUuid: string) =>
+        pathToApiUrl(`/pull-requests/executions/${executionUuid}/cancel`),
     GET_ONBOARDING_SIGNALS: (filters: {
         teamId: string;
         repositoryIds: string[];

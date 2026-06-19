@@ -91,6 +91,31 @@ describe('BusinessLogicValidationStage', () => {
 
             expect(decision).toBeNull();
         });
+
+        it('skips when the PR body hash matches the previous successful run', async () => {
+            const body = 'Implements DL-2773 with acceptance criteria';
+            const hash = (stage as any).computePrBodyHash(body);
+            const context = buildContext({
+                pullRequest: {
+                    number: 42,
+                    body,
+                    title: 'Add print mode',
+                    head: { ref: 'feat/dl-2773' },
+                    base: { ref: 'main' },
+                },
+                pipelineMetadata: {
+                    lastExecution: { businessLogicHash: hash },
+                },
+            });
+
+            const decision = await (stage as any).evaluateSkip(context);
+
+            expect(decision).toEqual({
+                reason: 'unchanged_body',
+                message:
+                    'Skipped: PR description has not changed since the last review.',
+            });
+        });
     });
 
     describe('executeStage', () => {

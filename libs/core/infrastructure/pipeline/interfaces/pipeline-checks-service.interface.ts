@@ -1,4 +1,6 @@
 import { CodeReviewPipelineContext } from '@libs/code-review/pipeline/context/code-review-pipeline.context';
+import { PlatformType } from '@libs/core/domain/enums';
+import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
 import { CheckConclusion, CheckStatus } from './checks-adapter.interface';
 import { PipelineObserverContext } from './pipeline-observer.interface';
 
@@ -27,4 +29,11 @@ export interface IPipelineChecksService {
         stageName?: string,
         reason?: string,
     ): Promise<void>;
+    cancelActiveCheck(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { owner: string; name: string };
+        checkRunId: string | number;
+        platformType: PlatformType;
+        reason?: string;
+    }): Promise<void>;
 }

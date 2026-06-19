@@ -158,6 +158,7 @@ export function PullRequestsPageClient() {
                 ) : (
                     <PrDataTable
                         data={groupedPullRequests}
+                        teamId={teamId}
                         loading={isLoading && !groupedPullRequests.length}
                         hasNextPage={hasNextPage}
                         isFetchingNextPage={isFetchingNextPage}

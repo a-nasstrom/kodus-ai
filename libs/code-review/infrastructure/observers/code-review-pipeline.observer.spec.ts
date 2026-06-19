@@ -49,7 +49,18 @@ describe('CodeReviewPipelineObserver', () => {
             startCheck: jest.fn().mockResolvedValue(undefined),
             updateCheck: jest.fn().mockResolvedValue(undefined),
             finalizeCheck: jest.fn().mockResolvedValue(undefined),
+            cancelActiveCheck: jest.fn().mockResolvedValue(undefined),
         };
+
+        mockAutomationExecutionService.findById = jest
+            .fn()
+            .mockResolvedValue({
+                uuid: 'exec-1',
+                dataExecution: {},
+            });
+        mockAutomationExecutionService.update = jest
+            .fn()
+            .mockResolvedValue(undefined);
 
         observer = new CodeReviewPipelineObserver(
             mockAutomationExecutionService,
@@ -78,6 +89,7 @@ describe('CodeReviewPipelineObserver', () => {
             context,
             '_pipelineStart',
         );
+        expect(mockAutomationExecutionService.update).not.toHaveBeenCalled();
     });
 
     it('should finalize pipeline check on pipeline finish (success)', async () => {

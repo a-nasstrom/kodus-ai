@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import NextLink from "next/link";
 import { Badge } from "@components/ui/badge";
-import { buttonVariants } from "@components/ui/button";
+import { Button, buttonVariants } from "@components/ui/button";
 import { Link } from "@components/ui/link";
 import { Spinner } from "@components/ui/spinner";
 import { TableCell, TableRow } from "@components/ui/table";
@@ -15,6 +15,7 @@ import {
 import { useGetTimezone } from "@services/organizationParameters/hooks";
 import {
     buildPullRequestUrl,
+    useCancelPullRequestExecution,
     type CodeReviewTimelineItem,
     type ReviewWarning,
     type ReviewWarningKind,
@@ -29,9 +30,11 @@ import {
 import { cn } from "src/core/utils/components";
 
 import type { PullRequestExecutionGroup } from "./types";
+import { StopReviewDialog } from "./stop-review-dialog";
 
 interface PrListItemProps {
     group: PullRequestExecutionGroup;
+    teamId?: string;
 }
 
 const formatDateTime = (dateString: string, timezone: string | null) => {
@@ -389,7 +392,7 @@ const isAutomationStartMessage = (message: string) => {
     return m.includes("automation") && m.includes("start");
 };
 
-export const PrListItem = ({ group }: PrListItemProps) => {
+export const PrListItem = ({ group, teamId }: PrListItemProps) => {
     const { latest, executions, reviewCount } = group;
     const timezone = useGetTimezone();
     const [isOpen, setIsOpen] = useState(false);
@@ -399,6 +402,10 @@ export const PrListItem = ({ group }: PrListItemProps) => {
     const [debugVisibleByExecution, setDebugVisibleByExecution] = useState<
         Record<string, boolean>
     >({});
+    const [stopDialogExecutionUuid, setStopDialogExecutionUuid] = useState<
+        string | null
+    >(null);
+    const cancelReview = useCancelPullRequestExecution();
     const prUrl = buildPullRequestUrl(latest);
 
     const toggleReview = (index: number) => {
@@ -592,6 +599,8 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                         const executionStatus =
                                             execution.automationExecution
                                                 ?.status || "pending";
+                                        const executionUuid =
+                                            execution.automationExecution?.uuid;
                                         const isReviewCollapsed =
                                             collapsedReviews.has(index);
                                         const hasSecondarySteps =
@@ -673,18 +682,44 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    {executionStartedAt && (
-                                                        <span className="text-text-tertiary text-xs tabular-nums">
-                                                            <TimeAgoDisplay
-                                                                dateString={
-                                                                    executionStartedAt
-                                                                }
-                                                                timezone={
-                                                                    timezone
-                                                                }
-                                                            />
-                                                        </span>
-                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        {executionStatus ===
+                                                            "in_progress" &&
+                                                            teamId &&
+                                                            executionUuid && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="error"
+                                                                    size="sm"
+                                                                    disabled={
+                                                                        cancelReview.isPending &&
+                                                                        stopDialogExecutionUuid ===
+                                                                            executionUuid
+                                                                    }
+                                                                    onClick={(
+                                                                        event,
+                                                                    ) => {
+                                                                        event.stopPropagation();
+                                                                        setStopDialogExecutionUuid(
+                                                                            executionUuid,
+                                                                        );
+                                                                    }}>
+                                                                    Stop review
+                                                                </Button>
+                                                            )}
+                                                        {executionStartedAt && (
+                                                            <span className="text-text-tertiary text-xs tabular-nums">
+                                                                <TimeAgoDisplay
+                                                                    dateString={
+                                                                        executionStartedAt
+                                                                    }
+                                                                    timezone={
+                                                                        timezone
+                                                                    }
+                                                                />
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </button>
                                                 {!isReviewCollapsed && (
                                                     <div className="border-card-lv3/30 border-t px-4 pt-3 pb-4">
@@ -1062,6 +1097,32 @@ export const PrListItem = ({ group }: PrListItemProps) => {
                     </TableCell>
                 </TableRow>
             )}
+            <StopReviewDialog
+                open={Boolean(stopDialogExecutionUuid)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setStopDialogExecutionUuid(null);
+                    }
+                }}
+                isPending={cancelReview.isPending}
+                onConfirm={() => {
+                    if (!stopDialogExecutionUuid || !teamId) {
+                        return;
+                    }
+
+                    cancelReview.mutate(
+                        {
+                            executionUuid: stopDialogExecutionUuid,
+                            teamId,
+                        },
+                        {
+                            onSuccess: () => {
+                                setStopDialogExecutionUuid(null);
+                            },
+                        },
+                    );
+                }}
+            />
         </Fragment>
     );
 };

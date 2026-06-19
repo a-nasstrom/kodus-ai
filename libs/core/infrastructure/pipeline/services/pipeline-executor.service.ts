@@ -115,6 +115,33 @@ export class PipelineExecutor<TContext extends PipelineContext> {
         }
 
         for (const stage of stages) {
+            const parentSignal = (context as { parentSignal?: AbortSignal })
+                .parentSignal;
+            if (parentSignal?.aborted) {
+                const cancelMessage =
+                    typeof parentSignal.reason === 'string' &&
+                    parentSignal.reason.trim().length > 0
+                        ? parentSignal.reason
+                        : 'Cancelled by user';
+
+                context = produce(context, (draft) => {
+                    draft.statusInfo.status = AutomationStatus.SKIPPED;
+                    draft.statusInfo.message = cancelMessage;
+                });
+
+                this.logger.log({
+                    message: `Pipeline '${pipelineName}' aborted before stage '${stage.stageName}' due to parent signal`,
+                    context: PipelineExecutor.name,
+                    serviceName: PipelineExecutor.name,
+                    metadata: {
+                        ...context?.pipelineMetadata,
+                        stage: stage.stageName,
+                        correlationId: (context as any)?.correlationId ?? null,
+                    },
+                });
+                break;
+            }
+
             // Per-stage opt-out: skipStages bypasses specific named stages
             // without changing pipeline status. Checked before the SKIPPED
             // fast-forward so a stage listed here is excluded from both
