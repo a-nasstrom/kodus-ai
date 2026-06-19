@@ -315,6 +315,28 @@ export class KodusMCPProvider extends BaseProvider {
                 };
             }
 
+            const primaryIntegration = this.client.getIntegrations();
+            if (config.integrationId === primaryIntegration.id) {
+                const tools = await this.getIntegrationTools(
+                    config.integrationId,
+                    config.organizationId,
+                );
+                const allToolSlugs = tools.map((tool) => tool.slug);
+                const allowedTools =
+                    config.allowedTools && config.allowedTools.length > 0
+                        ? config.allowedTools
+                        : allToolSlugs;
+
+                return {
+                    id: primaryIntegration.id,
+                    appName: primaryIntegration.appName,
+                    authUrl: null,
+                    mcpUrl: process.env.API_KODUS_MCP_SERVER_URL ?? '',
+                    status: MCPConnectionStatus.ACTIVE,
+                    allowedTools,
+                };
+            }
+
             throw new Error(
                 `Integration ${config.integrationId} não suportada para conexão Kodus`,
             );

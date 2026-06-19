@@ -92,6 +92,9 @@ export const PluginModal = ({
 
     const isConnected = plugin.isConnected;
     const isDefault = plugin.isDefault;
+    // Default MCPs (e.g. Kodus MCP) may lack a DB connection if auto-install
+    // failed; allow manual install in that case.
+    const blockDefaultPluginActions = isDefault && isConnected;
     const canEdit = usePermission(Action.Update, ResourceType.PluginSettings);
     const canDelete = usePermission(Action.Delete, ResourceType.PluginSettings);
     const requiresGithubIntegration =
@@ -417,7 +420,9 @@ export const PluginModal = ({
                                             authorizePlugin();
                                         }}
                                         loading={isAuthorizePluginLoading}
-                                        disabled={!canEdit || isDefault}>
+                                        disabled={
+                                            !canEdit || blockDefaultPluginActions
+                                        }>
                                         Authenticate with {plugin.appName}
                                     </Button>
                                 </Card>
@@ -499,7 +504,7 @@ export const PluginModal = ({
                                         onClick={() => deletePlugin()}
                                         disabled={
                                             isAnyLoading ||
-                                            isDefault ||
+                                            blockDefaultPluginActions ||
                                             !canDelete
                                         }>
                                         Delete Plugin
@@ -517,7 +522,6 @@ export const PluginModal = ({
                                                 onClick={() => installPlugin()}
                                                 disabled={
                                                     !canEdit ||
-                                                    isDefault ||
                                                     !areRequiredParametersValid ||
                                                     selectedTools.length ===
                                                         0 ||
@@ -537,7 +541,6 @@ export const PluginModal = ({
                                                         leftIcon={<PlugIcon />}
                                                         disabled={
                                                             !canEdit ||
-                                                            isDefault ||
                                                             !areRequiredParametersValid ||
                                                             selectedTools.length ===
                                                                 0 ||
@@ -553,7 +556,7 @@ export const PluginModal = ({
                                     </>
                                 ) : (
                                     <>
-                                        {isDefault ? null : (
+                                        {blockDefaultPluginActions ? null : (
                                             <Button
                                                 size="md"
                                                 variant="tertiary"
@@ -563,7 +566,7 @@ export const PluginModal = ({
                                                 }
                                                 disabled={
                                                     !canEdit ||
-                                                    isDefault ||
+                                                    blockDefaultPluginActions ||
                                                     isResetAuthLoading
                                                 }>
                                                 Reset Authentication
