@@ -68,8 +68,15 @@ const buildConnectSchema = (hasExistingKey: boolean) =>
 
 const resolveInitialVariant = (
     model: CuratedModel,
+    existingBaseURL?: string,
 ): ModelVariant | undefined => {
     if (!model.variants?.length) return undefined;
+    if (existingBaseURL) {
+        const byUrl = model.variants.find(
+            (v) => v.baseURL === existingBaseURL,
+        );
+        if (byUrl) return byUrl;
+    }
     const byDefault = model.defaultVariantId
         ? model.variants.find((v) => v.id === model.defaultVariantId)
         : undefined;
@@ -78,11 +85,13 @@ const resolveInitialVariant = (
 
 export function CuratedConnectPanel({
     model,
+    existingConfig,
     existingKey,
     onBack,
     onSave,
 }: {
     model: CuratedModel;
+    existingConfig?: BYOKConfig;
     existingKey?: string;
     onBack: () => void;
     onSave: (_: BYOKConfig) => Promise<void>;
@@ -95,11 +104,18 @@ export function CuratedConnectPanel({
     >({ status: "idle" });
     const [isSaving, setIsSaving] = useState(false);
     const [variant, setVariant] = useState<ModelVariant | undefined>(() =>
-        resolveInitialVariant(model),
+        resolveInitialVariant(model, existingConfig?.baseURL),
     );
 
-    const initialBaseURL = variant?.baseURL ?? model.defaults.baseURL ?? null;
-    const initialMaxConcurrent = variant?.maxConcurrentRequests ?? null;
+    const initialBaseURL =
+        existingConfig?.baseURL ??
+        variant?.baseURL ??
+        model.defaults.baseURL ??
+        null;
+    const initialMaxConcurrent =
+        existingConfig?.maxConcurrentRequests ??
+        variant?.maxConcurrentRequests ??
+        null;
 
     const hasExistingKey = !!existingKey;
     const connectSchema = useMemo(
@@ -115,12 +131,24 @@ export function CuratedConnectPanel({
             model: model.id,
             apiKey: "",
             baseURL: initialBaseURL,
-            temperature: model.defaults.temperature,
-            maxOutputTokens: model.defaults.maxOutputTokens,
-            maxInputTokens: null,
+            temperature:
+                existingConfig?.temperature ?? model.defaults.temperature,
+            maxOutputTokens:
+                existingConfig?.maxOutputTokens ??
+                model.defaults.maxOutputTokens,
+            maxInputTokens: existingConfig?.maxInputTokens ?? null,
             maxConcurrentRequests: initialMaxConcurrent,
-            reasoningEffort: model.defaults.reasoningEffort ?? null,
-            reasoningConfigOverride: null,
+            reasoningEffort: existingConfig?.reasoningConfigOverride
+                ? "custom"
+                : existingConfig?.reasoningEffort ??
+                  model.defaults.reasoningEffort ??
+                  null,
+            reasoningConfigOverride:
+                existingConfig?.reasoningConfigOverride ?? null,
+            openrouterProviderOrder:
+                existingConfig?.openrouterProviderOrder ?? null,
+            openrouterAllowFallbacks:
+                existingConfig?.openrouterAllowFallbacks ?? null,
         },
     });
 
