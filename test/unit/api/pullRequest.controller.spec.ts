@@ -5,6 +5,7 @@ import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 import { PullRequestController } from '@/core/infrastructure/http/controllers/pullRequest.controller';
+import { CancelPullRequestExecutionUseCase } from '@libs/code-review/application/use-cases/dashboard/cancel-pull-request-execution.use-case';
 import { GetEnrichedPullRequestsUseCase } from '@libs/code-review/application/use-cases/dashboard/get-enriched-pull-requests.use-case';
 import { GetPullRequestFilesUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-files.use-case';
 import { GetPullRequestSuggestionsUseCase } from '@libs/code-review/application/use-cases/pullRequests/get-pull-request-suggestions.use-case';
@@ -123,6 +124,7 @@ const mockCodeManagement = {
     getPullRequestReviewComments: jest.fn(),
 };
 const mockBackfillPRs = { execute: jest.fn() };
+const mockCancelPullRequestExecution = { execute: jest.fn() };
 const mockRequest = { user: { organization: { uuid: ORG_ID } } };
 
 // ============================================================================
@@ -139,6 +141,10 @@ describe('PullRequestController', () => {
                 {
                     provide: GetEnrichedPullRequestsUseCase,
                     useValue: mockGetEnrichedPRs,
+                },
+                {
+                    provide: CancelPullRequestExecutionUseCase,
+                    useValue: mockCancelPullRequestExecution,
                 },
                 {
                     provide: CodeManagementService,

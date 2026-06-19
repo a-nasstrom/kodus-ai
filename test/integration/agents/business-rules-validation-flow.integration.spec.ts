@@ -1,6 +1,10 @@
 import { BusinessRulesValidationAgentUseCase } from '@libs/agents/application/use-cases/business-rules-validation-agent.use-case';
 import { buildBusinessRulesAnalysisPrompt } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/analysis-prompt.builder';
 import { BusinessRulesValidationAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/businessRulesValidationAgent';
+import {
+    buildBusinessSignalsFromSources,
+    buildTaskContextManifest,
+} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
 import { BaseAgentProvider } from '@libs/agents/infrastructure/services/kodus-flow/base-agent.provider';
 import {
     SkillCapabilityRuntimeConfig,
@@ -102,6 +106,39 @@ function createCapabilityRuntime(
         },
         providerType,
         allProviderTypes: [providerType],
+    };
+}
+
+function buildIntegrationPrepareContext(input: {
+    userQuestion: string;
+    prBody?: string;
+    repository?: { id: string; name: string };
+    pullRequestNumber?: number;
+}) {
+    const userQuestion = input.userQuestion;
+    const prBody = input.prBody ?? '';
+    const businessSignals = buildBusinessSignalsFromSources({
+        body: prBody,
+        bodyForKeywords: userQuestion,
+    });
+    const taskContextManifest = buildTaskContextManifest({
+        body: prBody,
+        businessSignals,
+        taskReference: userQuestion,
+    });
+
+    return {
+        userQuestion,
+        pullRequestDescription: prBody,
+        businessSignals,
+        taskContextManifest,
+        repository: input.repository ?? {
+            id: 'repo-1',
+            name: 'kodus-extension',
+        },
+        pullRequest: {
+            pullRequestNumber: input.pullRequestNumber ?? 132,
+        },
     };
 }
 
@@ -245,17 +282,11 @@ describe('BusinessRulesValidation flow integration', () => {
 
         const result = await useCase.execute({
             organizationAndTeamData,
-            prepareContext: {
+            prepareContext: buildIntegrationPrepareContext({
                 userQuestion:
                     '@kody -v business-logic https://kodustech.atlassian.net/jira/software/c/projects/KC/boards/2?selectedIssue=KC-1441',
-                repository: {
-                    id: 'repo-1',
-                    name: 'kodus-extension',
-                },
-                pullRequest: {
-                    pullRequestNumber: 132,
-                },
-            },
+                prBody: 'Refines type-safety in extension commands.',
+            }),
         });
 
         expect(runLLMStepSpy).toHaveBeenCalledTimes(1);
@@ -284,16 +315,10 @@ describe('BusinessRulesValidation flow integration', () => {
 
         const result = await useCase.execute({
             organizationAndTeamData,
-            prepareContext: {
+            prepareContext: buildIntegrationPrepareContext({
                 userQuestion: '@kody -v business-logic KC-1441',
-                repository: {
-                    id: 'repo-1',
-                    name: 'kodus-extension',
-                },
-                pullRequest: {
-                    pullRequestNumber: 132,
-                },
-            },
+                prBody: 'Attempts to fix billing lookup by team.',
+            }),
         });
 
         expect(result).toContain('Need Pull Request Diff');

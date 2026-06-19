@@ -143,6 +143,17 @@ export function classifyTaskQualityFromSources(input: {
         prSection || normalized,
     );
 
+    if (ticketSectionCount === 0 && hasFromPr) {
+        if (
+            !hasAcceptanceCriteriaSection &&
+            bulletLikeRequirements < 1 &&
+            !hasTitleSection &&
+            normalized.length < 80
+        ) {
+            return 'EMPTY';
+        }
+    }
+
     if (
         ticketSectionCount >= 1 &&
         (hasFromPr || hasAcceptanceCriteriaSection || bulletLikeRequirements >= 1)

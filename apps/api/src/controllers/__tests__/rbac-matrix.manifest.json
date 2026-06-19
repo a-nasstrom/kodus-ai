@@ -1298,6 +1298,17 @@
     }
   },
   {
+    "key": "pullRequest.controller.ts#cancelPullRequestExecution",
+    "httpMethod": "POST",
+    "urlPath": "/pull-requests/executions/:executionUuid/cancel",
+    "expected": {
+      "owner": "allow",
+      "billing_manager": "deny",
+      "repo_admin": "deny",
+      "contributor": "deny"
+    }
+  },
+  {
     "key": "pullRequest.controller.ts#executionEvents",
     "httpMethod": "SSE",
     "urlPath": "/pull-requests/executions/events",

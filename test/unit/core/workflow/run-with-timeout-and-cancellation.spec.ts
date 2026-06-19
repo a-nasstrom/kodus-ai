@@ -1,8 +1,8 @@
-import { JobAbortedError } from './abort-signal-race';
+import { JobAbortedError } from '@libs/core/workflow/infrastructure/abort-signal-race';
 import {
     runWithTimeout,
     runWithTimeoutAndCancellation,
-} from './run-with-timeout';
+} from '@libs/core/workflow/infrastructure/run-with-timeout';
 
 describe('runWithTimeoutAndCancellation', () => {
     it('aborts work when cancellation is requested before timeout', async () => {

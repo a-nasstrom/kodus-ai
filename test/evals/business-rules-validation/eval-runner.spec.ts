@@ -6,6 +6,10 @@ import { LLMStep } from '@libs/shared/blueprint/blueprint.types';
 import { createBusinessRulesBlueprint } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/blueprint';
 import { BusinessRulesContext } from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/types';
 import {
+    buildBusinessSignalsFromSources,
+    buildTaskContextManifest,
+} from '@libs/agents/infrastructure/services/kodus-flow/business-rules-validation/task-context-resolver';
+import {
     SkillCapabilityRuntimeConfig,
     ToolCaller,
 } from '@libs/agents/skills/runtime/skill-runtime.types';
@@ -171,6 +175,45 @@ function createCapabilityRuntime(
     };
 }
 
+function buildEvalPrepareContext(fixture: EvalFixture) {
+    const userQuestion =
+        fixture.input.userQuestion ??
+        (typeof fixture.input.taskContext === 'object' &&
+        fixture.input.taskContext !== null &&
+        fixture.input.taskContext.id
+            ? `@kody -v business-logic ${fixture.input.taskContext.id}`
+            : '@kody -v business-logic');
+    const businessSignals = buildBusinessSignalsFromSources({
+        body: fixture.input.prBody,
+        bodyForKeywords: userQuestion,
+    });
+    const taskContextManifest = buildTaskContextManifest({
+        body: fixture.input.prBody,
+        businessSignals,
+        taskReference: userQuestion,
+    });
+
+    return {
+        repository: {
+            id: 'repo-eval',
+            name: 'repo-eval',
+        },
+        pullRequest: {
+            pullRequestNumber: fixture.input.pullRequestNumber,
+        },
+        userQuestion,
+        pullRequestDescription: '',
+        businessSignals,
+        taskContextManifest,
+        taskContext:
+            typeof fixture.input.taskContext === 'string'
+                ? fixture.input.taskContext
+                : undefined,
+        enableAgenticFallback: false,
+        taskContextResolutionMode: 'cache_first' as const,
+    };
+}
+
 describe('business-rules-validation eval runner', () => {
     const fixtures = loadFixtures();
 
@@ -202,29 +245,7 @@ describe('business-rules-validation eval runner', () => {
                 teamId: 'team-eval',
             },
             userLanguage: fixture.input.userLanguage ?? 'en-US',
-            prepareContext: {
-                repository: {
-                    id: 'repo-eval',
-                    name: 'repo-eval',
-                },
-                pullRequest: {
-                    pullRequestNumber: fixture.input.pullRequestNumber,
-                },
-                userQuestion:
-                    fixture.input.userQuestion ??
-                    (typeof fixture.input.taskContext === 'object' &&
-                    fixture.input.taskContext !== null &&
-                    fixture.input.taskContext.id
-                        ? `@kody -v business-logic ${fixture.input.taskContext.id}`
-                        : '@kody -v business-logic'),
-                pullRequestDescription: '',
-                taskContext:
-                    typeof fixture.input.taskContext === 'string'
-                        ? fixture.input.taskContext
-                        : undefined,
-                enableAgenticFallback: false,
-                taskContextResolutionMode: 'cache_first',
-            },
+            prepareContext: buildEvalPrepareContext(fixture),
         };
 
         const result = await runBlueprint<BusinessRulesContext>({

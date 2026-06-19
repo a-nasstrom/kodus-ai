@@ -19,7 +19,7 @@ export const MAX_TASK_REFERENCES = 5;
 const taskContextResolverLogger = createLogger('TaskContextResolver');
 
 const ISSUE_KEY_PATTERN = /\b([A-Za-z][A-Za-z0-9_]+-\d+)\b/g;
-const PIPELINE_TICKET_KEY_PATTERN = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
+const PIPELINE_TICKET_KEY_PATTERN = ISSUE_KEY_PATTERN;
 
 const REQUIREMENT_KEYWORDS = [
     'requirement',
@@ -666,11 +666,25 @@ function extractTicketKeysFromText(text?: string): string[] {
     const keys = new Set<string>();
     for (const match of text.matchAll(PIPELINE_TICKET_KEY_PATTERN)) {
         if (match[1]) {
-            keys.add(match[1].toUpperCase());
+            const key = match[1].toUpperCase();
+            if (isPlausibleIssueKey(key)) {
+                keys.add(key);
+            }
         }
     }
 
     return [...keys];
+}
+
+function isPlausibleIssueKey(key: string): boolean {
+    const project = key.split('-')[0]?.toUpperCase() ?? '';
+    if (project.length < 2) {
+        return false;
+    }
+    if (/^V\d+$/.test(project)) {
+        return false;
+    }
+    return /^[A-Z][A-Z0-9_]*$/.test(project);
 }
 
 function buildScopedTicketKeys(input: {
