@@ -550,6 +550,7 @@ export const KodyRuleAddOrUpdateItemModal = ({
             );
 
             if (isCentralizedPrResponse(mutationResult)) {
+                setIsInheritanceDisabled(!val);
                 toast(
                     getCentralizedPrToastPayload(
                         mutationResult,
