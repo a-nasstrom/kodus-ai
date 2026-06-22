@@ -287,8 +287,32 @@ export class GithubService
         }) as unknown as Octokit;
     }
 
+    private assertGithubAppEnv(): void {
+        const required = [
+            'API_GITHUB_APP_ID',
+            'API_GITHUB_PRIVATE_KEY',
+            'GLOBAL_GITHUB_CLIENT_ID',
+            'API_GITHUB_CLIENT_SECRET',
+        ] as const;
+
+        const missing = required.filter(
+            (key) => !this.configService.get<string>(key)?.trim(),
+        );
+
+        if (missing.length > 0) {
+            const message = `GitHub App is not configured. Missing required env var(s): ${missing.join(', ')}. Populate them from your GitHub App settings (https://github.com/settings/apps/<your-app>) and restart the API.`;
+            this.logger.error({
+                message,
+                context: GithubService.name,
+            });
+            throw new BadRequestException(message);
+        }
+    }
+
     // Helper functions
     private createOctokitInstance(): Octokit {
+        this.assertGithubAppEnv();
+
         let privateKey = this.configService.get<string>(
             'API_GITHUB_PRIVATE_KEY',
         );
@@ -518,7 +542,10 @@ export class GithubService
                 githubStatus?.installationStatus === InstallationStatus.PENDING
             ) {
                 await this.updateInstallationItems(
-                    { installationStatus: InstallationStatus.SUCCESS },
+                    {
+                        installationStatus: InstallationStatus.SUCCESS,
+                        organizationName: accountLogin,
+                    },
                     params.organizationAndTeamData,
                 );
             }
@@ -528,6 +555,7 @@ export class GithubService
                 status: CreateAuthIntegrationStatus.SUCCESS,
             };
         } catch (err) {
+            if (err instanceof BadRequestException) throw err;
             throw new BadRequestException(
                 err.message || 'Error authenticating with OAUTH.',
             );

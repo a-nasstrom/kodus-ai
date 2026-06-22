@@ -50,6 +50,19 @@ export default auth(async (req) => {
         return NextResponse.redirect(new URL("/sign-in", req.url));
     }
 
+    if (
+        pathname === "/setup/github" &&
+        req.nextUrl.searchParams.get("setup_action") === "install" &&
+        req.nextUrl.searchParams.get("installation_id")
+    ) {
+        const url = new URL("/github-integration", req.url);
+        url.searchParams.set(
+            "installation_id",
+            req.nextUrl.searchParams.get("installation_id") ?? "",
+        );
+        return NextResponse.redirect(url);
+    }
+
     // add a new header which can be used on Server Components
     const headers = new Headers(req.headers);
     headers.set(CURRENT_PATH_HEADER, pathname);

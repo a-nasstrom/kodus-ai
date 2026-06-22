@@ -5,6 +5,9 @@ import { AuthIntegrationModule } from '@libs/integrations/modules/authIntegratio
 import { IntegrationConfigCoreModule } from '@libs/integrations/modules/config-core.module';
 import { IntegrationCoreModule } from '@libs/integrations/modules/integrations-core.module';
 import { McpCoreModule } from '@libs/mcp-server/mcp-core.module';
+import { GetIntegrationGithubUseCase } from '../application/use-cases/github/get-integration-github';
+import { GetOrganizationNameUseCase as GetGithubOrganizationNameUseCase } from '../application/use-cases/github/getOrganizationName.use-case';
+import { GITHUB_SERVICE_TOKEN } from '../domain/github/contracts/github.service.contract';
 import { GithubIssuesService } from '../infrastructure/adapters/services/github/github-issues.service';
 import { GithubService as GitHubService } from '../infrastructure/adapters/services/github/github.service';
 
@@ -16,7 +19,25 @@ import { GithubService as GitHubService } from '../infrastructure/adapters/servi
         forwardRef(() => GlobalCacheModule),
         McpCoreModule,
     ],
-    providers: [GitHubService, GithubIssuesService],
-    exports: [GitHubService, GithubIssuesService],
+    providers: [
+        GitHubService,
+        {
+            provide: GITHUB_SERVICE_TOKEN,
+            useClass: GitHubService,
+        },
+        GithubIssuesService,
+        GetIntegrationGithubUseCase,
+        GetGithubOrganizationNameUseCase,
+    ],
+    exports: [
+        GitHubService,
+        {
+            provide: GITHUB_SERVICE_TOKEN,
+            useClass: GitHubService,
+        },
+        GithubIssuesService,
+        GetIntegrationGithubUseCase,
+        GetGithubOrganizationNameUseCase,
+    ],
 })
 export class GithubModule {}

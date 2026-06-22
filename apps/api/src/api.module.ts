@@ -62,6 +62,7 @@ import { CodeBaseController } from './controllers/codeBase.controller';
 import { CodeManagementController } from './controllers/codeManagement.controller';
 import { CodeReviewSettingLogController } from './controllers/codeReviewSettingLog.controller';
 import { DryRunController } from './controllers/dryRun.controller';
+import { GithubController } from './controllers/github.controller';
 import { IntegrationController } from './controllers/integration.controller';
 import { IntegrationConfigController } from './controllers/integrationConfig.controller';
 import { IssuesController } from './controllers/issues.controller';
@@ -174,6 +175,7 @@ import { NotificationController } from './controllers/notification.controller';
         TokenUsageController,
         SpendLimitController,
         PermissionsController,
+        GithubController,
         IntegrationController,
         IntegrationConfigController,
         PullRequestController,
