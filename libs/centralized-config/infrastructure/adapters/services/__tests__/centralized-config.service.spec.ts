@@ -989,6 +989,7 @@ describe('CentralizedConfigService', () => {
                     {
                         uuid: 'pending-rule-uuid',
                         status: 'pending',
+                        origin: 'past_reviews',
                         centralizedConfig: {
                             path: '.kody-rules/review/security.yml',
                             status: 'pending_edit',
@@ -1007,6 +1008,9 @@ describe('CentralizedConfigService', () => {
             });
 
             expect(result.success).toBe(true);
+            // Sync must NOT auto-approve a rule that is awaiting approval, and
+            // must not reclassify its origin — otherwise merging the
+            // centralized-config PR silently approves every pending rule.
             expect(
                 mockCreateOrUpdateKodyRulesUseCase.execute,
             ).toHaveBeenCalledWith(
@@ -1016,7 +1020,8 @@ describe('CentralizedConfigService', () => {
                         path: '.kody-rules/review/security.yml',
                         status: 'synced',
                     },
-                    status: 'active',
+                    status: 'pending',
+                    origin: 'past_reviews',
                 }),
                 'org-1',
                 expect.any(Object),

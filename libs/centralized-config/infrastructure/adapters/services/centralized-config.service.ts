@@ -1741,7 +1741,12 @@ export class CentralizedConfigService implements ICentralizedConfigService {
 
             const existingRuleBySourcePath = new Map<
                 string,
-                { uuid: string; status?: KodyRulesStatus; updatedAt?: Date }
+                {
+                    uuid: string;
+                    status?: KodyRulesStatus;
+                    origin?: KodyRulesOrigin;
+                    updatedAt?: Date;
+                }
             >();
 
             for (const existingRule of existingRulesEntity?.rules || []) {
@@ -1760,6 +1765,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     existingRuleBySourcePath.set(sourcePathKey, {
                         uuid: existingRule.uuid,
                         status: existingRule.status,
+                        origin: existingRule.origin,
                         updatedAt: existingRule.updatedAt,
                     });
                     continue;
@@ -1775,6 +1781,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     existingRuleBySourcePath.set(sourcePathKey, {
                         uuid: existingRule.uuid,
                         status: existingRule.status,
+                        origin: existingRule.origin,
                         updatedAt: existingRule.updatedAt,
                     });
                     continue;
@@ -1793,6 +1800,7 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     existingRuleBySourcePath.set(sourcePathKey, {
                         uuid: existingRule.uuid,
                         status: existingRule.status,
+                        origin: existingRule.origin,
                         updatedAt: existingRule.updatedAt,
                     });
                 }
@@ -1934,23 +1942,36 @@ export class CentralizedConfigService implements ICentralizedConfigService {
                     }
 
                     const { enabled, ...ruleFields } = compliantRule;
+                    const existingMatch = existingRuleBySourcePath.get(
+                        getSourcePathLookupKey(ruleFileMeta.path),
+                    );
+
+                    // Sync mirrors content, not the approval lifecycle. A rule
+                    // awaiting approval must stay PENDING — otherwise merging
+                    // the centralized-config PR silently approves every pending
+                    // rule. Likewise, keep an existing rule's origin instead of
+                    // reclassifying it as a repo-file sync.
+                    const resolvedStatus =
+                        existingMatch?.status === KodyRulesStatus.PENDING
+                            ? KodyRulesStatus.PENDING
+                            : enabled === false
+                              ? KodyRulesStatus.PAUSED
+                              : KodyRulesStatus.ACTIVE;
+
                     const ruleDto = {
                         ...ruleFields,
-                        uuid: existingRuleBySourcePath.get(
-                            getSourcePathLookupKey(ruleFileMeta.path),
-                        )?.uuid,
+                        uuid: existingMatch?.uuid,
                         type: ruleFileMeta.ruleType,
-                        status:
-                            enabled === false
-                                ? KodyRulesStatus.PAUSED
-                                : KodyRulesStatus.ACTIVE,
+                        status: resolvedStatus,
                         repositoryId: ruleFileMeta.repositoryId || 'global',
                         directoryId,
                         centralizedConfig: {
                             path: ruleFileMeta.path,
                             status: KodyRuleCentralizedStatus.SYNCED,
                         },
-                        origin: KodyRulesOrigin.REPO_FILE_SYNC,
+                        origin:
+                            existingMatch?.origin ??
+                            KodyRulesOrigin.REPO_FILE_SYNC,
                     };
 
                     await this.createOrUpdateKodyRulesUseCase.execute(
