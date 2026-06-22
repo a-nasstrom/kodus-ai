@@ -2,7 +2,7 @@
 // "manual" which hides the badge.
 export type InferredRuleOrigin =
     | "Auto-sync"
-    | "Onboard"
+    | "Onboarding"
     | "Kody-generated"
     | "Library"
     | "MCP/Agent"
@@ -49,7 +49,7 @@ export function inferRuleOrigin(rule: {
         case "repo_file_sync":
             return "Auto-sync";
         case "onboarding_repo_analysis":
-            return "Onboard";
+            return "Onboarding";
         case "past_reviews":
             return "Kody-generated";
         case "library":
@@ -66,5 +66,5 @@ export function inferRuleOrigin(rule: {
     if (rule?.origin === "generated") return "Kody-generated";
     if (!rule?.sourcePath) return "manual";
     if (isIdeRuleSource(rule.sourcePath)) return "Auto-sync";
-    return "Onboard";
+    return "Onboarding";
 }

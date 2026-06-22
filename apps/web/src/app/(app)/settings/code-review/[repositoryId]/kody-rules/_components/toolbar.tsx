@@ -156,7 +156,7 @@ export type VisibleScopes = {
 
 const ORIGIN_OPTIONS: InferredRuleOrigin[] = [
     "Auto-sync",
-    "Onboard",
+    "Onboarding",
     "Kody-generated",
     "Library",
     "MCP/Agent",

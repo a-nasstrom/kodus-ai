@@ -3,13 +3,12 @@
 
 /**
  * One-shot backfill for the widened Kody Rules `origin` enum and the
- * generalized `requestType` values.
+ * generalized `requestType` values. Self-contained (no `@libs` imports) so it
+ * runs with a bare `npx ts-node` — it's meant to run once and be deleted.
  *
  * Two field remaps over the embedded `rules[]` of every `kodyRules` document:
  *
- *   1. `origin` — legacy values (`user`/`library`/`generated`) are mapped onto
- *      the widened set via `resolveKodyRuleOrigin` (the same helper the runtime
- *      uses), so migrated and freshly-written rows agree:
+ *   1. `origin` — legacy values (`user`/`library`/`generated`) → widened set:
  *        - IDE/repo rule-file sourcePath → `repo_file_sync`
  *        - legacy `library`             → `library`
  *        - legacy `generated`           → `past_reviews`
@@ -17,11 +16,11 @@
  *
  *   2. `requestType` — `memory_create` → `create`, `memory_update` → `update`.
  *
- * Idempotent: rules already on a widened `origin`/`requestType` are left as-is,
- * so re-running is safe.
+ * Idempotent: rules already on a widened `origin`/`requestType` are left as-is.
  *
  * Usage:
- *   npx ts-node scripts/migrate-kody-rules-origin-and-request-type.ts [--dry-run] [--env=.env.prod]
+ *   npx ts-node scripts/migrate-kody-rules-origin-and-request-type.ts --dry-run
+ *   API_MG_DB_HOST=localhost npx ts-node scripts/migrate-kody-rules-origin-and-request-type.ts
  *
  * Required env: API_MG_DB_* (or MONGODB_URI) — same Mongo connection as the API.
  */
@@ -31,23 +30,56 @@ import 'dotenv/config';
 import * as path from 'path';
 import { MongoClient } from 'mongodb';
 
-import {
-    LegacyKodyRuleOrigin,
-    resolveKodyRuleOrigin,
-} from '@libs/common/utils/kody-rules/resolve-origin';
-import { KodyRulesOrigin } from '@libs/kodyRules/domain/interfaces/kodyRules.interface';
-
-const NEW_ORIGINS = new Set<string>(Object.values(KodyRulesOrigin));
-const LEGACY_ORIGINS = new Set<LegacyKodyRuleOrigin>([
-    'user',
+const NEW_ORIGINS = new Set<string>([
+    'manual',
     'library',
-    'generated',
+    'past_reviews',
+    'repo_file_sync',
+    'onboarding_repo_analysis',
+    'mcp_agent',
+    'cli',
 ]);
 
 const REQUEST_TYPE_MAP: Record<string, string> = {
     memory_create: 'create',
     memory_update: 'update',
 };
+
+// Source-path shapes that can only come from the IDE-rule sync flow — mirrors
+// libs/common/utils/kody-rules/file-patterns.ts. Inlined so the script stays
+// dependency-free.
+const IDE_RULE_SOURCE_PATTERNS: RegExp[] = [
+    /(?:^|\/)\.cursorrules$/,
+    /(?:^|\/)\.cursor\/rules\//,
+    /(?:^|\/)\.github\/copilot-instructions\.md$/,
+    /(?:^|\/)\.github\/instructions\//,
+    /(?:^|\/)\.agents?\.md$/,
+    /(?:^|\/)CLAUDE\.md$/,
+    /(?:^|\/)\.claude\//,
+    /(?:^|\/)\.windsurfrules$/,
+    /(?:^|\/)\.sourcegraph\//,
+    /(?:^|\/)\.opencode\.json$/,
+    /(?:^|\/)\.aider\.conf\.yml$/,
+    /(?:^|\/)\.aiderignore$/,
+    /(?:^|\/)\.rules\//,
+    /(?:^|\/)\.kody\/rules\//,
+    /(?:^|\/)docs\/coding-standards\//,
+];
+
+function isIdeRuleSource(sourcePath?: string | null): boolean {
+    if (!sourcePath) return false;
+    return IDE_RULE_SOURCE_PATTERNS.some((p) => p.test(sourcePath));
+}
+
+function mapLegacyOrigin(
+    legacyOrigin: string | undefined,
+    sourcePath?: string | null,
+): string {
+    if (legacyOrigin === 'library') return 'library';
+    if (isIdeRuleSource(sourcePath)) return 'repo_file_sync';
+    if (legacyOrigin === 'generated') return 'past_reviews';
+    return 'manual';
+}
 
 function parseArgs() {
     const argv = process.argv.slice(2);
@@ -83,12 +115,7 @@ export function migrateRule(rule: any): any | null {
 
     const origin = rule?.origin;
     if (!origin || !NEW_ORIGINS.has(origin)) {
-        next.origin = resolveKodyRuleOrigin({
-            legacyOrigin: LEGACY_ORIGINS.has(origin)
-                ? (origin as LegacyKodyRuleOrigin)
-                : undefined,
-            sourcePath: rule?.sourcePath,
-        });
+        next.origin = mapLegacyOrigin(origin, rule?.sourcePath);
         changed = true;
     }
 

@@ -366,7 +366,7 @@ const KodyRulesPageContent = () => {
                 ? statusFilteredRules.filter(isOrphanAutoSyncRule)
                 : statusFilteredRules;
 
-        // Popover filters: origin (Auto-sync / Onboard / Kody-generated /
+        // Popover filters: origin (Auto-sync / Onboarding / Kody-generated /
         // manual), sync state, paused-only — everything EXCEPT severity,
         // which is applied last (below) so the heatmap can count this
         // pool. Origin only applies to standard rules (memories don't
@@ -1020,6 +1020,7 @@ const KodyRulesPageContent = () => {
                     <TabsContent value="pending" className="mt-4">
                         <PendingTab
                             pendingRules={pendingRules}
+                            activeRules={kodyRules}
                             teamId={teamId}
                             canEdit={canEdit}
                             refreshRulesList={refreshRulesList}
