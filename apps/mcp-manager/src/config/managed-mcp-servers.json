@@ -144,25 +144,6 @@
         ]
     },
     {
-        "id": "clickup-default",
-        "name": "ClickUp",
-        "baseUrl": "https://mcp.clickup.com/mcp",
-        "protocol": "http",
-        "logoUrl": "https://clickup.com/favicon.ico",
-        "headers": {},
-        "authMethods": [
-            {
-                "id": "oauth",
-                "label": "OAuth",
-                "type": "oauth2",
-                "dynamicRegistration": false,
-                "clientIdEnv": "API_MCP_MANAGER_CLICKUP_CLIENT_ID",
-                "clientSecretEnv": "API_MCP_MANAGER_CLICKUP_CLIENT_SECRET",
-                "default": true
-            }
-        ]
-    },
-    {
         "id": "fireflies-default",
         "name": "Fireflies",
         "baseUrl": "https://api.fireflies.ai/mcp",
