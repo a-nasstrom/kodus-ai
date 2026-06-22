@@ -23,7 +23,7 @@ import { AddLibraryKodyRulesUseCase } from '../application/use-cases/add-library
 import { ApplyPendingKodyRulesUseCase } from '../application/use-cases/apply-pending-kody-rules.use-case';
 import { ChangeStatusKodyRulesUseCase } from '../application/use-cases/change-status-kody-rules.use-case';
 import { CheckSyncStatusUseCase } from '../application/use-cases/check-sync-status.use-case';
-import { ConvertPendingUpdatesToMemoriesUseCase } from '../application/use-cases/convert-pending-updates-to-memories.use-case';
+import { ConvertPendingUpdatesToNewUseCase } from '../application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '../application/use-cases/create-or-update.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '../application/use-cases/delete-rule-in-organization-by-id.use-case';
 import { FastSyncIdeRulesUseCase } from '../application/use-cases/fast-sync-ide-rules.use-case';
@@ -132,7 +132,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         SetRuleLikeUseCase,
         KodyRulesSyncListener,
         FindRecommendedKodyRulesUseCase, // Added
-        ConvertPendingUpdatesToMemoriesUseCase,
+        ConvertPendingUpdatesToNewUseCase,
         ManageImportedKodyRulesUseCase,
     ],
     exports: [
@@ -167,7 +167,7 @@ import { NotificationModule } from '@libs/notifications/modules/notification.mod
         RemoveRuleLikeUseCase,
         SetRuleLikeUseCase,
         FindRecommendedKodyRulesUseCase, // Added
-        ConvertPendingUpdatesToMemoriesUseCase,
+        ConvertPendingUpdatesToNewUseCase,
         ManageImportedKodyRulesUseCase,
     ],
 })

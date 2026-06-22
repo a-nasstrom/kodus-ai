@@ -245,7 +245,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         const pendingCreate = {
             uuid: 'pending-create-1',
             status: KodyRulesStatus.PENDING,
-            requestType: KodyRuleRequestType.MEMORY_CREATE,
+            requestType: KodyRuleRequestType.CREATE,
         } as Partial<IKodyRule>;
 
         const createOrUpdateSpy = jest
@@ -263,7 +263,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             expect.objectContaining({
                 uuid: undefined,
                 status: KodyRulesStatus.PENDING,
-                requestType: KodyRuleRequestType.MEMORY_CREATE,
+                requestType: KodyRuleRequestType.CREATE,
             }),
             { userId: 'kody', userEmail: 'kody@kodus.io' },
         );
@@ -312,7 +312,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         const pendingRequest = {
             uuid: 'pending-update-1',
             status: KodyRulesStatus.PENDING,
-            requestType: KodyRuleRequestType.MEMORY_UPDATE,
+            requestType: KodyRuleRequestType.UPDATE,
             targetRuleUuid: 'existing-memory-1',
         } as Partial<IKodyRule>;
 
@@ -331,7 +331,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             expect.objectContaining({
                 uuid: undefined,
                 status: KodyRulesStatus.PENDING,
-                requestType: KodyRuleRequestType.MEMORY_UPDATE,
+                requestType: KodyRuleRequestType.UPDATE,
                 targetRuleUuid: 'existing-memory-1',
             }),
             { userId: 'kody', userEmail: 'kody@kodus.io' },
@@ -360,7 +360,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         const pendingRequest = {
             uuid: 'pending-update-2',
             status: KodyRulesStatus.PENDING,
-            requestType: KodyRuleRequestType.MEMORY_UPDATE,
+            requestType: KodyRuleRequestType.UPDATE,
             targetRuleUuid: 'existing-memory-1',
         } as Partial<IKodyRule>;
 
@@ -379,7 +379,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             expect.objectContaining({
                 uuid: undefined,
                 status: KodyRulesStatus.PENDING,
-                requestType: KodyRuleRequestType.MEMORY_UPDATE,
+                requestType: KodyRuleRequestType.UPDATE,
                 targetRuleUuid: 'existing-memory-1',
             }),
             { userId: 'kody', userEmail: 'kody@kodus.io' },
@@ -403,7 +403,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
         const pendingRequest = {
             uuid: 'pending-create-1',
             status: KodyRulesStatus.PENDING,
-            requestType: KodyRuleRequestType.MEMORY_CREATE,
+            requestType: KodyRuleRequestType.CREATE,
         } as Partial<IKodyRule>;
 
         const createOrUpdateSpy = jest
@@ -421,7 +421,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             expect.objectContaining({
                 uuid: undefined,
                 status: KodyRulesStatus.PENDING,
-                requestType: KodyRuleRequestType.MEMORY_CREATE,
+                requestType: KodyRuleRequestType.CREATE,
                 targetRuleUuid: undefined,
             }),
             { userId: 'kody', userEmail: 'kody@kodus.io' },
@@ -592,7 +592,7 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
             uuid: 'pending-request-1',
             type: KodyRulesType.MEMORY,
             status: KodyRulesStatus.PENDING,
-            requestType: KodyRuleRequestType.MEMORY_UPDATE,
+            requestType: KodyRuleRequestType.UPDATE,
             targetRuleUuid: 'existing-memory-1',
             title: 'Prefer strict typing',
             rule: 'Use explicit types on exported functions and public APIs',

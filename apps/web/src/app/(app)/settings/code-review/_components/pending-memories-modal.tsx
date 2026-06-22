@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/tabs";
 import { toast } from "@components/ui/toaster/use-toast";
 import {
     applyPendingKodyRules,
-    convertPendingUpdatesToMemories as convertPendingUpdatesToMemoriesRequest,
+    convertPendingUpdatesToNew as convertPendingUpdatesToNewRequest,
     discardPendingKodyRules,
 } from "@services/kodyRules/fetch";
 import { KodyRule, KodyRuleRequestType } from "@services/kodyRules/types";
@@ -403,12 +403,12 @@ export const PendingMemoriesModal = ({
     );
     const [newMemories, setNewMemories] = useState<KodyRule[]>(() =>
         pendingNewMemories.filter(
-            (rule) => rule.requestType !== KodyRuleRequestType.MEMORY_UPDATE,
+            (rule) => rule.requestType !== KodyRuleRequestType.UPDATE,
         ),
     );
     const [updates, setUpdates] = useState<KodyRule[]>(() =>
         pendingUpdates.filter(
-            (rule) => rule.requestType === KodyRuleRequestType.MEMORY_UPDATE,
+            (rule) => rule.requestType === KodyRuleRequestType.UPDATE,
         ),
     );
     const [hasChanges, setHasChanges] = useState(false);
@@ -520,7 +520,7 @@ export const PendingMemoriesModal = ({
     const convertPendingItemsToMemories = async (ids: string[]) => {
         magicModal.lock();
         try {
-            const response = await convertPendingUpdatesToMemoriesRequest(
+            const response = await convertPendingUpdatesToNewRequest(
                 teamId,
                 ids,
             );
@@ -535,7 +535,7 @@ export const PendingMemoriesModal = ({
             } else {
                 const convertedMemories = response.filter(
                     (rule) =>
-                        rule.requestType !== KodyRuleRequestType.MEMORY_UPDATE,
+                        rule.requestType !== KodyRuleRequestType.UPDATE,
                 );
 
                 if (convertedMemories.length > 0) {

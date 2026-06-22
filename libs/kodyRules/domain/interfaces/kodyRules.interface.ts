@@ -195,9 +195,11 @@ export enum KodyRulesType {
     MEMORY = 'memory',
 }
 
+// A pending request to add a new rule/memory (CREATE) or to change an existing
+// one (UPDATE, carrying `targetRuleUuid`). Applies to both rules and memories.
 export enum KodyRuleRequestType {
-    MEMORY_CREATE = 'memory_create',
-    MEMORY_UPDATE = 'memory_update',
+    CREATE = 'create',
+    UPDATE = 'update',
 }
 
 /**

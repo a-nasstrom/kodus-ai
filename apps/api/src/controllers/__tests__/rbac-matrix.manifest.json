@@ -704,9 +704,9 @@
     }
   },
   {
-    "key": "kodyRules.controller.ts#convertPendingUpdatesToNewMemories",
+    "key": "kodyRules.controller.ts#convertPendingUpdatesToNew",
     "httpMethod": "POST",
-    "urlPath": "/kody-rules/pending/convert-updates-to-memories",
+    "urlPath": "/kody-rules/pending/convert-updates-to-new",
     "expected": {
       "owner": "allow",
       "billing_manager": "deny",

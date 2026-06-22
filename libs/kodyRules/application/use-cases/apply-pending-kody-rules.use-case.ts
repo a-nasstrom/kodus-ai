@@ -103,7 +103,7 @@ export class ApplyPendingKodyRulesUseCase {
             for (const pendingRule of pendingRules) {
                 if (
                     pendingRule.requestType ===
-                        KodyRuleRequestType.MEMORY_UPDATE &&
+                        KodyRuleRequestType.UPDATE &&
                     pendingRule.targetRuleUuid
                 ) {
                     const targetRule = rulesById.get(

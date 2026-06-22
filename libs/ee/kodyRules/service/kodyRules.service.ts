@@ -1334,7 +1334,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     organizationAndTeamData,
                     memoryToPersist,
                     userInfo,
-                    KodyRuleRequestType.MEMORY_UPDATE,
+                    KodyRuleRequestType.UPDATE,
                     targetMemory.uuid,
                 );
             }
@@ -1344,7 +1344,7 @@ Analyze the suggestions and recommend the most relevant rules.`;
                     organizationAndTeamData,
                     memoryToPersist,
                     userInfo,
-                    KodyRuleRequestType.MEMORY_CREATE,
+                    KodyRuleRequestType.CREATE,
                 );
             }
 

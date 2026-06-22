@@ -3,7 +3,7 @@ import { AddLibraryKodyRulesUseCase } from '@libs/kodyRules/application/use-case
 import { ApplyPendingKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/apply-pending-kody-rules.use-case';
 import { ChangeStatusKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/change-status-kody-rules.use-case';
 import { CheckSyncStatusUseCase } from '@libs/kodyRules/application/use-cases/check-sync-status.use-case';
-import { ConvertPendingUpdatesToMemoriesUseCase } from '@libs/kodyRules/application/use-cases/convert-pending-updates-to-memories.use-case';
+import { ConvertPendingUpdatesToNewUseCase } from '@libs/kodyRules/application/use-cases/convert-pending-updates-to-new.use-case';
 import { CreateOrUpdateKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/create-or-update.use-case';
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/delete-rule-in-organization-by-id.use-case';
 import { FastSyncIdeRulesUseCase } from '@libs/kodyRules/application/use-cases/fast-sync-ide-rules.use-case';
@@ -117,7 +117,7 @@ export class KodyRulesController {
         private readonly resyncRulesFromIdeUseCase: ResyncRulesFromIdeUseCase,
         private readonly fastSyncIdeRulesUseCase: FastSyncIdeRulesUseCase,
         private readonly importFastKodyRulesUseCase: ImportFastKodyRulesUseCase,
-        private readonly convertPendingUpdatesToMemoriesUseCase: ConvertPendingUpdatesToMemoriesUseCase,
+        private readonly convertPendingUpdatesToNewUseCase: ConvertPendingUpdatesToNewUseCase,
         private readonly manageImportedKodyRulesUseCase: ManageImportedKodyRulesUseCase,
         private readonly countRulesByRepositoryUseCase: CountRulesByRepositoryUseCase,
         @Inject(REQUEST)
@@ -494,7 +494,7 @@ export class KodyRulesController {
     }
 
     @ApiBearerAuth('jwt')
-    @Post('/pending/convert-updates-to-memories')
+    @Post('/pending/convert-updates-to-new')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
         checkPermissions({
@@ -503,13 +503,13 @@ export class KodyRulesController {
         }),
     )
     @ApiOperation({
-        summary: 'Convert pending updates to new memories',
+        summary: 'Convert pending updates to new rules/memories',
         description:
-            'For each pending update request, create a new active memory and discard the original pending request.',
+            'For each pending update request, create a new active rule/memory and discard the original pending request.',
     })
     @ApiCreatedResponse({ type: KodyRulesArrayResponseDto })
-    public async convertPendingUpdatesToNewMemories(@Body() body: RuleIdsDto) {
-        return this.convertPendingUpdatesToMemoriesUseCase.execute(body);
+    public async convertPendingUpdatesToNew(@Body() body: RuleIdsDto) {
+        return this.convertPendingUpdatesToNewUseCase.execute(body);
     }
 
     @ApiBearerAuth('jwt')

@@ -171,8 +171,8 @@ export enum KodyRulesType {
 }
 
 export enum KodyRuleRequestType {
-    MEMORY_CREATE = "memory_create",
-    MEMORY_UPDATE = "memory_update",
+    CREATE = "create",
+    UPDATE = "update",
 }
 
 export type KodyRulesCentralizedPrMetadata = {
