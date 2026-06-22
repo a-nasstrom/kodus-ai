@@ -251,6 +251,30 @@ export class KodyRulesArrayResponseDto extends ApiResponseBaseDto {
     data: KodyRuleDto[];
 }
 
+export class KodyRulesPendingCountsDto {
+    @ApiProperty()
+    total: number;
+
+    @ApiProperty()
+    rules: number;
+
+    @ApiProperty()
+    memories: number;
+}
+
+export class KodyRulesPendingDataDto {
+    @ApiProperty({ type: KodyRuleDto, isArray: true })
+    items: KodyRuleDto[];
+
+    @ApiProperty({ type: KodyRulesPendingCountsDto })
+    counts: KodyRulesPendingCountsDto;
+}
+
+export class KodyRulesPendingResponseDto extends ApiResponseBaseDto {
+    @ApiProperty({ type: KodyRulesPendingDataDto })
+    data: KodyRulesPendingDataDto;
+}
+
 export class KodyRulesFindByOrgDataDto {
     @ApiProperty()
     _uuid: string;

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { KodyRulesLimitPopover } from "@components/system/kody-rules-limit-popover";
+import { Badge } from "@components/ui/badge";
 import { Button } from "@components/ui/button";
 import { SvgKodyRulesDiscovery } from "@components/ui/icons/SvgKodyRulesDiscovery";
 import { Link } from "@components/ui/link";
@@ -21,7 +22,6 @@ import {
 } from "@services/kodyRules/hooks";
 import {
     KodyRuleCentralizedStatus,
-    KodyRuleRequestType,
     KodyRulesStatus,
     KodyRulesType,
     KodyRuleWithInheritanceDetails,
@@ -31,7 +31,7 @@ import { usePermission } from "@services/permissions/hooks";
 import { Action, ResourceType } from "@services/permissions/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { BellRing, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { PageBoundary } from "src/core/components/page-boundary";
 import { useSelectedTeamId } from "src/core/providers/selected-team-context";
 import { safeArray } from "src/core/utils/safe-array";
@@ -40,8 +40,7 @@ import { CodeReviewPagesBreadcrumb } from "../../../_components/breadcrumb";
 import { CentralizedConfigReadOnlyAlert } from "../../../_components/centralized-config-readonly-alert";
 import { GenerateRulesOptions } from "../../../_components/generate-rules-options";
 import { KodyRuleAddOrUpdateItemModal } from "../../../_components/modal";
-import { PendingMemoriesModal } from "../../../_components/pending-memories-modal";
-import { PendingKodyRulesModal } from "../../../_components/pending-rules-modal";
+import { PendingTab } from "./pending-tab";
 import {
     useFullCodeReviewConfig,
     usePlatformConfig,
@@ -77,7 +76,7 @@ import { OrphanRulesChip } from "./orphan-rules-chip";
 import { KodyRulesPageSkeleton } from "./page-skeleton";
 import { KodyRulesToolbar, type VisibleScopes } from "./toolbar";
 
-type KodyRulesTab = "review-rules" | "memories" | "configuration";
+type KodyRulesTab = "review-rules" | "memories" | "pending" | "configuration";
 type RulesStatusFilter = "all" | "pending-centralized";
 
 const TAB_QUERY_PARAM = "tab";
@@ -183,6 +182,7 @@ const KodyRulesPageContent = () => {
     const activeTabSearchParam = searchParams.get(TAB_QUERY_PARAM);
     const activeTab: KodyRulesTab =
         activeTabSearchParam === "memories" ||
+            activeTabSearchParam === "pending" ||
             activeTabSearchParam === "configuration"
             ? activeTabSearchParam
             : DEFAULT_TAB;
@@ -682,38 +682,11 @@ const KodyRulesPageContent = () => {
         );
     };
 
-    const pendingReviewRules = useMemo(
-        () =>
-            pendingRules.filter(
-                (rule) => getRuleType(rule) === KodyRulesType.STANDARD,
-            ),
-        [pendingRules],
-    );
-
-    const pendingMemoryUpdates = useMemo(
-        () =>
-            pendingRules.filter(
-                (rule) =>
-                    getRuleType(rule) === KodyRulesType.MEMORY &&
-                    rule.requestType === KodyRuleRequestType.UPDATE,
-            ),
-        [pendingRules],
-    );
-
-    const pendingMemoryCreations = useMemo(
-        () =>
-            pendingRules.filter(
-                (rule) =>
-                    getRuleType(rule) === KodyRulesType.MEMORY &&
-                    rule.requestType !== KodyRuleRequestType.UPDATE,
-            ),
-        [pendingRules],
-    );
-
     const handleTabChange = (tab: string) => {
         if (
             tab !== "review-rules" &&
             tab !== "memories" &&
+            tab !== "pending" &&
             tab !== "configuration"
         ) {
             return;
@@ -779,36 +752,6 @@ const KodyRulesPageContent = () => {
     // every render directly — `reviewRulesState.rulesToDisplay` already
     // gets a fresh array each render (from the .sort step), so memoizing
     // would not help and would fight the actual derivation.
-    const showPendingRules = async (
-        rules: KodyRule[],
-        entityLabel: "rules" | "memories",
-    ) => {
-        const response = await magicModal.show(() => (
-            <PendingKodyRulesModal
-                pendingRules={rules}
-                entityLabel={entityLabel}
-            />
-        ));
-        if (response) refreshRulesList();
-    };
-
-    const showPendingMemories = async () => {
-        const activeMemories = kodyRules.filter(
-            (rule) => getRuleType(rule) === KodyRulesType.MEMORY,
-        );
-
-        const response = await magicModal.show(() => (
-            <PendingMemoriesModal
-                pendingNewMemories={pendingMemoryCreations}
-                pendingUpdates={pendingMemoryUpdates}
-                activeMemories={activeMemories}
-                refreshRulesList={refreshRulesList}
-            />
-        ));
-
-        if (response) refreshRulesList();
-    };
-
     const activeRuleType =
         activeTab === "memories"
             ? KodyRulesType.MEMORY
@@ -822,12 +765,6 @@ const KodyRulesPageContent = () => {
     const showHeaderActions = activeTab !== "configuration";
 
     const canShowDiscovery = activeTab === "review-rules";
-
-    const pendingMemoriesCount =
-        pendingMemoryCreations.length + pendingMemoryUpdates.length;
-
-    const pendingEntityLabel: "rules" | "memories" =
-        activeTab === "memories" ? "memories" : "rules";
 
     return (
         <Page.Root>
@@ -883,35 +820,6 @@ const KodyRulesPageContent = () => {
                                 </KodyRulesLimitPopover>
                             )}
                         </Page.HeaderActions>
-
-                        <div className="flex justify-end gap-2">
-                            {activeTab === "memories"
-                                ? pendingMemoriesCount > 0 && (
-                                    <Button
-                                        size="md"
-                                        variant="helper"
-                                        className="border-e-primary-light rounded-e-none border-e-4"
-                                        leftIcon={<BellRing />}
-                                        onClick={showPendingMemories}>
-                                        Review pending memories
-                                    </Button>
-                                )
-                                : pendingReviewRules.length > 0 && (
-                                    <Button
-                                        size="md"
-                                        variant="helper"
-                                        className="border-e-primary-light rounded-e-none border-e-4"
-                                        leftIcon={<BellRing />}
-                                        onClick={() =>
-                                            showPendingRules(
-                                                pendingReviewRules,
-                                                pendingEntityLabel,
-                                            )
-                                        }>
-                                        Check out new {pendingEntityLabel}!
-                                    </Button>
-                                )}
-                        </div>
                     </div>
                 )}
             </Page.Header>
@@ -924,6 +832,17 @@ const KodyRulesPageContent = () => {
                             Review Rules
                         </TabsTrigger>
                         <TabsTrigger value="memories">Memories</TabsTrigger>
+                        <TabsTrigger value="pending">
+                            Pending
+                            {pendingRules.length > 0 && (
+                                <Badge
+                                    active
+                                    size="xs"
+                                    className="ml-2 min-h-auto">
+                                    {pendingRules.length}
+                                </Badge>
+                            )}
+                        </TabsTrigger>
                         <TabsTrigger value="configuration">
                             Configuration
                         </TabsTrigger>
@@ -1096,6 +1015,15 @@ const KodyRulesPageContent = () => {
                                 />
                             )}
                         </div>
+                    </TabsContent>
+
+                    <TabsContent value="pending" className="mt-4">
+                        <PendingTab
+                            pendingRules={pendingRules}
+                            teamId={teamId}
+                            canEdit={canEdit}
+                            refreshRulesList={refreshRulesList}
+                        />
                     </TabsContent>
 
                     <TabsContent value="configuration" className="mt-4">

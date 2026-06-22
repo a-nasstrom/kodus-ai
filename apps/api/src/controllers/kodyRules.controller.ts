@@ -1,6 +1,7 @@
 import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import { AddLibraryKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/add-library-kody-rules.use-case';
 import { ApplyPendingKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/apply-pending-kody-rules.use-case';
+import { GetPendingKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/get-pending-kody-rules.use-case';
 import { ChangeStatusKodyRulesUseCase } from '@libs/kodyRules/application/use-cases/change-status-kody-rules.use-case';
 import { CheckSyncStatusUseCase } from '@libs/kodyRules/application/use-cases/check-sync-status.use-case';
 import { ConvertPendingUpdatesToNewUseCase } from '@libs/kodyRules/application/use-cases/convert-pending-updates-to-new.use-case';
@@ -82,6 +83,7 @@ import { GenerateKodyRulesDTO } from '../dtos/generate-kody-rules.dto';
 import {
     KodyRuleResponseDto,
     KodyRulesArrayResponseDto,
+    KodyRulesPendingResponseDto,
     KodyRulesBucketsResponseDto,
     KodyRulesFastSyncResponseDto,
     KodyRulesFindByOrgResponseDto,
@@ -107,6 +109,7 @@ export class KodyRulesController {
         private readonly addLibraryKodyRulesUseCase: AddLibraryKodyRulesUseCase,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
         private readonly applyPendingKodyRulesUseCase: ApplyPendingKodyRulesUseCase,
+        private readonly getPendingKodyRulesUseCase: GetPendingKodyRulesUseCase,
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
         private readonly checkSyncStatusUseCase: CheckSyncStatusUseCase,
         private readonly cacheService: CacheService,
@@ -607,6 +610,26 @@ export class KodyRulesController {
     }
 
     @ApiBearerAuth('jwt')
+    @Get('/pending')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions({
+            action: Action.Read,
+            resource: ResourceType.KodyRules,
+        }),
+    )
+    @ApiOperation({
+        summary: 'List pending rules and memories',
+        description:
+            'Return every pending Kody Rule and Memory for the org (optionally scoped to a repository), with counts for the Pending badge.',
+    })
+    @ApiQuery({ name: 'repositoryId', type: String, required: false })
+    @ApiOkResponse({ type: KodyRulesPendingResponseDto })
+    public async getPending(@Query('repositoryId') repositoryId?: string) {
+        return this.getPendingKodyRulesUseCase.execute({ repositoryId });
+    }
+
+    @ApiBearerAuth('jwt')
     @Get('/pending-ide-rules')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
@@ -616,8 +639,9 @@ export class KodyRulesController {
         }),
     )
     @ApiOperation({
-        summary: 'List pending IDE rules',
-        description: 'Return pending IDE rules for a repository.',
+        summary: 'List pending IDE rules (deprecated)',
+        description:
+            'Deprecated: use GET /kody-rules/pending. Returns pending rules for a repository.',
     })
     @ApiQuery({ name: 'teamId', type: String, required: true })
     @ApiQuery({ name: 'repositoryId', type: String, required: false })
