@@ -155,6 +155,7 @@ export class KodyRulesController {
             undefined,
             undefined,
             body.teamId,
+            this.request.user,
         );
     }
 
@@ -315,6 +316,7 @@ export class KodyRulesController {
                 source: 'web',
                 teamId,
             },
+            this.request.user,
         );
     }
 

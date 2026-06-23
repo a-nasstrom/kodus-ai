@@ -3,13 +3,7 @@ import {
     CentralizedConfigPrService,
     CentralizedPrMetadata,
 } from '@libs/centralized-config/infrastructure/adapters/services/centralized-config-pr.service';
-import {
-    Inject,
-    Injectable,
-    NotFoundException,
-    Optional,
-} from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import { PromptSourceType } from '@libs/ai-engine/domain/prompt/interfaces/promptExternalReference.interface';
 import { ContextReferenceDetectionService } from '@libs/ai-engine/infrastructure/adapters/services/context/context-reference-detection.service';
@@ -24,6 +18,7 @@ import {
     IContextResolutionService,
 } from '@libs/core/context-resolution/domain/contracts/context-resolution.service.contract';
 import { OrganizationAndTeamData } from '@libs/core/infrastructure/config/types/general/organizationAndTeamData';
+import { UserRequest } from '@libs/core/infrastructure/config/types/http/user-request.type';
 import {
     Action,
     ResourceType,
@@ -44,16 +39,6 @@ import {
 export class CreateOrUpdateKodyRulesUseCase {
     private readonly logger = createLogger(CreateOrUpdateKodyRulesUseCase.name);
     constructor(
-        @Optional()
-        @Inject(REQUEST)
-        private readonly request: Request & {
-            user: {
-                organization: { uuid: string };
-                uuid: string;
-                email: string;
-            };
-        },
-
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
         @Inject(CONTEXT_RESOLUTION_SERVICE_TOKEN)
@@ -70,10 +55,13 @@ export class CreateOrUpdateKodyRulesUseCase {
         userInfo?: { userId: string; userEmail: string },
         skipAuthorization?: boolean,
         teamIdOverride?: string,
+        // The authenticated user, forwarded by the controller. Use-cases must
+        // not inject REQUEST (it makes them request-scoped, which bubbles up
+        // into singleton callers like event listeners and sync services).
+        requestUser?: UserRequest['user'],
     ): Promise<Partial<any> | CentralizedPrMetadata> {
         try {
-            const req: any = this.request as any;
-            const reqUser = req?.user;
+            const reqUser: any = requestUser;
 
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
@@ -93,10 +81,10 @@ export class CreateOrUpdateKodyRulesUseCase {
             if (
                 !skipAuthorization &&
                 userInfoData.userId !== 'kody-system' &&
-                this.request?.user
+                requestUser
             ) {
                 await this.authorizationService.ensure({
-                    user: this.request.user,
+                    user: requestUser,
                     action: Action.Create,
                     resource: ResourceType.KodyRules,
                     repoIds: await this.resolveAuthorizationRepoIds(kodyRule),

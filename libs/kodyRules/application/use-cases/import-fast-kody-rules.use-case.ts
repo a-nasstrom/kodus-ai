@@ -96,6 +96,9 @@ export class ImportFastKodyRulesUseCase {
                                 (this.request.user as any)?.email ||
                                 'kody@kodus.io',
                         },
+                        undefined,
+                        undefined,
+                        this.request.user,
                     );
 
                 results.push(created);
