@@ -61,6 +61,15 @@ describe('CreateOrUpdateKodyRulesUseCase — inheritance toggle authz', () => {
         resolveDirectoryGroupFolderName: jest.fn().mockResolvedValue(null),
         buildCentralizedPath: jest.fn(),
         sanitizeFileName: jest.fn(),
+        buildRuleFileName: jest.fn(
+            (title?: string, uuid?: string) =>
+                `${(title || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '') || 'rule'}${
+                    uuid ? `-${String(uuid).slice(0, 8)}` : ''
+                }.yml`,
+        ),
     };
 
     // repo_admin assigned ONLY to repo-a.

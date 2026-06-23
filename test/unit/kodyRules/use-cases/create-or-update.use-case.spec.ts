@@ -43,6 +43,7 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending states)', () => {
         resolveDirectoryGroupFolderName: jest.Mock;
         buildCentralizedPath: jest.Mock;
         sanitizeFileName: jest.Mock;
+        buildRuleFileName: jest.Mock;
     };
 
     beforeEach(async () => {
@@ -61,6 +62,13 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending states)', () => {
                 .mockResolvedValue(null),
             buildCentralizedPath: jest.fn(),
             sanitizeFileName: jest.fn(),
+            buildRuleFileName: jest.fn(
+                (title?: string, uuid?: string) =>
+                    `${centralizedConfigPrServiceMock.sanitizeFileName(
+                        title,
+                        'rule',
+                    )}${uuid ? `-${String(uuid).slice(0, 8)}` : ''}.yml`,
+            ),
         };
 
         centralizedConfigPrServiceMock.getCentralizedRepositoryIfEnabled.mockResolvedValue(
@@ -368,7 +376,7 @@ describe('CreateOrUpdateKodyRulesUseCase (centralized pending states)', () => {
                 uuid: 'rule-legacy-1',
                 status: KodyRulesStatus.ACTIVE,
                 centralizedConfig: {
-                    path: 'repo-one/.kody-rules/review/legacy-title.yml',
+                    path: 'repo-one/.kody-rules/review/legacy-title-rule-leg.yml',
                     status: KodyRuleCentralizedStatus.PENDING_EDIT,
                 },
             }),

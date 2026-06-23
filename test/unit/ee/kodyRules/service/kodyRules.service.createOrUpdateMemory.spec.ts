@@ -113,6 +113,10 @@ describe('KodyRulesService.createOrUpdateMemory', () => {
                 .mockResolvedValue('repo-1-name'),
             resolveDirectoryGroupFolderName: jest.fn().mockResolvedValue(null),
             sanitizeFileName: jest.fn().mockReturnValue('memory-rule'),
+            buildRuleFileName: jest.fn(
+                (_title?: string, uuid?: string) =>
+                    `memory-rule${uuid ? `-${String(uuid).slice(0, 8)}` : ''}.yml`,
+            ),
             buildCentralizedPath: jest
                 .fn()
                 .mockImplementation(

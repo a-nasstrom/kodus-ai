@@ -29,6 +29,7 @@ describe('DeleteRuleInOrganizationByIdKodyRulesUseCase', () => {
         resolveRepositoryFolderName: jest.Mock;
         buildCentralizedPath: jest.Mock;
         sanitizeFileName: jest.Mock;
+        buildRuleFileName: jest.Mock;
     };
 
     beforeEach(async () => {
@@ -50,6 +51,10 @@ describe('DeleteRuleInOrganizationByIdKodyRulesUseCase', () => {
                         : `${repositoryFolder}/${relativePath}`,
                 ),
             sanitizeFileName: jest.fn().mockReturnValue('no-console-logs'),
+            buildRuleFileName: jest.fn(
+                (_t?: string, u?: string) =>
+                    `no-console-logs${u ? `-${String(u).slice(0, 8)}` : ''}.yml`,
+            ),
         };
 
         const module: TestingModule = await Test.createTestingModule({
